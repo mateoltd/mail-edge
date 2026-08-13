@@ -98,6 +98,25 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
+  packages/provider:
+    dependencies:
+      '@mail-edge/contracts':
+        specifier: workspace:^
+        version: link:../contracts
+      '@mail-edge/core':
+        specifier: workspace:^
+        version: link:../core
+      '@sinclair/typebox':
+        specifier: 0.34.41
+        version: 0.34.41
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+    devDependencies:
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
+
   packages/sdk:
     dependencies:
       '@mail-edge/contracts':
