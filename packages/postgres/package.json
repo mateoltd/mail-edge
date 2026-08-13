@@ -1,0 +1,47 @@
+{
+  "name": "@mail-edge/postgres",
+  "version": "0.1.0",
+  "description": "PostgreSQL persistence, migrations, and durable workflow repositories for Mail Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "24.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./migrations/*": "./migrations/*"
+  },
+  "files": [
+    "dist",
+    "etc",
+    "migrations"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "api:check": "api-extractor run",
+    "build": "tsc -b",
+    "lint": "eslint src test scripts --max-warnings 0",
+    "migrations:check": "node ./scripts/check-migrations.mjs",
+    "migrations:generate": "node ./scripts/check-migrations.mjs --generate",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@mail-edge/contracts": "workspace:^",
+    "@mail-edge/core": "workspace:^",
+    "kysely": "0.29.5",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "12.1.0",
+    "@types/pg": "8.21.0",
+    "vitest": "4.1.10"
+  }
+}
