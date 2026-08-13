@@ -64,6 +64,7 @@ try {
       `import assert from "node:assert/strict";
 import { createContractValidator, parseProviderId, SmtpEnvelopeV1Schema } from "@mail-edge/contracts";
 import { canonicalizeSmtpEnvelope } from "@mail-edge/core";
+import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import { ProviderConformanceKit } from "@mail-edge/conformance";
 import { conformanceTarget } from "@mail-edge/conformance/examples/third-party-adapter";
@@ -72,6 +73,7 @@ assert.equal(parseProviderId("clean-room-provider").ok, true);
 const envelope = { schemaVersion: "v1", mailFrom: null, rcptTo: [{ address: "recipient@example.test" }], smtpUtf8: false };
 assert.equal(createContractValidator().validate(SmtpEnvelopeV1Schema, envelope).ok, true);
 assert.equal(canonicalizeSmtpEnvelope(envelope).ok, true);
+assert.equal(typeof StreamingHeaderPatchApplier, "function");
 assert.throws(() => new MailEdgeSdkBuilder().build(), /missing/u);
 const conformance = await new ProviderConformanceKit(conformanceTarget).run({ observedAt: "2026-08-13T08:00:00Z" }, new AbortController().signal);
 assert.equal(conformance.ok, true);
@@ -81,7 +83,8 @@ assert.equal(conformance.value.passed, true);
     writeFileSync(
       join(consumerDirectory, "consumer.ts"),
       `import { parseProviderId, type ProviderId, type SmtpEnvelopeV1 } from "@mail-edge/contracts";
-import { canonicalizeSmtpEnvelope, type BlobStorePort } from "@mail-edge/core";
+import { canonicalizeSmtpEnvelope, type BlobStorePort, type HeaderPatchApplierPort } from "@mail-edge/core";
+import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import type { ProviderAdapterRegistration } from "@mail-edge/provider";
 import type { ProviderConformanceTarget } from "@mail-edge/conformance";
@@ -91,6 +94,7 @@ if (!parsed.ok) throw new Error("provider ID did not validate");
 const providerId: ProviderId = parsed.value;
 const envelope: SmtpEnvelopeV1 = { schemaVersion: "v1", mailFrom: null, rcptTo: [{ address: "recipient@example.test" }], smtpUtf8: false };
 const canonical = canonicalizeSmtpEnvelope(envelope);
+const headerPatcher: HeaderPatchApplierPort = new StreamingHeaderPatchApplier();
 const builder = new MailEdgeSdkBuilder();
 declare const blobStore: BlobStorePort;
 declare const registration: ProviderAdapterRegistration;
@@ -99,6 +103,7 @@ const conformanceTarget: ProviderConformanceTarget = { registration, driver: {},
 void providerId;
 void canonical;
 void conformanceTarget;
+void headerPatcher;
 `,
     );
     writeFileSync(

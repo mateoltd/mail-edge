@@ -30,6 +30,7 @@
     "changeset": "changeset",
     "changeset:status": "changeset status --since=origin/main",
     "commitlint:check": "node ./scripts/check-commitlint.mjs",
+    "corpus:check": "node ./test/corpus/check-corpus.mjs",
     "clean-room:check": "node ./scripts/check-clean-room.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -47,7 +48,7 @@
     "test": "turbo run test",
     "test:w2-integration": "corepack pnpm run build && node ./scripts/test-w2-integration.mjs",
     "typecheck": "tsc -b --pretty false && turbo run typecheck",
-    "verify": "corepack pnpm run repo:check && corepack pnpm run commitlint:check && corepack pnpm run format:check && corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run build && corepack pnpm run test && corepack pnpm run schema:check && corepack pnpm run knip && corepack pnpm run api:check && corepack pnpm run pack:check && corepack pnpm run actions:check && corepack pnpm run license:check"
+    "verify": "corepack pnpm run repo:check && corepack pnpm run commitlint:check && corepack pnpm run format:check && corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run build && corepack pnpm run test && corepack pnpm run corpus:check && corepack pnpm run schema:check && corepack pnpm run knip && corepack pnpm run api:check && corepack pnpm run pack:check && corepack pnpm run actions:check && corepack pnpm run license:check && corepack pnpm run sbom:check"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1109.0",

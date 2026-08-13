@@ -57,6 +57,16 @@ export {
   XTEXT_PATTERN,
 } from "./envelope.schema.js";
 export type {
+  HeaderPatchOperationV1,
+  HeaderPatchPlanV1,
+  HeaderPatchReason,
+} from "./header-patch.schema.js";
+export {
+  headerPatchReasons,
+  HeaderPatchOperationV1Schema,
+  HeaderPatchPlanV1Schema,
+} from "./header-patch.schema.js";
+export type {
   AuditId,
   AttemptId,
   BindingId,

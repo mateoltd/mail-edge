@@ -1,0 +1,122 @@
+{
+  "schemaVersion": "v1",
+  "cases": [
+    {
+      "id": "calendar-inline",
+      "file": "calendar-inline-crlf.eml",
+      "sha256": "eb1a122e584761621492fabbc86959d62514b716877f33fecbcb5ee565d94ba1",
+      "size": 585,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["calendar", "content-id", "inline-image", "multipart-related"]
+    },
+    {
+      "id": "delivery-status",
+      "file": "delivery-status-crlf.eml",
+      "sha256": "3e4ba64ec68e7c38db68d555c0900533c1c407441195141a35f590b76b356004",
+      "size": 457,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["delivery-status", "multipart-report"]
+    },
+    {
+      "id": "dkim-arc-threaded",
+      "file": "dkim-arc-threaded-crlf.eml",
+      "sha256": "a080f8411b594ffb7ca8554bfcb0b80d123906b90d9d48af341675367dc291c3",
+      "size": 560,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["arc", "dkim", "in-reply-to", "message-id", "references"]
+    },
+    {
+      "id": "legacy-lf",
+      "file": "lf-only.eml",
+      "sha256": "efe64b1e2ce65ae2d8283cff6c35f4a332bd8861b625ef72fc4310d5ea4c86e1",
+      "size": 158,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["lf-only"]
+    },
+    {
+      "id": "malformed-headers",
+      "file": "malformed-crlf.eml",
+      "sha256": "6f4e4de43b4ebe4d2dea9d55f681940b9866d0707b05c9c6a58678fd9ac1b236",
+      "size": 247,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["invalid-field-name", "missing-colon", "orphan-continuation"]
+    },
+    {
+      "id": "missing-terminal-newline",
+      "file": "missing-terminal-newline-crlf.eml",
+      "sha256": "6cd18dce022b4bc7c4a7e4143b1557a84babb2cd50f8f01f762074437e3f302e",
+      "size": 148,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["missing-terminal-newline"]
+    },
+    {
+      "id": "nested-multipart",
+      "file": "nested-multipart-crlf.eml",
+      "sha256": "130f62310eef93e99d89ad6b1b4e4e9ffc6ff5eb749a3c94d3455fa66ebf9424",
+      "size": 633,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["attachment", "base64", "multipart-alternative", "multipart-mixed"]
+    },
+    {
+      "id": "pgp-mime",
+      "file": "pgp-mime-crlf.eml",
+      "sha256": "de23ac4b7b19adef86e2459b9c298fa72c84f14da4e33772dd76cbda38d5c8a4",
+      "size": 409,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["opaque-body", "pgp-mime"]
+    },
+    {
+      "id": "repeated-folded",
+      "file": "repeated-folded-crlf.eml",
+      "sha256": "0e4fa73f7105abf6a319e12cdae41ef1551c698a7eb2f4499a069bd31eafff82",
+      "size": 498,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["folded", "repeated", "thread-headers"]
+    },
+    {
+      "id": "rfc2231",
+      "file": "rfc2231-crlf.eml",
+      "sha256": "00b0982ea1b659de12206883840c3c4009eafb8fd403b3ce9194f94c417c6626",
+      "size": 462,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["attachment", "folded", "rfc2231"]
+    },
+    {
+      "id": "simple",
+      "file": "simple-crlf.eml",
+      "sha256": "c97474df637310ab90da50d4970bd994c8d780befbeb8204ccd053b5e9bcdaf6",
+      "size": 232,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["text-plain"]
+    },
+    {
+      "id": "smime-opaque",
+      "file": "smime-opaque-crlf.eml",
+      "sha256": "82b9c894d5741b5a3ba8954824cc98e306dc9d91185d19c4bc84909002e49b18",
+      "size": 332,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["opaque-body", "smime"]
+    },
+    {
+      "id": "smtputf8",
+      "file": "smtputf8-crlf.eml",
+      "sha256": "e6d17aa7e068e5fc8297e10ad11e4f58acbfeebf95e4e63ecaaa7cb1b643ec19",
+      "size": 268,
+      "source": "synthetic",
+      "license": "Apache-2.0",
+      "features": ["8bit-body", "encoded-word", "smtputf8"]
+    }
+  ]
+}

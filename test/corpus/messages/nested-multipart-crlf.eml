@@ -1,0 +1,25 @@
+From: Sender <sender@example.test>
+To: Recipient <recipient@example.test>
+Subject: Nested multipart
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer-boundary"
+
+--outer-boundary
+Content-Type: multipart/alternative; boundary="inner-boundary"
+
+--inner-boundary
+Content-Type: text/plain; charset=utf-8
+
+Plain alternative.
+--inner-boundary
+Content-Type: text/html; charset=utf-8
+
+<p>HTML alternative.</p>
+--inner-boundary--
+--outer-boundary
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="small.bin"
+Content-Transfer-Encoding: base64
+
+AAECAwQF
+--outer-boundary--

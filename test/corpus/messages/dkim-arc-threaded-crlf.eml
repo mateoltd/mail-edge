@@ -1,0 +1,11 @@
+ARC-Seal: i=1; a=rsa-sha256; d=example.test; s=test; b=synthetic
+ARC-Message-Signature: i=1; a=rsa-sha256; d=example.test; s=test; b=synthetic
+DKIM-Signature: v=1; a=rsa-sha256; d=example.test; s=test; h=from:to:subject:message-id:references:in-reply-to; bh=synthetic; b=synthetic
+From: Reply Alias <reply@example.test>
+To: Thread <thread@example.test>
+Subject: Re: Thread
+Message-ID: <reply@example.test>
+In-Reply-To: <parent@example.test>
+References: <root@example.test> <parent@example.test>
+
+Thread headers must survive default reverse routing.

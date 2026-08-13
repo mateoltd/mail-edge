@@ -1,0 +1,9 @@
+From: Sender <sender@example.test>
+To: Recipient <recipient@example.test>
+Subject: S/MIME opaque
+MIME-Version: 1.0
+Content-Type: application/pkcs7-mime; smime-type=enveloped-data; name="smime.p7m"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="smime.p7m"
+
+MAsGCSqGSIb3DQEHAaAOBAxzeW50aGV0aWM=

@@ -5,3 +5,4 @@
 *.gif binary
 *.pdf binary
 pnpm-lock.yaml linguist-generated=false
+test/corpus/messages/*.eml -text whitespace=cr-at-eol

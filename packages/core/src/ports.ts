@@ -7,6 +7,7 @@ import type {
   BindingState,
   BlobId,
   DeliveryId,
+  HeaderPatchPlanV1,
   IdempotencyRecordV1,
   IdempotencyKey,
   InboundReceiptState,
@@ -174,6 +175,47 @@ export interface BlobStorePort {
   ): Promise<Result<RawMessageStream, MailEdgeError>>;
 }
 
+/** Byte and digest evidence returned by a streaming header patch implementation. @public */
+export interface HeaderPatchApplicationEvidence {
+  readonly derivedBodyOffset: number | null;
+  readonly derivedSha256: string;
+  readonly derivedSize: number;
+  readonly peakBufferedBytes: number;
+  readonly preservedBodyBytes: number | null;
+  readonly sourceBodyOffset: number | null;
+  readonly sourceSha256: string;
+  readonly sourceSize: number;
+}
+
+/** Public MIME implementation boundary; core does not depend on a MIME parser package. @public */
+export interface HeaderPatchApplierPort {
+  apply(
+    source: RawMessageStream,
+    plan: HeaderPatchPlanV1,
+    sink: BlobStageWriter,
+    signal: AbortSignal,
+  ): Promise<Result<HeaderPatchApplicationEvidence, MailEdgeError>>;
+}
+
+/** Immutable provenance recorded only after the derived blob is available. @public */
+export interface DerivedBlobProvenanceV1 {
+  readonly createdAt: string;
+  readonly derived: RawMessageRefV1;
+  readonly patchPlan: HeaderPatchPlanV1;
+  readonly patchPlanDigest: string;
+  readonly source: RawMessageRefV1;
+  readonly tenantId: TenantId;
+}
+
+/** @public */
+export interface DerivedBlobProvenancePort {
+  record(
+    provenance: DerivedBlobProvenanceV1,
+    context: UnitOfWorkContext,
+    signal: AbortSignal,
+  ): Promise<Result<void, MailEdgeError>>;
+}
+
 /** Queue hints deliberately permit only opaque workflow identifiers. @public */
 export type Wakeup = WorkflowWakeupV1;
 
@@ -240,6 +282,14 @@ export interface ReverseRouteResolver {
     input: ReverseRouteRequestV1,
     signal: AbortSignal,
   ): Promise<Result<ReverseRouteResolutionV1, MailEdgeError>>;
+}
+
+/** @public */
+export interface HeaderPatchPlanner {
+  compile(
+    resolution: ReverseRouteResolutionV1,
+    source: RawMessageRefV1,
+  ): Result<HeaderPatchPlanV1, MailEdgeError>;
 }
 
 /** @public */

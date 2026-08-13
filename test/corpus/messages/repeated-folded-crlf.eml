@@ -1,0 +1,15 @@
+Received: from first.example.test
+	by edge.example.test; Thu, 13 Aug 2026 12:00:00 +0000
+Received: from second.example.test
+	by edge.example.test; Thu, 13 Aug 2026 11:59:59 +0000
+From: First <first@example.test>
+From: Duplicate <duplicate@example.test>
+To: Recipient <recipient@example.test>
+Subject: folded
+	value
+Message-ID: <folded@example.test>
+References: <root@example.test>
+	<parent@example.test>
+In-Reply-To: <parent@example.test>
+
+Repeated and folded headers stay physical.
