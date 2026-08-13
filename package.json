@@ -57,7 +57,7 @@
     "@microsoft/api-extractor": "7.58.12",
     "@types/node": "24.13.3",
     "dependency-cruiser": "18.2.0",
-    "eslint": "9.39.5",
+    "eslint": "10.8.1",
     "eslint-import-resolver-typescript": "3.8.7",
     "eslint-plugin-boundaries": "7.2.0",
     "globals": "17.9.0",
