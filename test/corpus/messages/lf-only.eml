@@ -1,0 +1,6 @@
+From: Sender <sender@example.test>
+To: Recipient <recipient@example.test>
+Subject: LF only
+Content-Type: text/plain
+
+Legacy line endings are explicit policy.

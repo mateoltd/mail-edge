@@ -1,0 +1,5 @@
+From: Sender <sender@example.test>
+To: Recipient <recipient@example.test>
+Subject: Missing terminal newline
+
+The body ends without a line break.

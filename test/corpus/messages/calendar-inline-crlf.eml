@@ -1,0 +1,25 @@
+From: Sender <sender@example.test>
+To: Recipient <recipient@example.test>
+Subject: Calendar
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="calendar"
+
+--calendar
+Content-Type: text/html; charset=utf-8
+
+<p>Meeting <img src="cid:invite-image"></p>
+--calendar
+Content-Type: image/png
+Content-ID: <invite-image>
+Content-Disposition: inline; filename="pixel.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--calendar
+Content-Type: text/calendar; method=REQUEST; charset=utf-8
+
+BEGIN:VCALENDAR
+VERSION:2.0
+METHOD:REQUEST
+END:VCALENDAR
+--calendar--

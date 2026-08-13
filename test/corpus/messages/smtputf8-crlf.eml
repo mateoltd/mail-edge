@@ -1,0 +1,8 @@
+From: Álvaro <álvaro@example.test>
+To: 测试 <测试@example.test>
+Subject: =?UTF-8?B?5rWL6K+VIOmCruS7tg==?=
+Message-ID: <utf8@example.test>
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Ocho bits: café, 日本語, emoji ✉️.

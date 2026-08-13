@@ -35,13 +35,18 @@ const expressions = Array.isArray(inventory)
 const identifiers = (expression) =>
   expression
     .replaceAll(/[()]/gu, " ")
-    .split(/\s+(?:AND|OR|WITH)\s+/u)
+    .split(/\s+(?:AND|WITH)\s+/u)
     .map((value) => value.trim())
     .filter(Boolean);
 
-const rejected = expressions.filter((expression) =>
-  identifiers(expression).some((identifier) => !allowedLicenses.has(identifier)),
-);
+const hasAllowedAlternative = (expression) =>
+  expression
+    .split(/\s+OR\s+/u)
+    .some((alternative) =>
+      identifiers(alternative).every((identifier) => allowedLicenses.has(identifier)),
+    );
+
+const rejected = expressions.filter((expression) => !hasAllowedAlternative(expression));
 
 if (rejected.length > 0) {
   console.error(`Unapproved dependency license expressions:\n${rejected.sort().join("\n")}`);
