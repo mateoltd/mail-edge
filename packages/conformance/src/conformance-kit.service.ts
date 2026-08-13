@@ -8,6 +8,7 @@ import {
   StrictBoundedBodyCollector,
   conformanceCheckDigest,
   evaluateReconciliationEvidence,
+  inspectBindingPlan,
   inspectProviderCapabilityDescriptor,
   requiredConformanceChecks,
   sha256CanonicalJson,
@@ -38,6 +39,12 @@ import {
   createProviderConformanceFixtures,
   type ProviderConformanceFixtures,
 } from "./conformance-fixtures.adapter.js";
+import {
+  DEFAULT_PROVIDER_CONFORMANCE_RUN_BUDGET_MILLISECONDS,
+  createProviderConformanceTimeWindow,
+  timestampWithinConformanceWindow,
+  type ProviderConformanceTimeWindow,
+} from "./conformance-time.js";
 
 /** @public */
 export const PROVIDER_CONFORMANCE_SUITE_VERSION = "1.0.0";
@@ -52,9 +59,18 @@ export type FeedbackConformanceScenario = "malformed" | "duplicates" | "adversar
 /** @public */
 export type ReconciliationConformanceScenario = "accepted" | "not_sent" | "unknown";
 
+/** Finite execution context supplied to every adapter-owned conformance callback. @public */
+export interface ProviderConformanceCallbackContext {
+  readonly deadline: string;
+  readonly signal: AbortSignal;
+}
+
 /** Adapter-supplied protocol fixtures used by the provider-neutral executable harness. @public */
 export interface ProviderConformanceDriver {
-  createInboundRequest?(fixtures: ProviderConformanceFixtures): Promise<{
+  createInboundRequest?(
+    fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
+  ): Promise<{
     readonly request: OneShotProviderHttpRequest;
     readonly context?: ProviderHttpIngressContext;
     readonly services?: InboundIngestionServices;
@@ -62,16 +78,29 @@ export interface ProviderConformanceDriver {
   prepareDispatchScenario?(
     scenario: DispatchConformanceScenario,
     fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
   ): Promise<void> | void;
   createFeedbackRequest?(
     scenario: FeedbackConformanceScenario,
     fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
   ): Promise<OneShotProviderHttpRequest>;
   prepareReconciliationScenario?(
     scenario: ReconciliationConformanceScenario,
     fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
   ): Promise<void> | void;
-  controlStateDigest?(): Promise<string> | string;
+  controlStateDigest?(context: ProviderConformanceCallbackContext): Promise<string> | string;
+}
+
+/** Non-secret environment dimensions accepted by signed conformance evidence. @public */
+export type ProviderConformanceEnvironmentKey =
+  "accountTier" | "deployment" | "runtime" | "transport";
+
+/** Explicit authorization marker for real control-plane mutation probes. @public */
+export interface ProviderConformanceMutationTarget {
+  readonly protected: true;
+  readonly scope: "qualification" | "sandbox";
 }
 
 /** Complete target exported by a third-party adapter qualification module. @public */
@@ -79,12 +108,14 @@ export interface ProviderConformanceTarget {
   readonly registration: ProviderAdapterRegistration;
   readonly driver: ProviderConformanceDriver;
   readonly region: string;
-  readonly environment: Readonly<Record<string, string>>;
+  readonly environment: Readonly<Partial<Record<ProviderConformanceEnvironmentKey, string>>>;
+  readonly mutationTarget?: ProviderConformanceMutationTarget;
 }
 
 /** @public */
 export interface ProviderConformanceRunOptions {
   readonly observedAt: string;
+  readonly runBudgetMilliseconds?: number;
 }
 
 /** @public */
@@ -193,6 +224,122 @@ const contextForDispatch = (
 const asFailureCode = (cause: unknown): string =>
   cause instanceof MailEdgeError ? cause.code.toLowerCase() : "probe_threw";
 
+const environmentKeys = Object.freeze([
+  "accountTier",
+  "deployment",
+  "runtime",
+  "transport",
+] as const satisfies readonly ProviderConformanceEnvironmentKey[]);
+
+const conformanceFailure = (
+  reason: string,
+  cause?: unknown,
+  code: "INTERNAL" | "VALIDATION_FAILED" = "INTERNAL",
+): MailEdgeError =>
+  new MailEdgeError({
+    ...(cause === undefined ? {} : { cause }),
+    code,
+    deliveryCertainty: "not_sent",
+    message: "Provider conformance execution failed.",
+    retryable: code === "INTERNAL",
+    safeDetails: { reason },
+  });
+
+const normalizeEnvironment = (
+  environment: ProviderConformanceTarget["environment"],
+): Result<Readonly<Record<string, string>>, MailEdgeErrorType> => {
+  const entries = Object.entries(environment);
+  if (entries.length > environmentKeys.length) {
+    return {
+      error: conformanceFailure("environment_key_not_allowlisted", undefined, "VALIDATION_FAILED"),
+      ok: false,
+    };
+  }
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of entries.toSorted(([left], [right]) => left.localeCompare(right))) {
+    if (!environmentKeys.some((allowed) => allowed === key)) {
+      return {
+        error: conformanceFailure(
+          "environment_key_not_allowlisted",
+          undefined,
+          "VALIDATION_FAILED",
+        ),
+        ok: false,
+      };
+    }
+    if (typeof value !== "string" || value.length < 1 || value.length > 1_024) {
+      return {
+        error: conformanceFailure("environment_value_invalid", undefined, "VALIDATION_FAILED"),
+        ok: false,
+      };
+    }
+    normalized[key] = sha256CanonicalJson({
+      domain: "mail-edge/provider-conformance/environment/v1",
+      key,
+      value,
+    });
+  }
+  return { ok: true, value: Object.freeze(normalized) };
+};
+
+const validControlStateDigest = (value: string | undefined): value is string =>
+  value !== undefined && /^[0-9a-f]{64}$/u.test(value);
+
+const isProtectedMutationTarget = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  "protected" in value &&
+  value.protected === true &&
+  "scope" in value &&
+  (value.scope === "qualification" || value.scope === "sandbox");
+
+const fixtureTimeWindow = (
+  fixtures: ProviderConformanceFixtures,
+): Pick<ProviderConformanceTimeWindow, "observedAt" | "probeDeadline"> =>
+  Object.freeze({ observedAt: fixtures.observedAt, probeDeadline: fixtures.deadline });
+
+const awaitWithSignal = async <Value>(
+  operation: Promise<Value>,
+  signal: AbortSignal,
+): Promise<Value> => {
+  if (signal.aborted) throw signal.reason;
+  let rejectCancellation: ((reason: unknown) => void) | undefined;
+  const canceled = new Promise<never>((_resolve, reject) => {
+    rejectCancellation = reject;
+  });
+  const cancel = (): void => rejectCancellation?.(signal.reason);
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, canceled]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+};
+
+class ProviderConformanceRunOwner {
+  readonly #budgetSignal: AbortSignal;
+  readonly #context: ProviderConformanceCallbackContext;
+  readonly signal: AbortSignal;
+
+  constructor(callerSignal: AbortSignal, timing: ProviderConformanceTimeWindow, budget: number) {
+    this.#budgetSignal = AbortSignal.timeout(budget);
+    this.signal = AbortSignal.any([callerSignal, this.#budgetSignal]);
+    this.#context = Object.freeze({ deadline: timing.probeDeadline, signal: this.signal });
+  }
+
+  get budgetExceeded(): boolean {
+    return this.#budgetSignal.aborted;
+  }
+
+  callback<Value>(operation: () => Promise<Value> | Value): Promise<Value> {
+    return awaitWithSignal(Promise.resolve().then(operation), this.signal);
+  }
+
+  context(): ProviderConformanceCallbackContext {
+    return this.#context;
+  }
+}
+
 /**
  * Executes static, lifecycle, streaming, dispatch-boundary, feedback, control, and reconciliation
  * probes and emits a deterministic unsigned report suitable for detached signing.
@@ -210,6 +357,23 @@ export class ProviderConformanceKit {
     options: ProviderConformanceRunOptions,
     signal: AbortSignal,
   ): Promise<Result<ProviderConformanceRun, MailEdgeErrorType>> {
+    const runBudgetMilliseconds =
+      options.runBudgetMilliseconds ?? DEFAULT_PROVIDER_CONFORMANCE_RUN_BUDGET_MILLISECONDS;
+    const timing = createProviderConformanceTimeWindow(
+      options.observedAt,
+      this.#target.registration.descriptor.maturity,
+      runBudgetMilliseconds,
+    );
+    if (!timing.ok) return timing;
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u.test(this.#target.region)) {
+      return {
+        error: conformanceFailure("region_invalid", undefined, "VALIDATION_FAILED"),
+        ok: false,
+      };
+    }
+    const environment = normalizeEnvironment(this.#target.environment);
+    if (!environment.ok) return environment;
+    const runOwner = new ProviderConformanceRunOwner(signal, timing.value, runBudgetMilliseconds);
     const checks: ConformanceCheckResultV1[] = [];
     const descriptor = this.#target.registration.descriptor;
     const inspection = inspectProviderCapabilityDescriptor(descriptor);
@@ -228,71 +392,91 @@ export class ProviderConformanceKit {
       checks.push(pass("identity.registration", "identity", "exact_identity_registered"));
     } catch (cause) {
       checks.push(fail("identity.registration", "identity", asFailureCode(cause)));
-      return { ok: true, value: this.#finish(options.observedAt, checks, undefined) };
+      return {
+        ok: true,
+        value: this.#finish(timing.value, environment.value, checks, undefined),
+      };
     }
 
-    const started = await registry.start(signal);
+    const started = await registry.start(runOwner.signal);
     if (!started.ok) {
       checks.push(fail("lifecycle.start_close", "lifecycle", started.error.code.toLowerCase()));
-      return { ok: true, value: this.#finish(options.observedAt, checks, undefined) };
+      return {
+        ok: true,
+        value: this.#finish(timing.value, environment.value, checks, undefined),
+      };
     }
 
     const fixtures = createProviderConformanceFixtures(
       this.#target.registration.identity,
-      options.observedAt,
+      timing.value,
     );
+    let probeFailure: unknown;
     try {
       if (descriptor.inbound.supported) {
-        checks.push(...(await this.#runInbound(fixtures, signal)));
+        checks.push(...(await this.#runInbound(fixtures, runOwner)));
       }
       if (descriptor.outbound.supported) {
-        checks.push(...(await this.#runOutbound(fixtures, signal)));
+        checks.push(...(await this.#runOutbound(fixtures, runOwner)));
       }
       if (descriptor.feedback.supported) {
-        checks.push(...(await this.#runFeedback(fixtures, signal)));
+        checks.push(...(await this.#runFeedback(fixtures, runOwner)));
       }
       if (descriptor.controlPlane.supported) {
-        checks.push(...(await this.#runControl(fixtures, signal)));
+        checks.push(...(await this.#runControl(fixtures, runOwner)));
       }
       if (descriptor.outbound.reconciliation.supported) {
-        checks.push(...(await this.#runReconciliation(fixtures, signal)));
+        checks.push(...(await this.#runReconciliation(fixtures, runOwner)));
       }
     } catch (cause) {
+      probeFailure = cause;
+    } finally {
+      try {
+        const closed = await registry.close(runOwner.signal);
+        checks.push(
+          closed.ok
+            ? pass("lifecycle.start_close", "lifecycle", "reverse_close_complete")
+            : fail("lifecycle.start_close", "lifecycle", closed.error.code.toLowerCase()),
+        );
+      } catch (cause) {
+        probeFailure ??= cause;
+      }
+    }
+    if (probeFailure !== undefined) {
       return {
-        error: new MailEdgeError({
-          cause,
-          code: "INTERNAL",
-          deliveryCertainty: "not_sent",
-          message: "Provider conformance harness failed unexpectedly.",
-          retryable: false,
-          safeDetails: { reason: "harness_failure" },
-        }),
+        error: conformanceFailure(
+          runOwner.budgetExceeded ? "run_budget_exceeded" : "harness_failure",
+          probeFailure,
+        ),
         ok: false,
       };
-    } finally {
-      const closed = await registry.close(signal);
-      checks.push(
-        closed.ok
-          ? pass("lifecycle.start_close", "lifecycle", "reverse_close_complete")
-          : fail("lifecycle.start_close", "lifecycle", closed.error.code.toLowerCase()),
-      );
     }
-    return { ok: true, value: this.#finish(options.observedAt, checks, fixtures) };
+    return {
+      ok: true,
+      value: this.#finish(timing.value, environment.value, checks, fixtures),
+    };
   }
 
   async #runInbound(
     fixtures: ProviderConformanceFixtures,
-    signal: AbortSignal,
+    runOwner: ProviderConformanceRunOwner,
   ): Promise<readonly ConformanceCheckResultV1[]> {
     const inbound = this.#target.registration.inbound;
     if (inbound === undefined || this.#target.driver.createInboundRequest === undefined)
       return Object.freeze([]);
-    const supplied = await this.#target.driver.createInboundRequest(fixtures);
+    const supplied = await runOwner.callback(() =>
+      this.#target.driver.createInboundRequest?.(fixtures, runOwner.context()),
+    );
+    if (supplied === undefined) return Object.freeze([]);
     const stage = new FixtureBlobStagePort();
     const result = await new ProviderInboundIngressService(
       inbound,
       supplied.services ?? createFixtureInboundServices(fixtures, stage),
-    ).execute(supplied.request, supplied.context ?? createFixtureIngressContext(fixtures), signal);
+    ).execute(
+      supplied.request,
+      supplied.context ?? createFixtureIngressContext(fixtures),
+      runOwner.signal,
+    );
     let secondReadRejected = false;
     try {
       supplied.request.body[Symbol.asyncIterator]();
@@ -309,7 +493,11 @@ export class ProviderConformanceKit {
       contentLength: 2,
       chunkBytes: 1,
     });
-    const limited = await new StrictBoundedBodyCollector(2).collectSmallBody(overLimit, 2, signal);
+    const limited = await new StrictBoundedBodyCollector(2).collectSmallBody(
+      overLimit,
+      2,
+      runOwner.signal,
+    );
     checks.push(
       !limited.ok &&
         limited.error.code === "INGRESS_LIMIT_EXCEEDED" &&
@@ -322,20 +510,22 @@ export class ProviderConformanceKit {
 
   async #runOutbound(
     fixtures: ProviderConformanceFixtures,
-    signal: AbortSignal,
+    runOwner: ProviderConformanceRunOwner,
   ): Promise<readonly ConformanceCheckResultV1[]> {
     const outbound = this.#target.registration.outbound;
     if (outbound === undefined || this.#target.driver.prepareDispatchScenario === undefined)
       return Object.freeze([]);
     const checks: ConformanceCheckResultV1[] = [];
     const run = async (scenario: DispatchConformanceScenario) => {
-      await this.#target.driver.prepareDispatchScenario?.(scenario, fixtures);
+      await runOwner.callback(() =>
+        this.#target.driver.prepareDispatchScenario?.(scenario, fixtures, runOwner.context()),
+      );
       const sink = new CountingInstrumentationSink();
       const context = contextForDispatch(this.#target, fixtures, sink);
       const execution = await new ProviderDispatchService(outbound).execute(
         fixtures.submission,
         context,
-        signal,
+        runOwner.signal,
       );
       return { execution, sink };
     };
@@ -373,18 +563,20 @@ export class ProviderConformanceKit {
 
   async #runFeedback(
     fixtures: ProviderConformanceFixtures,
-    signal: AbortSignal,
+    runOwner: ProviderConformanceRunOwner,
   ): Promise<readonly ConformanceCheckResultV1[]> {
     const adapter = this.#target.registration.feedback;
     if (adapter === undefined || this.#target.driver.createFeedbackRequest === undefined)
       return Object.freeze([]);
     const run = async (scenario: FeedbackConformanceScenario) => {
-      const request = await this.#target.driver.createFeedbackRequest?.(scenario, fixtures);
+      const request = await runOwner.callback(() =>
+        this.#target.driver.createFeedbackRequest?.(scenario, fixtures, runOwner.context()),
+      );
       if (request === undefined) throw new Error("Feedback conformance driver disappeared.");
       return new ProviderFeedbackIngressService(adapter, new StrictBoundedBodyCollector()).execute(
         request,
         createFixtureIngressContext(fixtures),
-        signal,
+        runOwner.signal,
       );
     };
     const malformed = await run("malformed");
@@ -421,7 +613,7 @@ export class ProviderConformanceKit {
 
   async #runControl(
     fixtures: ProviderConformanceFixtures,
-    signal: AbortSignal,
+    runOwner: ProviderConformanceRunOwner,
   ): Promise<readonly ConformanceCheckResultV1[]> {
     const control = this.#target.registration.controlPlane;
     if (control === undefined) return Object.freeze([]);
@@ -434,58 +626,161 @@ export class ProviderConformanceKit {
       schemaVersion: "v1",
       tenantId: fixtures.tenantId,
     });
-    const before = await this.#target.driver.controlStateDigest?.();
-    const first = await control.planBinding(desired, signal);
-    const second = await control.planBinding(desired, signal);
-    const afterPlan = await this.#target.driver.controlStateDigest?.();
+    const desiredDigest = sha256CanonicalJson(desired as unknown as CanonicalJsonValue);
+    const before = await runOwner.callback(() =>
+      this.#target.driver.controlStateDigest?.(runOwner.context()),
+    );
+    const first = await control.planBinding(desired, runOwner.signal);
+    const second = await control.planBinding(desired, runOwner.signal);
+    const afterPlan = await runOwner.callback(() =>
+      this.#target.driver.controlStateDigest?.(runOwner.context()),
+    );
+    const firstInspection = first.ok
+      ? inspectBindingPlan(
+          first.value,
+          this.#target.registration.identity,
+          desiredDigest,
+          fixtures.observedAt,
+        )
+      : undefined;
+    const secondInspection = second.ok
+      ? inspectBindingPlan(
+          second.value,
+          this.#target.registration.identity,
+          desiredDigest,
+          fixtures.observedAt,
+        )
+      : undefined;
     const deterministic =
       first.ok &&
       second.ok &&
+      firstInspection?.valid === true &&
+      secondInspection?.valid === true &&
       sha256CanonicalJson(first.value as unknown as CanonicalJsonValue) ===
         sha256CanonicalJson(second.value as unknown as CanonicalJsonValue);
+    const planningVerified =
+      deterministic && validControlStateDigest(before) && before === afterPlan;
     const checks = [
-      deterministic && (before === undefined || before === afterPlan)
+      planningVerified
         ? pass("control.plan_deterministic", "control", "pure_plan")
-        : fail("control.plan_deterministic", "control", "plan_nondeterministic_or_mutating"),
+        : fail(
+            "control.plan_deterministic",
+            "control",
+            !validControlStateDigest(before) || !validControlStateDigest(afterPlan)
+              ? "control_state_digest_unavailable"
+              : (firstInspection?.issues[0] ??
+                  secondInspection?.issues[0] ??
+                  "plan_nondeterministic_or_mutating"),
+          ),
     ];
-    if (!first.ok) {
+    if (
+      !first.ok ||
+      !second.ok ||
+      firstInspection?.valid !== true ||
+      secondInspection?.valid !== true ||
+      !planningVerified
+    ) {
+      const evidenceCode =
+        !validControlStateDigest(before) || !validControlStateDigest(afterPlan)
+          ? "control_state_digest_unavailable"
+          : "validated_plan_unavailable";
       checks.push(
-        fail("control.discovery_read_only", "control", "plan_unavailable"),
-        fail("control.explicit_mutation", "control", "plan_unavailable"),
+        fail("control.discovery_read_only", "control", evidenceCode),
+        fail("control.explicit_mutation", "control", evidenceCode),
       );
       return Object.freeze(checks);
     }
-    const beforeDiscover = await this.#target.driver.controlStateDigest?.();
-    const discovered = await control.discoverBinding(fixtures.binding, signal);
-    const afterDiscover = await this.#target.driver.controlStateDigest?.();
-    checks.push(
-      discovered.ok && (beforeDiscover === undefined || beforeDiscover === afterDiscover)
-        ? pass("control.discovery_read_only", "control", "discovery_read_only")
-        : fail("control.discovery_read_only", "control", "discovery_mutated"),
+    const beforeDiscover = await runOwner.callback(() =>
+      this.#target.driver.controlStateDigest?.(runOwner.context()),
     );
-    const beforeApply = await this.#target.driver.controlStateDigest?.();
+    const discovered = await control.discoverBinding(fixtures.binding, runOwner.signal);
+    const afterDiscover = await runOwner.callback(() =>
+      this.#target.driver.controlStateDigest?.(runOwner.context()),
+    );
+    const discoveryVerified =
+      discovered.ok &&
+      validControlStateDigest(beforeDiscover) &&
+      beforeDiscover === afterDiscover &&
+      timestampWithinConformanceWindow(discovered.value.discoveredAt, fixtureTimeWindow(fixtures));
+    checks.push(
+      discoveryVerified
+        ? pass("control.discovery_read_only", "control", "discovery_read_only")
+        : fail(
+            "control.discovery_read_only",
+            "control",
+            !validControlStateDigest(beforeDiscover) || !validControlStateDigest(afterDiscover)
+              ? "control_state_digest_unavailable"
+              : discovered.ok &&
+                  !timestampWithinConformanceWindow(
+                    discovered.value.discoveredAt,
+                    fixtureTimeWindow(fixtures),
+                  )
+                ? "discovery_time_invalid"
+                : "discovery_mutated",
+          ),
+    );
+    if (!isProtectedMutationTarget(this.#target.mutationTarget)) {
+      checks.push(
+        fail("control.explicit_mutation", "control", "protected_mutation_target_required"),
+      );
+      return Object.freeze(checks);
+    }
+    if (!discoveryVerified) {
+      checks.push(
+        fail("control.explicit_mutation", "control", "verified_read_only_precondition_required"),
+      );
+      return Object.freeze(checks);
+    }
+    const beforeApply = await runOwner.callback(() =>
+      this.#target.driver.controlStateDigest?.(runOwner.context()),
+    );
+    if (!validControlStateDigest(beforeApply)) {
+      checks.push(fail("control.explicit_mutation", "control", "control_state_digest_unavailable"));
+      return Object.freeze(checks);
+    }
     const applied = await control.applyBindingPlan(
       first.value,
       Object.freeze({
         actorIdHash: "2".repeat(64),
-        deadline: new Date(Date.parse(fixtures.observedAt) + 60_000).toISOString(),
+        deadline: fixtures.deadline,
         operationId: "conformance-apply",
         reasonCode: "provider_conformance",
       }),
-      signal,
+      runOwner.signal,
     );
-    const afterApply = await this.#target.driver.controlStateDigest?.();
+    const afterApply = await runOwner.callback(() =>
+      this.#target.driver.controlStateDigest?.(runOwner.context()),
+    );
     checks.push(
-      applied.ok && (beforeApply === undefined || beforeApply !== afterApply)
+      applied.ok &&
+        validControlStateDigest(beforeApply) &&
+        validControlStateDigest(afterApply) &&
+        beforeApply !== afterApply &&
+        applied.value.planDigest === firstInspection.planDigest &&
+        timestampWithinConformanceWindow(applied.value.appliedAt, fixtureTimeWindow(fixtures))
         ? pass("control.explicit_mutation", "control", "authorized_apply_only")
-        : fail("control.explicit_mutation", "control", "apply_not_observable"),
+        : fail(
+            "control.explicit_mutation",
+            "control",
+            !validControlStateDigest(beforeApply) || !validControlStateDigest(afterApply)
+              ? "control_state_digest_unavailable"
+              : applied.ok && applied.value.planDigest !== firstInspection.planDigest
+                ? "applied_plan_digest_mismatch"
+                : applied.ok &&
+                    !timestampWithinConformanceWindow(
+                      applied.value.appliedAt,
+                      fixtureTimeWindow(fixtures),
+                    )
+                  ? "apply_time_invalid"
+                  : "apply_not_observable",
+          ),
     );
     return Object.freeze(checks);
   }
 
   async #runReconciliation(
     fixtures: ProviderConformanceFixtures,
-    signal: AbortSignal,
+    runOwner: ProviderConformanceRunOwner,
   ): Promise<readonly ConformanceCheckResultV1[]> {
     const outbound = this.#target.registration.outbound;
     if (
@@ -499,15 +794,21 @@ export class ProviderConformanceKit {
       schemaVersion: "v1",
       window: Object.freeze({
         from: fixtures.observedAt,
-        to: new Date(Date.parse(fixtures.observedAt) + 60_000).toISOString(),
+        to: fixtures.deadline,
       }),
     });
     const run = async (scenario: ReconciliationConformanceScenario) => {
-      await this.#target.driver.prepareReconciliationScenario?.(scenario, fixtures);
-      const result = await outbound.reconcile?.(query, signal);
-      return result?.ok
-        ? evaluateReconciliationEvidence(result.value, outbound.descriptor)
-        : undefined;
+      await runOwner.callback(() =>
+        this.#target.driver.prepareReconciliationScenario?.(scenario, fixtures, runOwner.context()),
+      );
+      const result = await outbound.reconcile?.(query, runOwner.signal);
+      if (
+        result?.ok !== true ||
+        !timestampWithinConformanceWindow(result.value.observedAt, fixtureTimeWindow(fixtures))
+      ) {
+        return undefined;
+      }
+      return evaluateReconciliationEvidence(result.value, outbound.descriptor);
     };
     const accepted = await run("accepted");
     const notSent = await run("not_sent");
@@ -527,7 +828,8 @@ export class ProviderConformanceKit {
   }
 
   #finish(
-    observedAt: string,
+    timing: ProviderConformanceTimeWindow,
+    environment: Readonly<Record<string, string>>,
     checks: readonly ConformanceCheckResultV1[],
     fixtures: ProviderConformanceFixtures | undefined,
   ): ProviderConformanceRun {
@@ -535,30 +837,20 @@ export class ProviderConformanceKit {
     const allChecks = [...checks, ...skippedRequiredChecks(required, checks)].toSorted(
       (left, right) => left.checkId.localeCompare(right.checkId),
     );
-    const expiresAt = new Date(
-      Date.parse(observedAt) +
-        (this.#target.registration.descriptor.maturity === "stable" ? 30 : 7) * 86_400_000,
-    ).toISOString();
     const report: ProviderConformanceReportV1 = Object.freeze({
       adapterVersion: this.#target.registration.identity.adapterVersion,
       checks: Object.freeze(allChecks),
       descriptorDigest: sha256CanonicalJson(this.#target.registration.descriptor),
-      environment: Object.freeze(
-        Object.fromEntries(
-          Object.entries(this.#target.environment).toSorted(([left], [right]) =>
-            left.localeCompare(right),
-          ),
-        ),
-      ),
-      expiresAt,
+      environment,
+      expiresAt: timing.reportExpiresAt,
       fixtureSetDigest:
         fixtures?.fixtureSetDigest ??
         sha256CanonicalJson({
           identity: this.#target.registration.identity as unknown as CanonicalJsonValue,
-          observedAt,
+          observedAt: timing.observedAt,
         }),
       mode: this.#target.registration.identity.mode,
-      observedAt,
+      observedAt: timing.observedAt,
       providerId: this.#target.registration.identity.providerId,
       region: this.#target.region,
       schemaVersion: "v1",

@@ -67,7 +67,10 @@ export {
 export type {
   DispatchConformanceScenario,
   FeedbackConformanceScenario,
+  ProviderConformanceCallbackContext,
+  ProviderConformanceEnvironmentKey,
   ProviderConformanceDriver,
+  ProviderConformanceMutationTarget,
   ProviderConformanceRun,
   ProviderConformanceRunOptions,
   ProviderConformanceTarget,
@@ -91,6 +94,12 @@ export {
   createFixtureIngressContext,
   createProviderConformanceFixtures,
 } from "./conformance-fixtures.adapter.js";
+export type { ProviderConformanceTimeWindow } from "./conformance-time.js";
+export {
+  DEFAULT_PROVIDER_CONFORMANCE_RUN_BUDGET_MILLISECONDS,
+  MAX_PROVIDER_CONFORMANCE_RUN_BUDGET_MILLISECONDS,
+  createProviderConformanceTimeWindow,
+} from "./conformance-time.js";
 export type { SignedProviderConformanceRun } from "./signed-conformance.service.js";
 export {
   runAndSignProviderConformance,
