@@ -1,0 +1,49 @@
+{
+  "$id": "urn:mail-edge:schema:v1:application-delivery",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "binding": {
+      "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+    },
+    "deliveryId": {
+      "$ref": "urn:mail-edge:schema:v1:delivery-id"
+    },
+    "envelope": {
+      "$ref": "urn:mail-edge:schema:v1:smtp-envelope"
+    },
+    "occurredAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "raw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    },
+    "receiptId": {
+      "$ref": "urn:mail-edge:schema:v1:receipt-id"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "deliveryId",
+    "receiptId",
+    "tenantId",
+    "envelope",
+    "raw",
+    "binding",
+    "attempt",
+    "occurredAt"
+  ],
+  "type": "object"
+}

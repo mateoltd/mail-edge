@@ -1,0 +1,83 @@
+{
+  "$id": "urn:mail-edge:schema:v1:audit-event",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "maxLength": 96,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_.-]*$",
+      "type": "string"
+    },
+    "actorIdHash": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "actorType": {
+      "anyOf": [
+        {
+          "const": "system",
+          "type": "string"
+        },
+        {
+          "const": "operator",
+          "type": "string"
+        },
+        {
+          "const": "application",
+          "type": "string"
+        }
+      ]
+    },
+    "afterDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "auditId": {
+      "$ref": "urn:mail-edge:schema:v1:audit-id"
+    },
+    "beforeDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "metadata": {
+      "$ref": "urn:mail-edge:schema:v1:normalized-evidence"
+    },
+    "occurredAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "reasonCode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "targetId": {
+      "maxLength": 36,
+      "minLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "targetType": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "type": "string"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "auditId",
+    "actorType",
+    "actorIdHash",
+    "action",
+    "targetType",
+    "metadata",
+    "occurredAt"
+  ],
+  "type": "object"
+}

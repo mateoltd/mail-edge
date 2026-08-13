@@ -1,0 +1,56 @@
+{
+  "$id": "urn:mail-edge:schema:v1:capability-evidence",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "environment": {
+      "$ref": "urn:mail-edge:schema:v1:bounded-string-map"
+    },
+    "observedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "reportDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "const": "official_doc",
+          "type": "string"
+        },
+        {
+          "const": "maintained_source",
+          "type": "string"
+        },
+        {
+          "const": "live_conformance",
+          "type": "string"
+        }
+      ]
+    },
+    "sourceRevision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "sourceUri": {
+      "format": "uri",
+      "maxLength": 512,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "source",
+    "sourceUri",
+    "observedAt",
+    "reportDigest",
+    "environment"
+  ],
+  "type": "object"
+}

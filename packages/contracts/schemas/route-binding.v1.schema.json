@@ -1,0 +1,121 @@
+{
+  "$id": "urn:mail-edge:schema:v1:route-binding",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapterVersion": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "bindingId": {
+      "$ref": "urn:mail-edge:schema:v1:binding-id"
+    },
+    "bindingVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "capabilityDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "configRevision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "createdAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "direction": {
+      "anyOf": [
+        {
+          "const": "inbound",
+          "type": "string"
+        },
+        {
+          "const": "outbound",
+          "type": "string"
+        }
+      ]
+    },
+    "domainALabel": {
+      "$ref": "urn:mail-edge:schema:v1:domain-a-label"
+    },
+    "fallbackEligible": {
+      "type": "boolean"
+    },
+    "optimisticVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "providerId": {
+      "$ref": "urn:mail-edge:schema:v1:provider-id"
+    },
+    "providerInstanceId": {
+      "$ref": "urn:mail-edge:schema:v1:provider-instance-id"
+    },
+    "providerResourceIds": {
+      "$ref": "urn:mail-edge:schema:v1:bounded-string-map"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "draft",
+          "type": "string"
+        },
+        {
+          "const": "testing",
+          "type": "string"
+        },
+        {
+          "const": "active",
+          "type": "string"
+        },
+        {
+          "const": "draining",
+          "type": "string"
+        },
+        {
+          "const": "retired",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "type": "string"
+        }
+      ]
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    },
+    "updatedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "bindingId",
+    "bindingVersion",
+    "tenantId",
+    "domainALabel",
+    "direction",
+    "providerId",
+    "adapterVersion",
+    "providerInstanceId",
+    "providerResourceIds",
+    "capabilityDigest",
+    "configRevision",
+    "createdAt",
+    "state",
+    "optimisticVersion",
+    "fallbackEligible",
+    "updatedAt"
+  ],
+  "type": "object"
+}

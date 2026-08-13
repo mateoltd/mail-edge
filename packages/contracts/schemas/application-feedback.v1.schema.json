@@ -1,0 +1,84 @@
+{
+  "$id": "urn:mail-edge:schema:v1:application-feedback",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "$ref": "urn:mail-edge:schema:v1:attempt-id"
+    },
+    "feedbackEventId": {
+      "$ref": "urn:mail-edge:schema:v1:feedback-event-id"
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "const": "accepted",
+          "type": "string"
+        },
+        {
+          "const": "delivered",
+          "type": "string"
+        },
+        {
+          "const": "deferred",
+          "type": "string"
+        },
+        {
+          "const": "bounced",
+          "type": "string"
+        },
+        {
+          "const": "complained",
+          "type": "string"
+        },
+        {
+          "const": "suppressed",
+          "type": "string"
+        },
+        {
+          "const": "opened",
+          "type": "string"
+        },
+        {
+          "const": "clicked",
+          "type": "string"
+        },
+        {
+          "const": "unsubscribed",
+          "type": "string"
+        }
+      ]
+    },
+    "normalizedEvidence": {
+      "$ref": "urn:mail-edge:schema:v1:normalized-evidence"
+    },
+    "occurredAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "recipient": {
+      "maxLength": 512,
+      "minLength": 3,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "feedbackEventId",
+    "tenantId",
+    "intentId",
+    "kind",
+    "occurredAt",
+    "normalizedEvidence"
+  ],
+  "type": "object"
+}

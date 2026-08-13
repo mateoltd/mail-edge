@@ -1,0 +1,47 @@
+{
+  "$id": "urn:mail-edge:schema:v1:provider-acceptance",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "acceptedRecipients": {
+      "items": {
+        "maxLength": 512,
+        "minLength": 3,
+        "type": "string"
+      },
+      "maxItems": 1000,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "normalizedEvidence": {
+      "$ref": "urn:mail-edge:schema:v1:normalized-evidence"
+    },
+    "providerMessageId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "rejectedRecipients": {
+      "items": {
+        "$ref": "urn:mail-edge:schema:v1:provider-recipient-outcome"
+      },
+      "maxItems": 1000,
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "acceptedRecipients",
+    "rejectedRecipients",
+    "acceptedAt",
+    "normalizedEvidence"
+  ],
+  "type": "object"
+}

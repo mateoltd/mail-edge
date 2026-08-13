@@ -2,5 +2,5 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
   "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
-  "ignoreDependencies": ["@cyclonedx/cdxgen"]
+  "ignoreDependencies": ["@cyclonedx/cdxgen", "publint"]
 }

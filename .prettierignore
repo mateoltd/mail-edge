@@ -5,6 +5,9 @@ coverage/
 dist/
 LICENSE
 node_modules/
+packages/contracts/openapi/
+packages/contracts/schemas/
+packages/*/etc/*.api.md
 pnpm-lock.yaml
 *.tgz
 *.tsbuildinfo

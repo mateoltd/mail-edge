@@ -1,0 +1,94 @@
+{
+  "$id": "urn:mail-edge:schema:v1:workflow-wakeup",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "receiptId": {
+          "$ref": "urn:mail-edge:schema:v1:receipt-id"
+        },
+        "schemaVersion": {
+          "const": "v1",
+          "type": "string"
+        },
+        "type": {
+          "const": "inbound_receipt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "type",
+        "receiptId"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "intentId": {
+          "$ref": "urn:mail-edge:schema:v1:intent-id"
+        },
+        "schemaVersion": {
+          "const": "v1",
+          "type": "string"
+        },
+        "type": {
+          "const": "outbound_intent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "type",
+        "intentId"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "feedbackEventId": {
+          "$ref": "urn:mail-edge:schema:v1:feedback-event-id"
+        },
+        "schemaVersion": {
+          "const": "v1",
+          "type": "string"
+        },
+        "type": {
+          "const": "feedback_event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "type",
+        "feedbackEventId"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "deliveryId": {
+          "$ref": "urn:mail-edge:schema:v1:delivery-id"
+        },
+        "schemaVersion": {
+          "const": "v1",
+          "type": "string"
+        },
+        "type": {
+          "const": "application_delivery",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "type",
+        "deliveryId"
+      ],
+      "type": "object"
+    }
+  ]
+}

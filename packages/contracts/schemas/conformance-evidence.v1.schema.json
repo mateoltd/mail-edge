@@ -1,0 +1,75 @@
+{
+  "$id": "urn:mail-edge:schema:v1:conformance-evidence",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapterVersion": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "descriptorDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "expiresAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "failedChecks": {
+      "items": {
+        "maxLength": 96,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 128,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "mode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "observedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "passedChecks": {
+      "items": {
+        "maxLength": 96,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 128,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "providerId": {
+      "$ref": "urn:mail-edge:schema:v1:provider-id"
+    },
+    "region": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "reportDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "providerId",
+    "adapterVersion",
+    "mode",
+    "region",
+    "observedAt",
+    "expiresAt",
+    "descriptorDigest",
+    "reportDigest",
+    "passedChecks",
+    "failedChecks"
+  ],
+  "type": "object"
+}

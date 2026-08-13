@@ -1,0 +1,34 @@
+{
+  "$id": "urn:mail-edge:schema:v1:raw-message-ref",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blobId": {
+      "$ref": "urn:mail-edge:schema:v1:blob-id"
+    },
+    "mediaType": {
+      "const": "message/rfc822",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "sha256": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "size": {
+      "maximum": 26214400,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "blobId",
+    "sha256",
+    "size",
+    "mediaType"
+  ],
+  "type": "object"
+}

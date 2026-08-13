@@ -1,0 +1,40 @@
+{
+  "$id": "urn:mail-edge:schema:v1:dsn-notify",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "additionalItems": false,
+      "items": [
+        {
+          "const": "never",
+          "type": "string"
+        }
+      ],
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    {
+      "items": {
+        "anyOf": [
+          {
+            "const": "success",
+            "type": "string"
+          },
+          {
+            "const": "failure",
+            "type": "string"
+          },
+          {
+            "const": "delay",
+            "type": "string"
+          }
+        ]
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    }
+  ]
+}

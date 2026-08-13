@@ -1,0 +1,62 @@
+{
+  "$id": "urn:mail-edge:schema:v1:raw-access-grant",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "audience": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "expiresAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "grantId": {
+      "$ref": "urn:mail-edge:schema:v1:raw-access-grant-id"
+    },
+    "issuedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "purpose": {
+      "anyOf": [
+        {
+          "const": "application_delivery",
+          "type": "string"
+        },
+        {
+          "const": "operator_review",
+          "type": "string"
+        },
+        {
+          "const": "reconciliation",
+          "type": "string"
+        }
+      ]
+    },
+    "raw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "singleUse": {
+      "type": "boolean"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "grantId",
+    "tenantId",
+    "raw",
+    "audience",
+    "purpose",
+    "singleUse",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "type": "object"
+}

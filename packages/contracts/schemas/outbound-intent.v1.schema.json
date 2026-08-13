@@ -1,0 +1,98 @@
+{
+  "$id": "urn:mail-edge:schema:v1:outbound-intent",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "envelope": {
+      "$ref": "urn:mail-edge:schema:v1:smtp-envelope"
+    },
+    "fallbackBindings": {
+      "items": {
+        "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "fingerprint": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "primaryBinding": {
+      "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+    },
+    "raw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "accepted",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "type": "string"
+        },
+        {
+          "const": "dispatching",
+          "type": "string"
+        },
+        {
+          "const": "retry_wait",
+          "type": "string"
+        },
+        {
+          "const": "provider_accepted",
+          "type": "string"
+        },
+        {
+          "const": "failed_not_sent",
+          "type": "string"
+        },
+        {
+          "const": "quarantined_unknown",
+          "type": "string"
+        },
+        {
+          "const": "canceled",
+          "type": "string"
+        }
+      ]
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    },
+    "transmissionRaw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    },
+    "version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "intentId",
+    "tenantId",
+    "raw",
+    "envelope",
+    "primaryBinding",
+    "fallbackBindings",
+    "transmissionRaw",
+    "fingerprint",
+    "state",
+    "createdAt",
+    "version"
+  ],
+  "type": "object"
+}

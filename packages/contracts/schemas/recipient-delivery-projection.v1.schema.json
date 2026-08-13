@@ -1,0 +1,100 @@
+{
+  "$id": "urn:mail-edge:schema:v1:recipient-delivery-projection",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "clicked": {
+      "type": "boolean"
+    },
+    "complaint": {
+      "type": "boolean"
+    },
+    "contradictions": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "lastTransportOccurredAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "latestFeedbackOrderKey": {
+      "maxLength": 512,
+      "minLength": 1,
+      "type": "string"
+    },
+    "opened": {
+      "type": "boolean"
+    },
+    "recipientKey": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "boolean"
+    },
+    "transportState": {
+      "anyOf": [
+        {
+          "const": "pending",
+          "type": "string"
+        },
+        {
+          "const": "accepted",
+          "type": "string"
+        },
+        {
+          "const": "delivered",
+          "type": "string"
+        },
+        {
+          "const": "deferred",
+          "type": "string"
+        },
+        {
+          "const": "bounced",
+          "type": "string"
+        },
+        {
+          "const": "failed_not_sent",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "type": "string"
+        }
+      ]
+    },
+    "unsubscribed": {
+      "type": "boolean"
+    },
+    "version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "intentId",
+    "recipientKey",
+    "transportState",
+    "complaint",
+    "suppressed",
+    "opened",
+    "clicked",
+    "unsubscribed",
+    "contradictions",
+    "version"
+  ],
+  "type": "object"
+}

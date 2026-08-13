@@ -1,0 +1,40 @@
+{
+  "$id": "urn:mail-edge:schema:v1:provider-recipient-outcome",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "maxLength": 512,
+      "minLength": 3,
+      "type": "string"
+    },
+    "evidenceCode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "const": "accepted",
+          "type": "string"
+        },
+        {
+          "const": "rejected",
+          "type": "string"
+        }
+      ]
+    },
+    "statusCode": {
+      "maxLength": 32,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "address",
+    "outcome",
+    "evidenceCode"
+  ],
+  "type": "object"
+}

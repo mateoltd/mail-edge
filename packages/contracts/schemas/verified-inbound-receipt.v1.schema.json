@@ -1,0 +1,108 @@
+{
+  "$id": "urn:mail-edge:schema:v1:verified-inbound-receipt",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "binding": {
+      "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+    },
+    "envelope": {
+      "$ref": "urn:mail-edge:schema:v1:smtp-envelope"
+    },
+    "providerId": {
+      "$ref": "urn:mail-edge:schema:v1:provider-id"
+    },
+    "providerInstanceId": {
+      "$ref": "urn:mail-edge:schema:v1:provider-instance-id"
+    },
+    "providerReceiptKey": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "raw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    },
+    "receiptId": {
+      "$ref": "urn:mail-edge:schema:v1:receipt-id"
+    },
+    "receivedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "received",
+          "type": "string"
+        },
+        {
+          "const": "acquiring",
+          "type": "string"
+        },
+        {
+          "const": "stored",
+          "type": "string"
+        },
+        {
+          "const": "routing",
+          "type": "string"
+        },
+        {
+          "const": "delivering",
+          "type": "string"
+        },
+        {
+          "const": "retry_wait",
+          "type": "string"
+        },
+        {
+          "const": "delivered",
+          "type": "string"
+        },
+        {
+          "const": "quarantined",
+          "type": "string"
+        },
+        {
+          "const": "dead_letter",
+          "type": "string"
+        },
+        {
+          "const": "purged",
+          "type": "string"
+        }
+      ]
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    },
+    "verificationEvidenceDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "tenantId",
+    "providerId",
+    "providerInstanceId",
+    "providerReceiptKey",
+    "binding",
+    "envelope",
+    "raw",
+    "verificationEvidenceDigest",
+    "receivedAt",
+    "state",
+    "version"
+  ],
+  "type": "object"
+}

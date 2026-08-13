@@ -1,0 +1,8 @@
+{
+  "$id": "urn:mail-edge:schema:v1:idempotency-key",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "maxLength": 200,
+  "minLength": 1,
+  "pattern": "^[\\x21-\\x7e]+$",
+  "type": "string"
+}

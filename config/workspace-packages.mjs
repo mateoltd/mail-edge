@@ -26,7 +26,7 @@ export const workspaceUnits = Object.freeze([
   packageUnit("postgres", "@mail-edge/postgres", "packages/postgres", ["contracts", "core"]),
   packageUnit("blob-s3", "@mail-edge/blob-s3", "packages/blob-s3", ["core"]),
   packageUnit("queue-pg-boss", "@mail-edge/queue-pg-boss", "packages/queue-pg-boss", ["core"]),
-  packageUnit("sdk", "@mail-edge/sdk", "packages/sdk", ["contracts", "core", "mime", "provider"]),
+  packageUnit("sdk", "@mail-edge/sdk", "packages/sdk", ["contracts", "core"]),
   packageUnit("http-client", "@mail-edge/http-client", "packages/http-client", ["contracts"]),
   packageUnit("smtp-bridge", "@mail-edge/smtp-bridge", "packages/smtp-bridge", [
     "contracts",

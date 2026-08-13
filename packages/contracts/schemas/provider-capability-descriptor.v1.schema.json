@@ -1,0 +1,511 @@
+{
+  "$id": "urn:mail-edge:schema:v1:provider-capability-descriptor",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapterVersion": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "controlPlane": {
+      "additionalProperties": false,
+      "properties": {
+        "dnsDiscovery": {
+          "type": "boolean"
+        },
+        "domainProvisioning": {
+          "type": "boolean"
+        },
+        "driftDiscovery": {
+          "type": "boolean"
+        },
+        "exactDomainCatchAll": {
+          "type": "boolean"
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supported",
+        "domainProvisioning",
+        "dnsDiscovery",
+        "driftDiscovery",
+        "exactDomainCatchAll"
+      ],
+      "type": "object"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "urn:mail-edge:schema:v1:capability-evidence"
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
+    "feedback": {
+      "additionalProperties": false,
+      "properties": {
+        "kinds": {
+          "items": {
+            "anyOf": [
+              {
+                "const": "accepted",
+                "type": "string"
+              },
+              {
+                "const": "delivered",
+                "type": "string"
+              },
+              {
+                "const": "deferred",
+                "type": "string"
+              },
+              {
+                "const": "bounced",
+                "type": "string"
+              },
+              {
+                "const": "complained",
+                "type": "string"
+              },
+              {
+                "const": "suppressed",
+                "type": "string"
+              },
+              {
+                "const": "opened",
+                "type": "string"
+              },
+              {
+                "const": "clicked",
+                "type": "string"
+              },
+              {
+                "const": "unsubscribed",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 9,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "perRecipient": {
+          "type": "boolean"
+        },
+        "signatureCoverage": {
+          "anyOf": [
+            {
+              "const": "whole_body",
+              "type": "string"
+            },
+            {
+              "const": "body_digest",
+              "type": "string"
+            },
+            {
+              "const": "token_timestamp_only",
+              "type": "string"
+            },
+            {
+              "const": "worker_event",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            }
+          ]
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supported",
+        "kinds",
+        "perRecipient",
+        "signatureCoverage"
+      ],
+      "type": "object"
+    },
+    "inbound": {
+      "additionalProperties": false,
+      "properties": {
+        "acquisition": {
+          "items": {
+            "anyOf": [
+              {
+                "const": "inline_stream",
+                "type": "string"
+              },
+              {
+                "const": "signed_reference_stream",
+                "type": "string"
+              },
+              {
+                "const": "worker_frame_stream",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "bytePreservation": {
+          "anyOf": [
+            {
+              "const": "verified_exact",
+              "type": "string"
+            },
+            {
+              "const": "provider_mutated",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "type": "string"
+            }
+          ]
+        },
+        "exactDomainCatchAll": {
+          "type": "boolean"
+        },
+        "maxBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replayIdentity": {
+          "anyOf": [
+            {
+              "const": "provider_event",
+              "type": "string"
+            },
+            {
+              "const": "signed_token",
+              "type": "string"
+            },
+            {
+              "const": "worker_nonce",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            }
+          ]
+        },
+        "signatureCoverage": {
+          "anyOf": [
+            {
+              "const": "whole_body",
+              "type": "string"
+            },
+            {
+              "const": "body_digest",
+              "type": "string"
+            },
+            {
+              "const": "token_timestamp_only",
+              "type": "string"
+            },
+            {
+              "const": "worker_frames",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            }
+          ]
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supported",
+        "acquisition",
+        "signatureCoverage",
+        "replayIdentity",
+        "exactDomainCatchAll",
+        "bytePreservation"
+      ],
+      "type": "object"
+    },
+    "maturity": {
+      "anyOf": [
+        {
+          "const": "stable",
+          "type": "string"
+        },
+        {
+          "const": "experimental",
+          "type": "string"
+        }
+      ]
+    },
+    "outbound": {
+      "additionalProperties": false,
+      "properties": {
+        "bytePreservation": {
+          "anyOf": [
+            {
+              "const": "verified_exact",
+              "type": "string"
+            },
+            {
+              "const": "provider_mutated",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "type": "string"
+            }
+          ]
+        },
+        "envelope": {
+          "additionalProperties": false,
+          "properties": {
+            "bodyModes": {
+              "items": {
+                "anyOf": [
+                  {
+                    "const": "7bit",
+                    "type": "string"
+                  },
+                  {
+                    "const": "8bitmime",
+                    "type": "string"
+                  },
+                  {
+                    "const": "binarymime",
+                    "type": "string"
+                  }
+                ]
+              },
+              "maxItems": 3,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "dsnRetEnvid": {
+              "type": "boolean"
+            },
+            "multipleRecipients": {
+              "type": "boolean"
+            },
+            "nullReversePath": {
+              "type": "boolean"
+            },
+            "perRecipientDsn": {
+              "type": "boolean"
+            },
+            "requireTls": {
+              "type": "boolean"
+            },
+            "smtpUtf8": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "nullReversePath",
+            "multipleRecipients",
+            "smtpUtf8",
+            "dsnRetEnvid",
+            "perRecipientDsn",
+            "bodyModes",
+            "requireTls"
+          ],
+          "type": "object"
+        },
+        "idempotency": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "anyOf": [
+                {
+                  "const": "none",
+                  "type": "string"
+                },
+                {
+                  "const": "header",
+                  "type": "string"
+                },
+                {
+                  "const": "request_key",
+                  "type": "string"
+                }
+              ]
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "const": "account",
+                  "type": "string"
+                },
+                {
+                  "const": "domain",
+                  "type": "string"
+                }
+              ]
+            },
+            "ttlSeconds": {
+              "maximum": 31536000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        "maxBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mimeMutation": {
+          "items": {
+            "anyOf": [
+              {
+                "const": "none",
+                "type": "string"
+              },
+              {
+                "const": "transport_headers",
+                "type": "string"
+              },
+              {
+                "const": "dkim_signature",
+                "type": "string"
+              },
+              {
+                "const": "content_reencoding",
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 5,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "rateLimit": {
+          "additionalProperties": false,
+          "maxProperties": 16,
+          "patternProperties": {
+            "^(.*)$": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "reconciliation": {
+          "additionalProperties": false,
+          "properties": {
+            "canProve": {
+              "items": {
+                "$ref": "urn:mail-edge:schema:v1:delivery-certainty"
+              },
+              "maxItems": 3,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "keys": {
+              "items": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "supported": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "supported",
+            "keys",
+            "canProve"
+          ],
+          "type": "object"
+        },
+        "supported": {
+          "type": "boolean"
+        },
+        "transports": {
+          "items": {
+            "anyOf": [
+              {
+                "const": "http_binary",
+                "type": "string"
+              },
+              {
+                "const": "http_utf8_json",
+                "type": "string"
+              },
+              {
+                "const": "smtp_raw",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "supported",
+        "transports",
+        "bytePreservation",
+        "mimeMutation",
+        "envelope",
+        "idempotency",
+        "reconciliation"
+      ],
+      "type": "object"
+    },
+    "prerequisites": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 32,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "providerId": {
+      "$ref": "urn:mail-edge:schema:v1:provider-id"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "providerId",
+    "adapterVersion",
+    "maturity",
+    "inbound",
+    "outbound",
+    "feedback",
+    "controlPlane",
+    "prerequisites",
+    "evidence"
+  ],
+  "type": "object"
+}

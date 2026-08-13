@@ -1,0 +1,35 @@
+{
+  "$id": "urn:mail-edge:schema:v1:idempotency-record",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "keyDigest": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "requestFingerprint": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "tenantId",
+    "keyDigest",
+    "requestFingerprint",
+    "intentId",
+    "createdAt"
+  ],
+  "type": "object"
+}

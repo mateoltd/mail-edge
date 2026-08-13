@@ -2,7 +2,11 @@ packages:
   - apps/*
   - packages/*
 
-onlyBuiltDependencies: []
+allowBuilds:
+  esbuild: true
+
+onlyBuiltDependencies:
+  - esbuild
 overrides:
   undici: 7.29.0
 strictDepBuilds: true

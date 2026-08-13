@@ -29,10 +29,10 @@ export default tseslint.config(
   {
     ignores: [
       ".turbo/**",
-      "coverage/**",
-      "dist/**",
-      "node_modules/**",
-      "temp/**",
+      "**/coverage/**",
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/temp/**",
       "**/*.d.ts",
       "**/*.tsbuildinfo",
     ],
@@ -106,6 +106,7 @@ export default tseslint.config(
           policies: boundaryPolicies,
         },
       ],
+      "boundaries/no-ignored-dependencies": "off",
       "mail-edge/workspace-imports": "error",
       "no-restricted-syntax": [
         "error",
@@ -118,6 +119,12 @@ export default tseslint.config(
           selector: "TSEnumDeclaration",
         },
       ],
+    },
+  },
+  {
+    files: ["**/*.test.ts", "**/test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/require-await": "off",
     },
   },
 );

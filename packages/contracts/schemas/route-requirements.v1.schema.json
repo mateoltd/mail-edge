@@ -1,0 +1,210 @@
+{
+  "$id": "urn:mail-edge:schema:v1:route-requirements",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acquisition": {
+      "anyOf": [
+        {
+          "const": "inline_stream",
+          "type": "string"
+        },
+        {
+          "const": "signed_reference_stream",
+          "type": "string"
+        },
+        {
+          "const": "worker_frame_stream",
+          "type": "string"
+        }
+      ]
+    },
+    "allowedMaturity": {
+      "anyOf": [
+        {
+          "const": "stable",
+          "type": "string"
+        },
+        {
+          "const": "experimental",
+          "type": "string"
+        }
+      ]
+    },
+    "bytePreservation": {
+      "anyOf": [
+        {
+          "const": "verified_exact",
+          "type": "string"
+        },
+        {
+          "const": "provider_mutated",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "type": "string"
+        }
+      ]
+    },
+    "controlPlane": {
+      "additionalProperties": false,
+      "properties": {
+        "dnsDiscovery": {
+          "type": "boolean"
+        },
+        "domainProvisioning": {
+          "type": "boolean"
+        },
+        "driftDiscovery": {
+          "type": "boolean"
+        },
+        "exactDomainCatchAll": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "domainProvisioning",
+        "dnsDiscovery",
+        "driftDiscovery",
+        "exactDomainCatchAll"
+      ],
+      "type": "object"
+    },
+    "direction": {
+      "anyOf": [
+        {
+          "const": "inbound",
+          "type": "string"
+        },
+        {
+          "const": "outbound",
+          "type": "string"
+        }
+      ]
+    },
+    "envelope": {
+      "additionalProperties": false,
+      "properties": {
+        "bodyModes": {
+          "items": {
+            "anyOf": [
+              {
+                "const": "7bit",
+                "type": "string"
+              },
+              {
+                "const": "8bitmime",
+                "type": "string"
+              },
+              {
+                "const": "binarymime",
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "dsnRetEnvid": {
+          "type": "boolean"
+        },
+        "multipleRecipients": {
+          "type": "boolean"
+        },
+        "nullReversePath": {
+          "type": "boolean"
+        },
+        "perRecipientDsn": {
+          "type": "boolean"
+        },
+        "requireTls": {
+          "type": "boolean"
+        },
+        "smtpUtf8": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "nullReversePath",
+        "multipleRecipients",
+        "smtpUtf8",
+        "dsnRetEnvid",
+        "perRecipientDsn",
+        "bodyModes",
+        "requireTls"
+      ],
+      "type": "object"
+    },
+    "feedbackKinds": {
+      "items": {
+        "anyOf": [
+          {
+            "const": "accepted",
+            "type": "string"
+          },
+          {
+            "const": "delivered",
+            "type": "string"
+          },
+          {
+            "const": "deferred",
+            "type": "string"
+          },
+          {
+            "const": "bounced",
+            "type": "string"
+          },
+          {
+            "const": "complained",
+            "type": "string"
+          },
+          {
+            "const": "suppressed",
+            "type": "string"
+          },
+          {
+            "const": "opened",
+            "type": "string"
+          },
+          {
+            "const": "clicked",
+            "type": "string"
+          },
+          {
+            "const": "unsubscribed",
+            "type": "string"
+          }
+        ]
+      },
+      "maxItems": 9,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "maxMessageBytes": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "region": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "direction",
+    "maxMessageBytes",
+    "envelope",
+    "feedbackKinds",
+    "controlPlane",
+    "allowedMaturity"
+  ],
+  "type": "object"
+}

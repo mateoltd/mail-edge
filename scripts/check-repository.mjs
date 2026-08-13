@@ -40,7 +40,7 @@ for (const fileName of [".node-version", ".nvmrc"]) {
   );
 }
 
-const runningPnpm = execFileSync("pnpm", ["--version"], {
+const runningPnpm = execFileSync("corepack", ["pnpm", "--version"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 }).trim();
@@ -52,9 +52,10 @@ if (!existsSync(resolve(repositoryRoot, "pnpm-lock.yaml"))) {
 
 const workspaceConfig = parse(readFileSync(resolve(repositoryRoot, "pnpm-workspace.yaml"), "utf8"));
 expectEqual(workspaceConfig.strictDepBuilds, true, "pnpm strictDepBuilds");
+expectEqual(workspaceConfig.allowBuilds?.esbuild, true, "pnpm esbuild build approval");
 expectEqual(
   JSON.stringify(workspaceConfig.onlyBuiltDependencies),
-  JSON.stringify([]),
+  JSON.stringify(["esbuild"]),
   "pnpm dependency build allowlist",
 );
 

@@ -1,0 +1,49 @@
+{
+  "$id": "urn:mail-edge:schema:v1:outbound-submission",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "$ref": "urn:mail-edge:schema:v1:attempt-id"
+    },
+    "deadline": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "envelope": {
+      "$ref": "urn:mail-edge:schema:v1:smtp-envelope"
+    },
+    "fence": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "raw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    },
+    "routeBinding": {
+      "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "transmissionRaw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "intentId",
+    "attemptId",
+    "fence",
+    "raw",
+    "transmissionRaw",
+    "envelope",
+    "routeBinding",
+    "deadline"
+  ],
+  "type": "object"
+}

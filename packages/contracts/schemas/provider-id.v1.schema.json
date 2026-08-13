@@ -1,0 +1,8 @@
+{
+  "$id": "urn:mail-edge:schema:v1:provider-id",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "maxLength": 63,
+  "minLength": 1,
+  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+  "type": "string"
+}

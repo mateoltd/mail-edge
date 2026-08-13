@@ -1,0 +1,84 @@
+{
+  "$id": "urn:mail-edge:schema:v1:smtp-envelope",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "anyOf": [
+        {
+          "const": "7bit",
+          "type": "string"
+        },
+        {
+          "const": "8bitmime",
+          "type": "string"
+        },
+        {
+          "const": "binarymime",
+          "type": "string"
+        }
+      ]
+    },
+    "dsn": {
+      "additionalProperties": false,
+      "properties": {
+        "envelopeId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^(?:[\\x21-\\x2a\\x2c-\\x3c\\x3e-\\x7e]|\\+[0-9A-F]{2})+$",
+          "type": "string"
+        },
+        "ret": {
+          "anyOf": [
+            {
+              "const": "full",
+              "type": "string"
+            },
+            {
+              "const": "headers",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "mailFrom": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rcptTo": {
+      "items": {
+        "$ref": "urn:mail-edge:schema:v1:smtp-recipient"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "requireTls": {
+      "type": "boolean"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "smtpUtf8": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "mailFrom",
+    "rcptTo",
+    "smtpUtf8"
+  ],
+  "type": "object"
+}

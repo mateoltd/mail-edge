@@ -1,0 +1,147 @@
+{
+  "$id": "urn:mail-edge:schema:v1:mail-edge-problem",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "anyOf": [
+        {
+          "const": "validation-failed",
+          "type": "string"
+        },
+        {
+          "const": "authentication-failed",
+          "type": "string"
+        },
+        {
+          "const": "authorization-failed",
+          "type": "string"
+        },
+        {
+          "const": "not-found",
+          "type": "string"
+        },
+        {
+          "const": "conflict",
+          "type": "string"
+        },
+        {
+          "const": "idempotency-conflict",
+          "type": "string"
+        },
+        {
+          "const": "binding-unavailable",
+          "type": "string"
+        },
+        {
+          "const": "capability-unsupported",
+          "type": "string"
+        },
+        {
+          "const": "rate-limited",
+          "type": "string"
+        },
+        {
+          "const": "ingress-limit-exceeded",
+          "type": "string"
+        },
+        {
+          "const": "ingress-failed",
+          "type": "string"
+        },
+        {
+          "const": "storage-unavailable",
+          "type": "string"
+        },
+        {
+          "const": "workflow-conflict",
+          "type": "string"
+        },
+        {
+          "const": "stale-fence",
+          "type": "string"
+        },
+        {
+          "const": "illegal-transition",
+          "type": "string"
+        },
+        {
+          "const": "provider-not-sent",
+          "type": "string"
+        },
+        {
+          "const": "provider-outcome-unknown",
+          "type": "string"
+        },
+        {
+          "const": "provider-rejected",
+          "type": "string"
+        },
+        {
+          "const": "host-unavailable",
+          "type": "string"
+        },
+        {
+          "const": "internal",
+          "type": "string"
+        }
+      ]
+    },
+    "deliveryCertainty": {
+      "$ref": "urn:mail-edge:schema:v1:delivery-certainty"
+    },
+    "detail": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "instance": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "occurredAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "safeDetails": {
+      "$ref": "urn:mail-edge:schema:v1:safe-details"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "status": {
+      "maximum": 599,
+      "minimum": 400,
+      "type": "integer"
+    },
+    "title": {
+      "maxLength": 96,
+      "minLength": 1,
+      "type": "string"
+    },
+    "traceId": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "type": {
+      "maxLength": 128,
+      "pattern": "^https://mail-edge\\.dev/problems/[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "type",
+    "title",
+    "status",
+    "code",
+    "retryable",
+    "deliveryCertainty"
+  ],
+  "type": "object"
+}

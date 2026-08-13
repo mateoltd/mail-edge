@@ -1,0 +1,18 @@
+{
+  "$id": "urn:mail-edge:schema:v1:delivery-certainty",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "const": "not_sent",
+      "type": "string"
+    },
+    {
+      "const": "accepted",
+      "type": "string"
+    },
+    {
+      "const": "unknown",
+      "type": "string"
+    }
+  ]
+}

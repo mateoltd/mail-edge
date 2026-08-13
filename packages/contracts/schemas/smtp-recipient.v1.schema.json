@@ -1,0 +1,31 @@
+{
+  "$id": "urn:mail-edge:schema:v1:smtp-recipient",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "maxLength": 512,
+      "minLength": 3,
+      "type": "string"
+    },
+    "dsn": {
+      "additionalProperties": false,
+      "properties": {
+        "notify": {
+          "$ref": "urn:mail-edge:schema:v1:dsn-notify"
+        },
+        "originalRecipient": {
+          "maxLength": 500,
+          "minLength": 3,
+          "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63};(?:[\\x21-\\x2a\\x2c-\\x3c\\x3e-\\x7e]|\\+[0-9A-F]{2})+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "address"
+  ],
+  "type": "object"
+}

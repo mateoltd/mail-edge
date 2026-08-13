@@ -1,0 +1,8 @@
+{
+  "$id": "urn:mail-edge:schema:v1:sha256",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "maxLength": 64,
+  "minLength": 64,
+  "pattern": "^[0-9a-f]{64}$",
+  "type": "string"
+}

@@ -1,0 +1,13 @@
+{
+  "$id": "urn:mail-edge:schema:v1:bounded-string-map",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "maxProperties": 32,
+  "patternProperties": {
+    "^[A-Za-z][A-Za-z0-9_.-]*$": {
+      "maxLength": 512,
+      "type": "string"
+    }
+  },
+  "type": "object"
+}

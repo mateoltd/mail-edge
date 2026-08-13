@@ -1,0 +1,25 @@
+{
+  "$id": "urn:mail-edge:schema:v1:safe-details",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "maxProperties": 16,
+  "patternProperties": {
+    "^[a-z][A-Za-z0-9]*$": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  },
+  "type": "object"
+}

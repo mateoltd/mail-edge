@@ -1,0 +1,101 @@
+{
+  "$id": "urn:mail-edge:schema:v1:outbound-attempt",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "$ref": "urn:mail-edge:schema:v1:attempt-id"
+    },
+    "completedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "createdAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "deliveryCertainty": {
+      "$ref": "urn:mail-edge:schema:v1:delivery-certainty"
+    },
+    "fence": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "lastEvidence": {
+      "$ref": "urn:mail-edge:schema:v1:normalized-evidence"
+    },
+    "ordinal": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "providerAcceptance": {
+      "$ref": "urn:mail-edge:schema:v1:provider-acceptance"
+    },
+    "recipientIndexes": {
+      "items": {
+        "maximum": 999,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "routeBinding": {
+      "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "dispatching",
+          "type": "string"
+        },
+        {
+          "const": "provider_accepted",
+          "type": "string"
+        },
+        {
+          "const": "retry_wait",
+          "type": "string"
+        },
+        {
+          "const": "failed_not_sent",
+          "type": "string"
+        },
+        {
+          "const": "quarantined_unknown",
+          "type": "string"
+        }
+      ]
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    },
+    "transmissionRaw": {
+      "$ref": "urn:mail-edge:schema:v1:raw-message-ref"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "attemptId",
+    "intentId",
+    "tenantId",
+    "ordinal",
+    "fence",
+    "routeBinding",
+    "recipientIndexes",
+    "transmissionRaw",
+    "state",
+    "deliveryCertainty",
+    "createdAt"
+  ],
+  "type": "object"
+}

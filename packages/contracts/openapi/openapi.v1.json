@@ -1,0 +1,2624 @@
+{
+  "components": {
+    "schemas": {
+      "ApplicationDelivery": {
+        "$id": "urn:mail-edge:schema:v1:application-delivery",
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "binding": {
+            "$ref": "#/components/schemas/RouteBindingSnapshot"
+          },
+          "deliveryId": {
+            "$ref": "#/components/schemas/DeliveryId"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "occurredAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "receiptId": {
+            "$ref": "#/components/schemas/ReceiptId"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "deliveryId",
+          "receiptId",
+          "tenantId",
+          "envelope",
+          "raw",
+          "binding",
+          "attempt",
+          "occurredAt"
+        ],
+        "type": "object"
+      },
+      "ApplicationFeedback": {
+        "$id": "urn:mail-edge:schema:v1:application-feedback",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "$ref": "#/components/schemas/AttemptId"
+          },
+          "feedbackEventId": {
+            "$ref": "#/components/schemas/FeedbackEventId"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "const": "accepted",
+                "type": "string"
+              },
+              {
+                "const": "delivered",
+                "type": "string"
+              },
+              {
+                "const": "deferred",
+                "type": "string"
+              },
+              {
+                "const": "bounced",
+                "type": "string"
+              },
+              {
+                "const": "complained",
+                "type": "string"
+              },
+              {
+                "const": "suppressed",
+                "type": "string"
+              },
+              {
+                "const": "opened",
+                "type": "string"
+              },
+              {
+                "const": "clicked",
+                "type": "string"
+              },
+              {
+                "const": "unsubscribed",
+                "type": "string"
+              }
+            ]
+          },
+          "normalizedEvidence": {
+            "$ref": "#/components/schemas/NormalizedEvidence"
+          },
+          "occurredAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "recipient": {
+            "maxLength": 512,
+            "minLength": 3,
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "feedbackEventId",
+          "tenantId",
+          "intentId",
+          "kind",
+          "occurredAt",
+          "normalizedEvidence"
+        ],
+        "type": "object"
+      },
+      "AttemptId": {
+        "$id": "urn:mail-edge:schema:v1:attempt-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "AuditEvent": {
+        "$id": "urn:mail-edge:schema:v1:audit-event",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "maxLength": 96,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_.-]*$",
+            "type": "string"
+          },
+          "actorIdHash": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "actorType": {
+            "anyOf": [
+              {
+                "const": "system",
+                "type": "string"
+              },
+              {
+                "const": "operator",
+                "type": "string"
+              },
+              {
+                "const": "application",
+                "type": "string"
+              }
+            ]
+          },
+          "afterDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "auditId": {
+            "$ref": "#/components/schemas/AuditId"
+          },
+          "beforeDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/NormalizedEvidence"
+          },
+          "occurredAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "targetId": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "targetType": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "auditId",
+          "actorType",
+          "actorIdHash",
+          "action",
+          "targetType",
+          "metadata",
+          "occurredAt"
+        ],
+        "type": "object"
+      },
+      "AuditId": {
+        "$id": "urn:mail-edge:schema:v1:audit-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "BindingId": {
+        "$id": "urn:mail-edge:schema:v1:binding-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "BlobId": {
+        "$id": "urn:mail-edge:schema:v1:blob-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "BoundedStringMap": {
+        "$id": "urn:mail-edge:schema:v1:bounded-string-map",
+        "additionalProperties": false,
+        "maxProperties": 32,
+        "patternProperties": {
+          "^[A-Za-z][A-Za-z0-9_.-]*$": {
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CapabilityEvidence": {
+        "$id": "urn:mail-edge:schema:v1:capability-evidence",
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/BoundedStringMap"
+          },
+          "observedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "reportDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "const": "official_doc",
+                "type": "string"
+              },
+              {
+                "const": "maintained_source",
+                "type": "string"
+              },
+              {
+                "const": "live_conformance",
+                "type": "string"
+              }
+            ]
+          },
+          "sourceRevision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceUri": {
+            "format": "uri",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "source",
+          "sourceUri",
+          "observedAt",
+          "reportDigest",
+          "environment"
+        ],
+        "type": "object"
+      },
+      "ConformanceEvidence": {
+        "$id": "urn:mail-edge:schema:v1:conformance-evidence",
+        "additionalProperties": false,
+        "properties": {
+          "adapterVersion": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "descriptorDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "expiresAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "failedChecks": {
+            "items": {
+              "maxLength": 96,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "observedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "passedChecks": {
+            "items": {
+              "maxLength": 96,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 128,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "providerId": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "region": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reportDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "providerId",
+          "adapterVersion",
+          "mode",
+          "region",
+          "observedAt",
+          "expiresAt",
+          "descriptorDigest",
+          "reportDigest",
+          "passedChecks",
+          "failedChecks"
+        ],
+        "type": "object"
+      },
+      "DeliveryCertainty": {
+        "$id": "urn:mail-edge:schema:v1:delivery-certainty",
+        "anyOf": [
+          {
+            "const": "not_sent",
+            "type": "string"
+          },
+          {
+            "const": "accepted",
+            "type": "string"
+          },
+          {
+            "const": "unknown",
+            "type": "string"
+          }
+        ]
+      },
+      "DeliveryId": {
+        "$id": "urn:mail-edge:schema:v1:delivery-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "DomainALabel": {
+        "$id": "urn:mail-edge:schema:v1:domain-a-label",
+        "maxLength": 253,
+        "minLength": 1,
+        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$",
+        "type": "string"
+      },
+      "DsnNotify": {
+        "$id": "urn:mail-edge:schema:v1:dsn-notify",
+        "anyOf": [
+          {
+            "additionalItems": false,
+            "items": [
+              {
+                "const": "never",
+                "type": "string"
+              }
+            ],
+            "maxItems": 1,
+            "minItems": 1,
+            "type": "array"
+          },
+          {
+            "items": {
+              "anyOf": [
+                {
+                  "const": "success",
+                  "type": "string"
+                },
+                {
+                  "const": "failure",
+                  "type": "string"
+                },
+                {
+                  "const": "delay",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        ]
+      },
+      "FeedbackEventId": {
+        "$id": "urn:mail-edge:schema:v1:feedback-event-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "IdempotencyKey": {
+        "$id": "urn:mail-edge:schema:v1:idempotency-key",
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^[\\x21-\\x7e]+$",
+        "type": "string"
+      },
+      "IdempotencyRecord": {
+        "$id": "urn:mail-edge:schema:v1:idempotency-record",
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "keyDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "requestFingerprint": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "tenantId",
+          "keyDigest",
+          "requestFingerprint",
+          "intentId",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "IntentId": {
+        "$id": "urn:mail-edge:schema:v1:intent-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "MailEdgeProblem": {
+        "$id": "urn:mail-edge:schema:v1:mail-edge-problem",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "const": "validation-failed",
+                "type": "string"
+              },
+              {
+                "const": "authentication-failed",
+                "type": "string"
+              },
+              {
+                "const": "authorization-failed",
+                "type": "string"
+              },
+              {
+                "const": "not-found",
+                "type": "string"
+              },
+              {
+                "const": "conflict",
+                "type": "string"
+              },
+              {
+                "const": "idempotency-conflict",
+                "type": "string"
+              },
+              {
+                "const": "binding-unavailable",
+                "type": "string"
+              },
+              {
+                "const": "capability-unsupported",
+                "type": "string"
+              },
+              {
+                "const": "rate-limited",
+                "type": "string"
+              },
+              {
+                "const": "ingress-limit-exceeded",
+                "type": "string"
+              },
+              {
+                "const": "ingress-failed",
+                "type": "string"
+              },
+              {
+                "const": "storage-unavailable",
+                "type": "string"
+              },
+              {
+                "const": "workflow-conflict",
+                "type": "string"
+              },
+              {
+                "const": "stale-fence",
+                "type": "string"
+              },
+              {
+                "const": "illegal-transition",
+                "type": "string"
+              },
+              {
+                "const": "provider-not-sent",
+                "type": "string"
+              },
+              {
+                "const": "provider-outcome-unknown",
+                "type": "string"
+              },
+              {
+                "const": "provider-rejected",
+                "type": "string"
+              },
+              {
+                "const": "host-unavailable",
+                "type": "string"
+              },
+              {
+                "const": "internal",
+                "type": "string"
+              }
+            ]
+          },
+          "deliveryCertainty": {
+            "$ref": "#/components/schemas/DeliveryCertainty"
+          },
+          "detail": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "instance": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "occurredAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "safeDetails": {
+            "$ref": "#/components/schemas/SafeDetails"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "status": {
+            "maximum": 599,
+            "minimum": 400,
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 96,
+            "minLength": 1,
+            "type": "string"
+          },
+          "traceId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 128,
+            "pattern": "^https://mail-edge\\.dev/problems/[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "type",
+          "title",
+          "status",
+          "code",
+          "retryable",
+          "deliveryCertainty"
+        ],
+        "type": "object"
+      },
+      "NormalizedEvidence": {
+        "$id": "urn:mail-edge:schema:v1:normalized-evidence",
+        "additionalProperties": false,
+        "maxProperties": 32,
+        "patternProperties": {
+          "^[a-z][A-Za-z0-9]*$": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "OutboundAttempt": {
+        "$id": "urn:mail-edge:schema:v1:outbound-attempt",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "$ref": "#/components/schemas/AttemptId"
+          },
+          "completedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "deliveryCertainty": {
+            "$ref": "#/components/schemas/DeliveryCertainty"
+          },
+          "fence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "lastEvidence": {
+            "$ref": "#/components/schemas/NormalizedEvidence"
+          },
+          "ordinal": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "providerAcceptance": {
+            "$ref": "#/components/schemas/ProviderAcceptance"
+          },
+          "recipientIndexes": {
+            "items": {
+              "maximum": 999,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "routeBinding": {
+            "$ref": "#/components/schemas/RouteBindingSnapshot"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "dispatching",
+                "type": "string"
+              },
+              {
+                "const": "provider_accepted",
+                "type": "string"
+              },
+              {
+                "const": "retry_wait",
+                "type": "string"
+              },
+              {
+                "const": "failed_not_sent",
+                "type": "string"
+              },
+              {
+                "const": "quarantined_unknown",
+                "type": "string"
+              }
+            ]
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "transmissionRaw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "attemptId",
+          "intentId",
+          "tenantId",
+          "ordinal",
+          "fence",
+          "routeBinding",
+          "recipientIndexes",
+          "transmissionRaw",
+          "state",
+          "deliveryCertainty",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "OutboundIntent": {
+        "$id": "urn:mail-edge:schema:v1:outbound-intent",
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "fallbackBindings": {
+            "items": {
+              "$ref": "#/components/schemas/RouteBindingSnapshot"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "fingerprint": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "primaryBinding": {
+            "$ref": "#/components/schemas/RouteBindingSnapshot"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "accepted",
+                "type": "string"
+              },
+              {
+                "const": "ready",
+                "type": "string"
+              },
+              {
+                "const": "dispatching",
+                "type": "string"
+              },
+              {
+                "const": "retry_wait",
+                "type": "string"
+              },
+              {
+                "const": "provider_accepted",
+                "type": "string"
+              },
+              {
+                "const": "failed_not_sent",
+                "type": "string"
+              },
+              {
+                "const": "quarantined_unknown",
+                "type": "string"
+              },
+              {
+                "const": "canceled",
+                "type": "string"
+              }
+            ]
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "transmissionRaw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "intentId",
+          "tenantId",
+          "raw",
+          "envelope",
+          "primaryBinding",
+          "fallbackBindings",
+          "transmissionRaw",
+          "fingerprint",
+          "state",
+          "createdAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "OutboundSubmission": {
+        "$id": "urn:mail-edge:schema:v1:outbound-submission",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "$ref": "#/components/schemas/AttemptId"
+          },
+          "deadline": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "fence": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "routeBinding": {
+            "$ref": "#/components/schemas/RouteBindingSnapshot"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "transmissionRaw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "intentId",
+          "attemptId",
+          "fence",
+          "raw",
+          "transmissionRaw",
+          "envelope",
+          "routeBinding",
+          "deadline"
+        ],
+        "type": "object"
+      },
+      "ProviderAcceptance": {
+        "$id": "urn:mail-edge:schema:v1:provider-acceptance",
+        "additionalProperties": false,
+        "properties": {
+          "acceptedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "acceptedRecipients": {
+            "items": {
+              "maxLength": 512,
+              "minLength": 3,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "normalizedEvidence": {
+            "$ref": "#/components/schemas/NormalizedEvidence"
+          },
+          "providerMessageId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rejectedRecipients": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderRecipientOutcome"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "acceptedRecipients",
+          "rejectedRecipients",
+          "acceptedAt",
+          "normalizedEvidence"
+        ],
+        "type": "object"
+      },
+      "ProviderCapabilityDescriptor": {
+        "$id": "urn:mail-edge:schema:v1:provider-capability-descriptor",
+        "additionalProperties": false,
+        "properties": {
+          "adapterVersion": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "controlPlane": {
+            "additionalProperties": false,
+            "properties": {
+              "dnsDiscovery": {
+                "type": "boolean"
+              },
+              "domainProvisioning": {
+                "type": "boolean"
+              },
+              "driftDiscovery": {
+                "type": "boolean"
+              },
+              "exactDomainCatchAll": {
+                "type": "boolean"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "domainProvisioning",
+              "dnsDiscovery",
+              "driftDiscovery",
+              "exactDomainCatchAll"
+            ],
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityEvidence"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "feedback": {
+            "additionalProperties": false,
+            "properties": {
+              "kinds": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "accepted",
+                      "type": "string"
+                    },
+                    {
+                      "const": "delivered",
+                      "type": "string"
+                    },
+                    {
+                      "const": "deferred",
+                      "type": "string"
+                    },
+                    {
+                      "const": "bounced",
+                      "type": "string"
+                    },
+                    {
+                      "const": "complained",
+                      "type": "string"
+                    },
+                    {
+                      "const": "suppressed",
+                      "type": "string"
+                    },
+                    {
+                      "const": "opened",
+                      "type": "string"
+                    },
+                    {
+                      "const": "clicked",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unsubscribed",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 9,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "perRecipient": {
+                "type": "boolean"
+              },
+              "signatureCoverage": {
+                "anyOf": [
+                  {
+                    "const": "whole_body",
+                    "type": "string"
+                  },
+                  {
+                    "const": "body_digest",
+                    "type": "string"
+                  },
+                  {
+                    "const": "token_timestamp_only",
+                    "type": "string"
+                  },
+                  {
+                    "const": "worker_event",
+                    "type": "string"
+                  },
+                  {
+                    "const": "none",
+                    "type": "string"
+                  }
+                ]
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "kinds",
+              "perRecipient",
+              "signatureCoverage"
+            ],
+            "type": "object"
+          },
+          "inbound": {
+            "additionalProperties": false,
+            "properties": {
+              "acquisition": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "inline_stream",
+                      "type": "string"
+                    },
+                    {
+                      "const": "signed_reference_stream",
+                      "type": "string"
+                    },
+                    {
+                      "const": "worker_frame_stream",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 3,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "bytePreservation": {
+                "anyOf": [
+                  {
+                    "const": "verified_exact",
+                    "type": "string"
+                  },
+                  {
+                    "const": "provider_mutated",
+                    "type": "string"
+                  },
+                  {
+                    "const": "unknown",
+                    "type": "string"
+                  }
+                ]
+              },
+              "exactDomainCatchAll": {
+                "type": "boolean"
+              },
+              "maxBytes": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "replayIdentity": {
+                "anyOf": [
+                  {
+                    "const": "provider_event",
+                    "type": "string"
+                  },
+                  {
+                    "const": "signed_token",
+                    "type": "string"
+                  },
+                  {
+                    "const": "worker_nonce",
+                    "type": "string"
+                  },
+                  {
+                    "const": "none",
+                    "type": "string"
+                  }
+                ]
+              },
+              "signatureCoverage": {
+                "anyOf": [
+                  {
+                    "const": "whole_body",
+                    "type": "string"
+                  },
+                  {
+                    "const": "body_digest",
+                    "type": "string"
+                  },
+                  {
+                    "const": "token_timestamp_only",
+                    "type": "string"
+                  },
+                  {
+                    "const": "worker_frames",
+                    "type": "string"
+                  },
+                  {
+                    "const": "none",
+                    "type": "string"
+                  }
+                ]
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "acquisition",
+              "signatureCoverage",
+              "replayIdentity",
+              "exactDomainCatchAll",
+              "bytePreservation"
+            ],
+            "type": "object"
+          },
+          "maturity": {
+            "anyOf": [
+              {
+                "const": "stable",
+                "type": "string"
+              },
+              {
+                "const": "experimental",
+                "type": "string"
+              }
+            ]
+          },
+          "outbound": {
+            "additionalProperties": false,
+            "properties": {
+              "bytePreservation": {
+                "anyOf": [
+                  {
+                    "const": "verified_exact",
+                    "type": "string"
+                  },
+                  {
+                    "const": "provider_mutated",
+                    "type": "string"
+                  },
+                  {
+                    "const": "unknown",
+                    "type": "string"
+                  }
+                ]
+              },
+              "envelope": {
+                "additionalProperties": false,
+                "properties": {
+                  "bodyModes": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "const": "7bit",
+                          "type": "string"
+                        },
+                        {
+                          "const": "8bitmime",
+                          "type": "string"
+                        },
+                        {
+                          "const": "binarymime",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "maxItems": 3,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "dsnRetEnvid": {
+                    "type": "boolean"
+                  },
+                  "multipleRecipients": {
+                    "type": "boolean"
+                  },
+                  "nullReversePath": {
+                    "type": "boolean"
+                  },
+                  "perRecipientDsn": {
+                    "type": "boolean"
+                  },
+                  "requireTls": {
+                    "type": "boolean"
+                  },
+                  "smtpUtf8": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "nullReversePath",
+                  "multipleRecipients",
+                  "smtpUtf8",
+                  "dsnRetEnvid",
+                  "perRecipientDsn",
+                  "bodyModes",
+                  "requireTls"
+                ],
+                "type": "object"
+              },
+              "idempotency": {
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "anyOf": [
+                      {
+                        "const": "none",
+                        "type": "string"
+                      },
+                      {
+                        "const": "header",
+                        "type": "string"
+                      },
+                      {
+                        "const": "request_key",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "scope": {
+                    "anyOf": [
+                      {
+                        "const": "account",
+                        "type": "string"
+                      },
+                      {
+                        "const": "domain",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "ttlSeconds": {
+                    "maximum": 31536000,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "type": "object"
+              },
+              "maxBytes": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mimeMutation": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "none",
+                      "type": "string"
+                    },
+                    {
+                      "const": "transport_headers",
+                      "type": "string"
+                    },
+                    {
+                      "const": "dkim_signature",
+                      "type": "string"
+                    },
+                    {
+                      "const": "content_reencoding",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unknown",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 5,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "rateLimit": {
+                "additionalProperties": false,
+                "maxProperties": 16,
+                "patternProperties": {
+                  "^(.*)$": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "reconciliation": {
+                "additionalProperties": false,
+                "properties": {
+                  "canProve": {
+                    "items": {
+                      "$ref": "#/components/schemas/DeliveryCertainty"
+                    },
+                    "maxItems": 3,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "keys": {
+                    "items": {
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "supported": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "supported",
+                  "keys",
+                  "canProve"
+                ],
+                "type": "object"
+              },
+              "supported": {
+                "type": "boolean"
+              },
+              "transports": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "http_binary",
+                      "type": "string"
+                    },
+                    {
+                      "const": "http_utf8_json",
+                      "type": "string"
+                    },
+                    {
+                      "const": "smtp_raw",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 3,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "supported",
+              "transports",
+              "bytePreservation",
+              "mimeMutation",
+              "envelope",
+              "idempotency",
+              "reconciliation"
+            ],
+            "type": "object"
+          },
+          "prerequisites": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "providerId": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "providerId",
+          "adapterVersion",
+          "maturity",
+          "inbound",
+          "outbound",
+          "feedback",
+          "controlPlane",
+          "prerequisites",
+          "evidence"
+        ],
+        "type": "object"
+      },
+      "ProviderFeedback": {
+        "$id": "urn:mail-edge:schema:v1:provider-feedback",
+        "additionalProperties": false,
+        "properties": {
+          "attemptId": {
+            "$ref": "#/components/schemas/AttemptId"
+          },
+          "feedbackEventId": {
+            "$ref": "#/components/schemas/FeedbackEventId"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "const": "accepted",
+                "type": "string"
+              },
+              {
+                "const": "delivered",
+                "type": "string"
+              },
+              {
+                "const": "deferred",
+                "type": "string"
+              },
+              {
+                "const": "bounced",
+                "type": "string"
+              },
+              {
+                "const": "complained",
+                "type": "string"
+              },
+              {
+                "const": "suppressed",
+                "type": "string"
+              },
+              {
+                "const": "opened",
+                "type": "string"
+              },
+              {
+                "const": "clicked",
+                "type": "string"
+              },
+              {
+                "const": "unsubscribed",
+                "type": "string"
+              }
+            ]
+          },
+          "normalizedEvidence": {
+            "$ref": "#/components/schemas/NormalizedEvidence"
+          },
+          "occurredAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "providerEventKey": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "providerId": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "providerInstanceId": {
+            "$ref": "#/components/schemas/ProviderInstanceId"
+          },
+          "providerMessageId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "receivedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "recipient": {
+            "maxLength": 512,
+            "minLength": 3,
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "sequenceHint": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "feedbackEventId",
+          "providerId",
+          "providerInstanceId",
+          "providerEventKey",
+          "kind",
+          "occurredAt",
+          "receivedAt",
+          "normalizedEvidence"
+        ],
+        "type": "object"
+      },
+      "ProviderId": {
+        "$id": "urn:mail-edge:schema:v1:provider-id",
+        "maxLength": 63,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+        "type": "string"
+      },
+      "ProviderInstanceId": {
+        "$id": "urn:mail-edge:schema:v1:provider-instance-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "ProviderRecipientOutcome": {
+        "$id": "urn:mail-edge:schema:v1:provider-recipient-outcome",
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 512,
+            "minLength": 3,
+            "type": "string"
+          },
+          "evidenceCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "const": "accepted",
+                "type": "string"
+              },
+              {
+                "const": "rejected",
+                "type": "string"
+              }
+            ]
+          },
+          "statusCode": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "outcome",
+          "evidenceCode"
+        ],
+        "type": "object"
+      },
+      "RawAccessGrant": {
+        "$id": "urn:mail-edge:schema:v1:raw-access-grant",
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "grantId": {
+            "$ref": "#/components/schemas/RawAccessGrantId"
+          },
+          "issuedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "const": "application_delivery",
+                "type": "string"
+              },
+              {
+                "const": "operator_review",
+                "type": "string"
+              },
+              {
+                "const": "reconciliation",
+                "type": "string"
+              }
+            ]
+          },
+          "raw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "singleUse": {
+            "type": "boolean"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "grantId",
+          "tenantId",
+          "raw",
+          "audience",
+          "purpose",
+          "singleUse",
+          "issuedAt",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "RawAccessGrantId": {
+        "$id": "urn:mail-edge:schema:v1:raw-access-grant-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "RawMessageRef": {
+        "$id": "urn:mail-edge:schema:v1:raw-message-ref",
+        "additionalProperties": false,
+        "properties": {
+          "blobId": {
+            "$ref": "#/components/schemas/BlobId"
+          },
+          "mediaType": {
+            "const": "message/rfc822",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "size": {
+            "maximum": 26214400,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "blobId",
+          "sha256",
+          "size",
+          "mediaType"
+        ],
+        "type": "object"
+      },
+      "ReceiptId": {
+        "$id": "urn:mail-edge:schema:v1:receipt-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "RecipientDeliveryProjection": {
+        "$id": "urn:mail-edge:schema:v1:recipient-delivery-projection",
+        "additionalProperties": false,
+        "properties": {
+          "clicked": {
+            "type": "boolean"
+          },
+          "complaint": {
+            "type": "boolean"
+          },
+          "contradictions": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "lastTransportOccurredAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "latestFeedbackOrderKey": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "opened": {
+            "type": "boolean"
+          },
+          "recipientKey": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "suppressed": {
+            "type": "boolean"
+          },
+          "transportState": {
+            "anyOf": [
+              {
+                "const": "pending",
+                "type": "string"
+              },
+              {
+                "const": "accepted",
+                "type": "string"
+              },
+              {
+                "const": "delivered",
+                "type": "string"
+              },
+              {
+                "const": "deferred",
+                "type": "string"
+              },
+              {
+                "const": "bounced",
+                "type": "string"
+              },
+              {
+                "const": "failed_not_sent",
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ]
+          },
+          "unsubscribed": {
+            "type": "boolean"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "intentId",
+          "recipientKey",
+          "transportState",
+          "complaint",
+          "suppressed",
+          "opened",
+          "clicked",
+          "unsubscribed",
+          "contradictions",
+          "version"
+        ],
+        "type": "object"
+      },
+      "Rfc3339Timestamp": {
+        "$id": "urn:mail-edge:schema:v1:rfc3339-timestamp",
+        "format": "date-time",
+        "maxLength": 35,
+        "minLength": 20,
+        "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$",
+        "type": "string"
+      },
+      "RouteBinding": {
+        "$id": "urn:mail-edge:schema:v1:route-binding",
+        "additionalProperties": false,
+        "properties": {
+          "adapterVersion": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "bindingId": {
+            "$ref": "#/components/schemas/BindingId"
+          },
+          "bindingVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "capabilityDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "configRevision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "const": "inbound",
+                "type": "string"
+              },
+              {
+                "const": "outbound",
+                "type": "string"
+              }
+            ]
+          },
+          "domainALabel": {
+            "$ref": "#/components/schemas/DomainALabel"
+          },
+          "fallbackEligible": {
+            "type": "boolean"
+          },
+          "optimisticVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "providerId": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "providerInstanceId": {
+            "$ref": "#/components/schemas/ProviderInstanceId"
+          },
+          "providerResourceIds": {
+            "$ref": "#/components/schemas/BoundedStringMap"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "draft",
+                "type": "string"
+              },
+              {
+                "const": "testing",
+                "type": "string"
+              },
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "const": "draining",
+                "type": "string"
+              },
+              {
+                "const": "retired",
+                "type": "string"
+              },
+              {
+                "const": "failed",
+                "type": "string"
+              }
+            ]
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "updatedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "bindingId",
+          "bindingVersion",
+          "tenantId",
+          "domainALabel",
+          "direction",
+          "providerId",
+          "adapterVersion",
+          "providerInstanceId",
+          "providerResourceIds",
+          "capabilityDigest",
+          "configRevision",
+          "createdAt",
+          "state",
+          "optimisticVersion",
+          "fallbackEligible",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "RouteBindingSnapshot": {
+        "$id": "urn:mail-edge:schema:v1:route-binding-snapshot",
+        "additionalProperties": false,
+        "properties": {
+          "adapterVersion": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "bindingId": {
+            "$ref": "#/components/schemas/BindingId"
+          },
+          "bindingVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "capabilityDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "configRevision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "const": "inbound",
+                "type": "string"
+              },
+              {
+                "const": "outbound",
+                "type": "string"
+              }
+            ]
+          },
+          "domainALabel": {
+            "$ref": "#/components/schemas/DomainALabel"
+          },
+          "providerId": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "providerInstanceId": {
+            "$ref": "#/components/schemas/ProviderInstanceId"
+          },
+          "providerResourceIds": {
+            "$ref": "#/components/schemas/BoundedStringMap"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "bindingId",
+          "bindingVersion",
+          "tenantId",
+          "domainALabel",
+          "direction",
+          "providerId",
+          "adapterVersion",
+          "providerInstanceId",
+          "providerResourceIds",
+          "capabilityDigest",
+          "configRevision",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "RouteRequirements": {
+        "$id": "urn:mail-edge:schema:v1:route-requirements",
+        "additionalProperties": false,
+        "properties": {
+          "acquisition": {
+            "anyOf": [
+              {
+                "const": "inline_stream",
+                "type": "string"
+              },
+              {
+                "const": "signed_reference_stream",
+                "type": "string"
+              },
+              {
+                "const": "worker_frame_stream",
+                "type": "string"
+              }
+            ]
+          },
+          "allowedMaturity": {
+            "anyOf": [
+              {
+                "const": "stable",
+                "type": "string"
+              },
+              {
+                "const": "experimental",
+                "type": "string"
+              }
+            ]
+          },
+          "bytePreservation": {
+            "anyOf": [
+              {
+                "const": "verified_exact",
+                "type": "string"
+              },
+              {
+                "const": "provider_mutated",
+                "type": "string"
+              },
+              {
+                "const": "unknown",
+                "type": "string"
+              }
+            ]
+          },
+          "controlPlane": {
+            "additionalProperties": false,
+            "properties": {
+              "dnsDiscovery": {
+                "type": "boolean"
+              },
+              "domainProvisioning": {
+                "type": "boolean"
+              },
+              "driftDiscovery": {
+                "type": "boolean"
+              },
+              "exactDomainCatchAll": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "domainProvisioning",
+              "dnsDiscovery",
+              "driftDiscovery",
+              "exactDomainCatchAll"
+            ],
+            "type": "object"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "const": "inbound",
+                "type": "string"
+              },
+              {
+                "const": "outbound",
+                "type": "string"
+              }
+            ]
+          },
+          "envelope": {
+            "additionalProperties": false,
+            "properties": {
+              "bodyModes": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "const": "7bit",
+                      "type": "string"
+                    },
+                    {
+                      "const": "8bitmime",
+                      "type": "string"
+                    },
+                    {
+                      "const": "binarymime",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "maxItems": 3,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "dsnRetEnvid": {
+                "type": "boolean"
+              },
+              "multipleRecipients": {
+                "type": "boolean"
+              },
+              "nullReversePath": {
+                "type": "boolean"
+              },
+              "perRecipientDsn": {
+                "type": "boolean"
+              },
+              "requireTls": {
+                "type": "boolean"
+              },
+              "smtpUtf8": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "nullReversePath",
+              "multipleRecipients",
+              "smtpUtf8",
+              "dsnRetEnvid",
+              "perRecipientDsn",
+              "bodyModes",
+              "requireTls"
+            ],
+            "type": "object"
+          },
+          "feedbackKinds": {
+            "items": {
+              "anyOf": [
+                {
+                  "const": "accepted",
+                  "type": "string"
+                },
+                {
+                  "const": "delivered",
+                  "type": "string"
+                },
+                {
+                  "const": "deferred",
+                  "type": "string"
+                },
+                {
+                  "const": "bounced",
+                  "type": "string"
+                },
+                {
+                  "const": "complained",
+                  "type": "string"
+                },
+                {
+                  "const": "suppressed",
+                  "type": "string"
+                },
+                {
+                  "const": "opened",
+                  "type": "string"
+                },
+                {
+                  "const": "clicked",
+                  "type": "string"
+                },
+                {
+                  "const": "unsubscribed",
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 9,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "maxMessageBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "region": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "direction",
+          "maxMessageBytes",
+          "envelope",
+          "feedbackKinds",
+          "controlPlane",
+          "allowedMaturity"
+        ],
+        "type": "object"
+      },
+      "SafeDetails": {
+        "$id": "urn:mail-edge:schema:v1:safe-details",
+        "additionalProperties": false,
+        "maxProperties": 16,
+        "patternProperties": {
+          "^[a-z][A-Za-z0-9]*$": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "Sha256": {
+        "$id": "urn:mail-edge:schema:v1:sha256",
+        "maxLength": 64,
+        "minLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "SmtpEnvelope": {
+        "$id": "urn:mail-edge:schema:v1:smtp-envelope",
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "const": "7bit",
+                "type": "string"
+              },
+              {
+                "const": "8bitmime",
+                "type": "string"
+              },
+              {
+                "const": "binarymime",
+                "type": "string"
+              }
+            ]
+          },
+          "dsn": {
+            "additionalProperties": false,
+            "properties": {
+              "envelopeId": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^(?:[\\x21-\\x2a\\x2c-\\x3c\\x3e-\\x7e]|\\+[0-9A-F]{2})+$",
+                "type": "string"
+              },
+              "ret": {
+                "anyOf": [
+                  {
+                    "const": "full",
+                    "type": "string"
+                  },
+                  {
+                    "const": "headers",
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "mailFrom": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rcptTo": {
+            "items": {
+              "$ref": "#/components/schemas/SmtpRecipient"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "requireTls": {
+            "type": "boolean"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "smtpUtf8": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "mailFrom",
+          "rcptTo",
+          "smtpUtf8"
+        ],
+        "type": "object"
+      },
+      "SmtpRecipient": {
+        "$id": "urn:mail-edge:schema:v1:smtp-recipient",
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 512,
+            "minLength": 3,
+            "type": "string"
+          },
+          "dsn": {
+            "additionalProperties": false,
+            "properties": {
+              "notify": {
+                "$ref": "#/components/schemas/DsnNotify"
+              },
+              "originalRecipient": {
+                "maxLength": 500,
+                "minLength": 3,
+                "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63};(?:[\\x21-\\x2a\\x2c-\\x3c\\x3e-\\x7e]|\\+[0-9A-F]{2})+$",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "address"
+        ],
+        "type": "object"
+      },
+      "TenantId": {
+        "$id": "urn:mail-edge:schema:v1:tenant-id",
+        "maxLength": 36,
+        "minLength": 36,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "VerifiedInboundReceipt": {
+        "$id": "urn:mail-edge:schema:v1:verified-inbound-receipt",
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/RouteBindingSnapshot"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "providerId": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "providerInstanceId": {
+            "$ref": "#/components/schemas/ProviderInstanceId"
+          },
+          "providerReceiptKey": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "receiptId": {
+            "$ref": "#/components/schemas/ReceiptId"
+          },
+          "receivedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "received",
+                "type": "string"
+              },
+              {
+                "const": "acquiring",
+                "type": "string"
+              },
+              {
+                "const": "stored",
+                "type": "string"
+              },
+              {
+                "const": "routing",
+                "type": "string"
+              },
+              {
+                "const": "delivering",
+                "type": "string"
+              },
+              {
+                "const": "retry_wait",
+                "type": "string"
+              },
+              {
+                "const": "delivered",
+                "type": "string"
+              },
+              {
+                "const": "quarantined",
+                "type": "string"
+              },
+              {
+                "const": "dead_letter",
+                "type": "string"
+              },
+              {
+                "const": "purged",
+                "type": "string"
+              }
+            ]
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "verificationEvidenceDigest": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "receiptId",
+          "tenantId",
+          "providerId",
+          "providerInstanceId",
+          "providerReceiptKey",
+          "binding",
+          "envelope",
+          "raw",
+          "verificationEvidenceDigest",
+          "receivedAt",
+          "state",
+          "version"
+        ],
+        "type": "object"
+      },
+      "WorkflowWakeup": {
+        "$id": "urn:mail-edge:schema:v1:workflow-wakeup",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "receiptId": {
+                "$ref": "#/components/schemas/ReceiptId"
+              },
+              "schemaVersion": {
+                "const": "v1",
+                "type": "string"
+              },
+              "type": {
+                "const": "inbound_receipt",
+                "type": "string"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "type",
+              "receiptId"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "intentId": {
+                "$ref": "#/components/schemas/IntentId"
+              },
+              "schemaVersion": {
+                "const": "v1",
+                "type": "string"
+              },
+              "type": {
+                "const": "outbound_intent",
+                "type": "string"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "type",
+              "intentId"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "feedbackEventId": {
+                "$ref": "#/components/schemas/FeedbackEventId"
+              },
+              "schemaVersion": {
+                "const": "v1",
+                "type": "string"
+              },
+              "type": {
+                "const": "feedback_event",
+                "type": "string"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "type",
+              "feedbackEventId"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "deliveryId": {
+                "$ref": "#/components/schemas/DeliveryId"
+              },
+              "schemaVersion": {
+                "const": "v1",
+                "type": "string"
+              },
+              "type": {
+                "const": "application_delivery",
+                "type": "string"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "type",
+              "deliveryId"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "description": "Versioned provider-neutral Mail Edge wire contracts.",
+    "license": {
+      "identifier": "Apache-2.0",
+      "name": "Apache-2.0"
+    },
+    "title": "Mail Edge contracts",
+    "version": "1.0.0"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {}
+}
