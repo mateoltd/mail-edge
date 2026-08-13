@@ -5,6 +5,7 @@
     { "path": "packages/contracts" },
     { "path": "packages/core" },
     { "path": "packages/provider" },
+    { "path": "packages/conformance" },
     { "path": "packages/sdk" }
   ]
 }

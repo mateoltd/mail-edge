@@ -1,0 +1,44 @@
+{
+  "name": "@mail-edge/conformance",
+  "version": "0.1.0",
+  "description": "Executable provider qualification framework and signed evidence CLI for Mail Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "24.19.0"
+  },
+  "bin": {
+    "mail-edge-conformance": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./examples/third-party-adapter": "./examples/third-party-adapter.mjs"
+  },
+  "files": [
+    "dist",
+    "etc",
+    "examples",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "api:check": "api-extractor run",
+    "build": "tsc -b",
+    "lint": "eslint src test --max-warnings 0",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@mail-edge/provider": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
+  }
+}

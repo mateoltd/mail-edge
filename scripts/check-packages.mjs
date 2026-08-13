@@ -65,12 +65,17 @@ try {
 import { createContractValidator, parseProviderId, SmtpEnvelopeV1Schema } from "@mail-edge/contracts";
 import { canonicalizeSmtpEnvelope } from "@mail-edge/core";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
+import { ProviderConformanceKit } from "@mail-edge/conformance";
+import { conformanceTarget } from "@mail-edge/conformance/examples/third-party-adapter";
 
 assert.equal(parseProviderId("clean-room-provider").ok, true);
 const envelope = { schemaVersion: "v1", mailFrom: null, rcptTo: [{ address: "recipient@example.test" }], smtpUtf8: false };
 assert.equal(createContractValidator().validate(SmtpEnvelopeV1Schema, envelope).ok, true);
 assert.equal(canonicalizeSmtpEnvelope(envelope).ok, true);
 assert.throws(() => new MailEdgeSdkBuilder().build(), /missing/u);
+const conformance = await new ProviderConformanceKit(conformanceTarget).run({ observedAt: "2026-08-13T08:00:00Z" }, new AbortController().signal);
+assert.equal(conformance.ok, true);
+assert.equal(conformance.value.passed, true);
 `,
     );
     writeFileSync(
@@ -78,6 +83,8 @@ assert.throws(() => new MailEdgeSdkBuilder().build(), /missing/u);
       `import { parseProviderId, type ProviderId, type SmtpEnvelopeV1 } from "@mail-edge/contracts";
 import { canonicalizeSmtpEnvelope, type BlobStorePort } from "@mail-edge/core";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
+import type { ProviderAdapterRegistration } from "@mail-edge/provider";
+import type { ProviderConformanceTarget } from "@mail-edge/conformance";
 
 const parsed = parseProviderId("clean-room-provider");
 if (!parsed.ok) throw new Error("provider ID did not validate");
@@ -86,9 +93,12 @@ const envelope: SmtpEnvelopeV1 = { schemaVersion: "v1", mailFrom: null, rcptTo: 
 const canonical = canonicalizeSmtpEnvelope(envelope);
 const builder = new MailEdgeSdkBuilder();
 declare const blobStore: BlobStorePort;
+declare const registration: ProviderAdapterRegistration;
 builder.withBlobStore(blobStore);
+const conformanceTarget: ProviderConformanceTarget = { registration, driver: {}, region: "test-region", environment: {} };
 void providerId;
 void canonical;
+void conformanceTarget;
 `,
     );
     writeFileSync(
