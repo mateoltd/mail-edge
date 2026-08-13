@@ -2,7 +2,11 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { loadVerifiedMigrations, PostgresDatabase, PostgresMigrationRunner } from "../src/index.js";
+import {
+  loadVerifiedMigrations,
+  PostgresDatabase,
+  PostgresMigrationRunner,
+} from "../../src/index.js";
 
 const tenantA = "018f4f6a-7b2c-7000-8000-000000000001";
 const tenantB = "018f4f6a-7b2c-7000-8000-000000000002";

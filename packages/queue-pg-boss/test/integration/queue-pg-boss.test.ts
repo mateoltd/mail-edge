@@ -11,7 +11,7 @@ import {
   type QueueErrorFactory,
   type TransactionalSqlExecutor,
   type WakeupFailure,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 const errors: QueueErrorFactory = {
   create: (input) =>

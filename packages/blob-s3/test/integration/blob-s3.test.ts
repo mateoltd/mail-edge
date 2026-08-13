@@ -25,7 +25,7 @@ import {
   type EnvelopeKeyService,
   type PendingBlobPromotion,
   type StoredBlobRecord,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 interface StageState extends BlobStageCreation {
   version: number;

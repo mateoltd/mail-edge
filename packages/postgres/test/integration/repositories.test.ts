@@ -28,7 +28,7 @@ import {
   PostgresUnitOfWork,
   PostgresWakeupRepairRepository,
   type SensitiveValueKeyProvider,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 const must = <T>(result: { readonly ok: true; readonly value: T } | { readonly ok: false }): T => {
   if (!result.ok) throw new TypeError("Test identifier is invalid.");
@@ -40,10 +40,13 @@ const providerInstanceId = must(parseProviderInstanceId("018f4f6a-7b2c-7000-8000
 const providerId = must(parseProviderId("mailgun"));
 const bindingId = must(parseBindingId("018f4f6a-7b2c-7000-8000-000000000103"));
 const blobId = must(parseBlobId("018f4f6a-7b2c-7000-8000-000000000104"));
-const firstIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000105"));
-const secondIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000106"));
-const attemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000107"));
-const competingAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000108"));
+const firstIdempotencyCandidateId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000105"));
+const secondIdempotencyCandidateId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000106"));
+const claimIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000107"));
+const firstClaimAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000108"));
+const secondClaimAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000109"));
+const expiredLeaseIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000110"));
+const expiredLeaseAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000111"));
 const idempotencyKey = must(parseIdempotencyKey("runtime-test-key"));
 void idempotencyKey;
 
@@ -108,13 +111,16 @@ const idempotency = (
     tenantId,
   });
 
-const attempt = (id: OutboundAttemptV1["attemptId"]): OutboundAttemptV1 =>
+const attempt = (
+  attemptId: OutboundAttemptV1["attemptId"],
+  intentId: OutboundAttemptV1["intentId"],
+): OutboundAttemptV1 =>
   Object.freeze({
-    attemptId: id,
+    attemptId,
     createdAt: occurredAt,
     deliveryCertainty: "not_sent",
     fence: 1,
-    intentId: firstIntentId,
+    intentId,
     ordinal: 1,
     recipientIndexes: Object.freeze([0]),
     routeBinding: binding,
@@ -223,36 +229,45 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       unitOfWork.executeForTenant(
         tenantId,
         (context) =>
-          intents.insert(intent(firstIntentId), idempotency(firstIntentId), context, signal),
+          intents.insert(
+            intent(firstIdempotencyCandidateId),
+            idempotency(firstIdempotencyCandidateId),
+            context,
+            signal,
+          ),
         signal,
       ),
       unitOfWork.executeForTenant(
         tenantId,
         (context) =>
-          intents.insert(intent(secondIntentId), idempotency(secondIntentId), context, signal),
+          intents.insert(
+            intent(secondIdempotencyCandidateId),
+            idempotency(secondIdempotencyCandidateId),
+            context,
+            signal,
+          ),
         signal,
       ),
     ]);
-    expect(
-      results.map((result) =>
-        result.ok
-          ? "ok"
-          : `${result.error.code}:${result.error.message}:${String(result.error.cause)}`,
-      ),
-    ).toEqual(["ok", "ok"]);
-    expect(results.map((result) => (result.ok ? result.value.intentId : null))).toEqual([
-      firstIntentId,
-      firstIntentId,
-    ]);
-    const count = await owner.query<{ count: string }>(
-      "SELECT count(*) FROM outbound_intents WHERE tenant_id = $1",
-      [tenantId],
+    expect(results.every((result) => result.ok)).toBe(true);
+    const resolvedIntentIds = results.map((result) => (result.ok ? result.value.intentId : null));
+    expect(new Set(resolvedIntentIds).size).toBe(1);
+    const winningIntentId = resolvedIntentIds[0];
+    if (winningIntentId === null || winningIntentId === undefined) {
+      throw new TypeError("Concurrent idempotency resolution must return a durable intent.");
+    }
+    expect([firstIdempotencyCandidateId, secondIdempotencyCandidateId]).toContain(winningIntentId);
+    const durable = await owner.query<{ intent_id: string }>(
+      `SELECT intent_id
+       FROM outbound_intents
+       WHERE tenant_id = $1 AND intent_id IN ($2, $3)`,
+      [tenantId, firstIdempotencyCandidateId, secondIdempotencyCandidateId],
     );
-    expect(count.rows[0]?.count).toBe("1");
+    expect(durable.rows).toEqual([{ intent_id: winningIntentId }]);
   });
 
   test("rolls back all repository writes when a unit of work returns failure", async () => {
-    const auditId = "018f4f6a-7b2c-7000-8000-000000000109";
+    const auditId = "018f4f6a-7b2c-7000-8000-000000000112";
     const result = await unitOfWork.executeForTenant(
       tenantId,
       async (context) => {
@@ -296,18 +311,37 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
 
   test("serializes concurrent claims and rejects stale fences", async () => {
     const signal = new AbortController().signal;
+    const inserted = await unitOfWork.executeForTenant(
+      tenantId,
+      (context) =>
+        intents.insert(
+          intent(claimIntentId),
+          idempotency(claimIntentId, "ab".repeat(32)),
+          context,
+          signal,
+        ),
+      signal,
+    );
+    expect(inserted).toMatchObject({ ok: true, value: { intentId: claimIntentId } });
     const claims = await Promise.all([
       unitOfWork.executeForTenant(
         tenantId,
         (context) =>
-          leases.claimOutboundAttempt(attempt(attemptId), 0, occurredAt, 60_000, context, signal),
+          leases.claimOutboundAttempt(
+            attempt(firstClaimAttemptId, claimIntentId),
+            0,
+            occurredAt,
+            60_000,
+            context,
+            signal,
+          ),
         signal,
       ),
       unitOfWork.executeForTenant(
         tenantId,
         (context) =>
           leases.claimOutboundAttempt(
-            attempt(competingAttemptId),
+            attempt(secondClaimAttemptId, claimIntentId),
             0,
             occurredAt,
             60_000,
@@ -317,17 +351,22 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
         signal,
       ),
     ]);
-    expect(
-      claims.map((claim) =>
-        claim.ok ? "ok" : `${claim.error.code}:${claim.error.message}:${String(claim.error.cause)}`,
-      ),
-    ).toContain("ok");
+    expect(claims.map((claim) => (claim.ok ? "ok" : claim.error.code)).sort()).toEqual([
+      "WORKFLOW_CONFLICT",
+      "ok",
+    ]);
     expect(claims.filter((claim) => claim.ok)).toHaveLength(1);
     const winningClaim = claims.find((claim) => claim.ok);
     if (!winningClaim?.ok) {
       throw new TypeError("One outbound claim should win.");
     }
     const winningAttemptId = winningClaim.value.attempt.attemptId;
+    expect([firstClaimAttemptId, secondClaimAttemptId]).toContain(winningAttemptId);
+    const durableAttempts = await owner.query<{ attempt_id: string }>(
+      `SELECT attempt_id FROM outbound_attempts WHERE tenant_id = $1 AND intent_id = $2`,
+      [tenantId, claimIntentId],
+    );
+    expect(durableAttempts.rows).toEqual([{ attempt_id: winningAttemptId }]);
 
     const stale = await unitOfWork.executeForTenant(
       tenantId,
@@ -335,7 +374,7 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
         leases.settleOutboundAttempt(
           tenantId,
           winningAttemptId,
-          firstIntentId,
+          claimIntentId,
           2,
           1,
           { certainty: "accepted", state: "provider_accepted" },
@@ -354,7 +393,7 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
         leases.settleOutboundAttempt(
           tenantId,
           winningAttemptId,
-          firstIntentId,
+          claimIntentId,
           1,
           1,
           { certainty: "accepted", state: "provider_accepted" },
@@ -383,18 +422,15 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       tenantId,
       (context) =>
         intents.insert(
-          intent(secondIntentId),
-          idempotency(secondIntentId, "aa".repeat(32)),
+          intent(expiredLeaseIntentId),
+          idempotency(expiredLeaseIntentId, "aa".repeat(32)),
           context,
           signal,
         ),
       signal,
     );
-    if (!inserted.ok) throw new TypeError("Second intent should be inserted.");
-    const expiredAttempt = Object.freeze({
-      ...attempt(competingAttemptId),
-      intentId: secondIntentId,
-    });
+    if (!inserted.ok) throw new TypeError("Expired-lease intent should be inserted.");
+    const expiredAttempt = attempt(expiredLeaseAttemptId, expiredLeaseIntentId);
     const claimed = await unitOfWork.executeForTenant(
       tenantId,
       (context) => leases.claimOutboundAttempt(expiredAttempt, 0, occurredAt, 1, context, signal),
@@ -413,7 +449,7 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
         ),
       signal,
     );
-    expect(quarantined).toEqual({ ok: true, value: [competingAttemptId] });
+    expect(quarantined).toEqual({ ok: true, value: [expiredLeaseAttemptId] });
     const state = await owner.query<{
       attempt_state: string;
       certainty: string;
@@ -423,7 +459,7 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
        FROM outbound_attempts a
        JOIN outbound_intents i USING (tenant_id, intent_id)
        WHERE a.tenant_id = $1 AND a.attempt_id = $2`,
-      [tenantId, competingAttemptId],
+      [tenantId, expiredLeaseAttemptId],
     );
     expect(state.rows[0]).toEqual({
       attempt_state: "quarantined_unknown",
