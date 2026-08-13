@@ -3,7 +3,15 @@ packages:
   - packages/*
 
 allowBuilds:
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
+
+minimumReleaseAgeExclude:
+  - "@aws-sdk/client-kms@3.1109.0"
+  - "@aws-sdk/client-s3@3.1109.0"
+  - "@aws-sdk/lib-storage@3.1109.0"
 
 onlyBuiltDependencies:
   - esbuild

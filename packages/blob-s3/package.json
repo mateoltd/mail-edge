@@ -1,0 +1,42 @@
+{
+  "name": "@mail-edge/blob-s3",
+  "version": "0.1.0",
+  "description": "Streaming envelope-encrypted S3-compatible raw message storage for Mail Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "24.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "etc"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "api:check": "api-extractor run",
+    "build": "tsc -b",
+    "lint": "eslint src test --max-warnings 0",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kms": "3.1109.0",
+    "@aws-sdk/client-s3": "3.1109.0",
+    "@aws-sdk/lib-storage": "3.1109.0",
+    "@mail-edge/core": "workspace:^"
+  },
+  "devDependencies": {
+    "@testcontainers/minio": "12.1.0",
+    "vitest": "4.1.10"
+  }
+}
