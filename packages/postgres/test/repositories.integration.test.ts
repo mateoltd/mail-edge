@@ -377,6 +377,61 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     });
   });
 
+  test("quarantines an expired dispatch lease without another side-effect boundary", async () => {
+    const signal = new AbortController().signal;
+    const inserted = await unitOfWork.executeForTenant(
+      tenantId,
+      (context) =>
+        intents.insert(
+          intent(secondIntentId),
+          idempotency(secondIntentId, "aa".repeat(32)),
+          context,
+          signal,
+        ),
+      signal,
+    );
+    if (!inserted.ok) throw new TypeError("Second intent should be inserted.");
+    const expiredAttempt = Object.freeze({
+      ...attempt(competingAttemptId),
+      intentId: secondIntentId,
+    });
+    const claimed = await unitOfWork.executeForTenant(
+      tenantId,
+      (context) => leases.claimOutboundAttempt(expiredAttempt, 0, occurredAt, 1, context, signal),
+      signal,
+    );
+    expect(claimed.ok).toBe(true);
+    const quarantined = await unitOfWork.executeForTenant(
+      tenantId,
+      (context) =>
+        leases.quarantineExpiredOutboundDispatches(
+          tenantId,
+          "2026-08-13T18:00:01.000Z",
+          10,
+          context,
+          signal,
+        ),
+      signal,
+    );
+    expect(quarantined).toEqual({ ok: true, value: [competingAttemptId] });
+    const state = await owner.query<{
+      attempt_state: string;
+      certainty: string;
+      intent_state: string;
+    }>(
+      `SELECT a.state AS attempt_state, a.certainty, i.state AS intent_state
+       FROM outbound_attempts a
+       JOIN outbound_intents i USING (tenant_id, intent_id)
+       WHERE a.tenant_id = $1 AND a.attempt_id = $2`,
+      [tenantId, competingAttemptId],
+    );
+    expect(state.rows[0]).toEqual({
+      attempt_state: "quarantined_unknown",
+      certainty: "unknown",
+      intent_state: "quarantined_unknown",
+    });
+  });
+
   test("database trigger rejects workflow references to unavailable blobs", async () => {
     const corruptStage = "018f4f6a-7b2c-7000-8000-000000000120";
     const corruptBlob = "018f4f6a-7b2c-7000-8000-000000000121";
