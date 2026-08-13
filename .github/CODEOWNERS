@@ -1,0 +1,8 @@
+* @mateoltd
+
+/.github/ @mateoltd
+/config/ @mateoltd
+/docs/adr/ @mateoltd
+/scripts/ @mateoltd
+/*config* @mateoltd
+/pnpm-lock.yaml @mateoltd
