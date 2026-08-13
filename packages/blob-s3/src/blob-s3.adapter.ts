@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { once } from "node:events";
+import { isUint8Array } from "node:util/types";
 
 import {
   CopyObjectCommand,
@@ -62,6 +63,11 @@ interface StageUploadState {
   aborted: boolean;
 }
 
+type UploadCompletion = Awaited<ReturnType<Upload["done"]>>;
+type UploadSettlement =
+  | { readonly ok: true; readonly value: UploadCompletion }
+  | { readonly ok: false; readonly error: unknown };
+
 const asFailure = (
   errors: BlobErrorFactory,
   operation: string,
@@ -112,6 +118,24 @@ const boundedOperationSignal = (
 ): AbortSignal =>
   AbortSignal.any([signal, AbortSignal.timeout(config.operationTimeoutMilliseconds ?? 30_000)]);
 
+const cleanupSignal = (config: Readonly<EncryptedS3BlobStoreConfig>): AbortSignal =>
+  AbortSignal.timeout(config.cleanupTimeoutMilliseconds);
+
+const awaitWithSignal = async <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
+  if (signal.aborted) throw signal.reason;
+  let rejectCanceled: ((reason: unknown) => void) | undefined;
+  const canceled = new Promise<never>((_resolve, reject) => {
+    rejectCanceled = reject;
+  });
+  const cancel = (): void => rejectCanceled?.(signal.reason);
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, canceled]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+};
+
 const objectSse = (
   config: EncryptedS3BlobStoreConfig,
 ): Readonly<{
@@ -144,6 +168,106 @@ const asyncBody = (value: unknown): AsyncIterable<Uint8Array> => {
   }
   return value as AsyncIterable<Uint8Array>;
 };
+
+const isDestroyableBody = (value: unknown): value is { destroy(cause?: Error): void } =>
+  typeof value === "object" &&
+  value !== null &&
+  "destroy" in value &&
+  typeof value.destroy === "function";
+
+const destroyResponseBody = (value: unknown, cause?: unknown): void => {
+  try {
+    if (isDestroyableBody(value)) {
+      value.destroy(cause instanceof Error ? cause : undefined);
+    }
+  } catch {
+    // Response destruction is best-effort after the stream owner has already terminated.
+  }
+};
+
+class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
+  readonly #config: Readonly<EncryptedS3BlobStoreConfig>;
+  readonly #keyService: EnvelopeKeyService;
+  readonly #record: StoredBlobRecord;
+  readonly #s3: S3Client;
+  readonly #signal: AbortSignal;
+  readonly #tenantId: BlobTenantId;
+  #claimed = false;
+
+  constructor(input: {
+    readonly config: Readonly<EncryptedS3BlobStoreConfig>;
+    readonly keyService: EnvelopeKeyService;
+    readonly record: StoredBlobRecord;
+    readonly s3: S3Client;
+    readonly signal: AbortSignal;
+    readonly tenantId: BlobTenantId;
+  }) {
+    this.#config = input.config;
+    this.#keyService = input.keyService;
+    this.#record = input.record;
+    this.#s3 = input.s3;
+    this.#signal = input.signal;
+    this.#tenantId = input.tenantId;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<Uint8Array> {
+    if (this.#claimed) {
+      throw new TypeError("A raw S3 response body may be consumed only once.");
+    }
+    this.#claimed = true;
+    return this.#read();
+  }
+
+  async *#read(): AsyncGenerator<Uint8Array> {
+    const operationSignal = boundedOperationSignal(this.#config, this.#signal);
+    let key: Uint8Array | undefined;
+    let responseBody: unknown;
+    const cancel = (): void => {
+      destroyResponseBody(responseBody, operationSignal.reason);
+    };
+    operationSignal.addEventListener("abort", cancel, { once: true });
+    try {
+      if (operationSignal.aborted) throw operationSignal.reason;
+      key = await this.#keyService.unwrap(
+        this.#record.wrappedDek,
+        this.#record.kmsKeyRef,
+        {
+          blobId: this.#record.raw.blobId,
+          formatVersion: this.#record.encryptionFormatVersion,
+          purpose: this.#record.purpose,
+          tenantId: this.#tenantId,
+        },
+        operationSignal,
+      );
+      const response = await this.#s3.send(
+        new GetObjectCommand({
+          Bucket: this.#config.bucket,
+          Key: this.#record.objectKey,
+          ...(this.#record.objectVersion === undefined
+            ? {}
+            : { VersionId: this.#record.objectVersion }),
+        }),
+        { abortSignal: operationSignal },
+      );
+      responseBody = response.Body;
+      yield* decryptFrames(
+        asyncBody(responseBody),
+        key,
+        {
+          blobId: this.#record.raw.blobId,
+          purpose: this.#record.purpose,
+          tenantId: this.#tenantId,
+        },
+        this.#record.raw.sha256,
+        this.#record.raw.size,
+      );
+    } finally {
+      operationSignal.removeEventListener("abort", cancel);
+      key?.fill(0);
+      destroyResponseBody(responseBody);
+    }
+  }
+}
 
 const writeWithBackpressure = async (
   stream: PassThrough,
@@ -184,7 +308,7 @@ class EncryptedStageWriter implements BlobStageWriter {
   readonly #state: StageUploadState;
   readonly #stream: PassThrough;
   readonly #upload: Upload;
-  readonly #uploadPromise: ReturnType<Upload["done"]>;
+  readonly #uploadPromise: Promise<UploadSettlement>;
   #frameIndex = 0n;
   #observedBytes = 0;
   #pendingBytes = 0;
@@ -246,7 +370,10 @@ class EncryptedStageWriter implements BlobStageWriter {
       partSize: input.config.multipartPartBytes,
       queueSize: input.config.multipartQueueSize,
     });
-    this.#uploadPromise = this.#upload.done();
+    this.#uploadPromise = this.#upload.done().then<UploadSettlement, UploadSettlement>(
+      (value) => ({ ok: true, value }),
+      (error: unknown) => ({ error, ok: false }),
+    );
   }
 
   async write(chunk: Uint8Array, signal: AbortSignal): Promise<DriverResult<void>> {
@@ -255,6 +382,18 @@ class EncryptedStageWriter implements BlobStageWriter {
         error: this.#errors.create({
           code: "CONFLICT",
           message: "Blob stage writer ownership has already been consumed.",
+          operation: "blob_stage_write",
+          retryable: false,
+        }),
+        ok: false,
+      };
+    }
+    if (!isUint8Array(chunk)) {
+      await this.abort("invalid_chunk", cleanupSignal(this.#config));
+      return {
+        error: this.#errors.create({
+          code: "VALIDATION_FAILED",
+          message: "Blob stage writer received a non-byte chunk.",
           operation: "blob_stage_write",
           retryable: false,
         }),
@@ -275,6 +414,7 @@ class EncryptedStageWriter implements BlobStageWriter {
     }
     try {
       const operationSignal = boundedOperationSignal(this.#config, signal);
+      if (operationSignal.aborted) throw operationSignal.reason;
       this.#plainDigest.update(chunk);
       this.#observedBytes += chunk.byteLength;
       let offset = 0;
@@ -488,20 +628,22 @@ class EncryptedStageWriter implements BlobStageWriter {
     }
   }
 
-  async abort(_reason: string, signal: AbortSignal): ReturnType<BlobStageWriter["abort"]> {
+  async abort(reason: string, requestSignal: AbortSignal): ReturnType<BlobStageWriter["abort"]> {
+    void reason;
+    void requestSignal;
     if (this.#state.complete || this.#state.aborted) {
       return { ok: true, value: undefined };
     }
     this.#state.aborted = true;
     this.#stream.destroy();
-    const operationSignal = boundedOperationSignal(this.#config, signal);
+    const operationSignal = cleanupSignal(this.#config);
     try {
-      await this.#upload.abort();
+      await awaitWithSignal(this.#upload.abort(), operationSignal);
     } catch {
       // Upload may already be terminal; exact-version deletion remains authoritative.
     }
     try {
-      await this.#uploadPromise;
+      await this.#awaitUpload(operationSignal);
     } catch {
       // Expected after abort. The promise is always awaited to avoid floating work.
     }
@@ -523,10 +665,8 @@ class EncryptedStageWriter implements BlobStageWriter {
         this.#clock.now(),
         operationSignal,
       );
-      this.#dek.fill(0);
       return abandoned;
     } catch (cause) {
-      this.#dek.fill(0);
       return {
         error: asFailure(
           this.#errors,
@@ -536,6 +676,8 @@ class EncryptedStageWriter implements BlobStageWriter {
         ),
         ok: false,
       };
+    } finally {
+      this.#dek.fill(0);
     }
   }
 
@@ -545,15 +687,18 @@ class EncryptedStageWriter implements BlobStageWriter {
       rejectCanceled = reject;
     });
     const cancel = (): void => {
+      rejectCanceled?.(signal.reason);
       void this.#upload.abort().then(
-        () => rejectCanceled?.(signal.reason),
-        (cause: unknown) => rejectCanceled?.(cause),
+        () => undefined,
+        () => undefined,
       );
     };
     signal.addEventListener("abort", cancel, { once: true });
     try {
       if (signal.aborted) cancel();
-      return await Promise.race([this.#uploadPromise, canceled]);
+      const settled = await Promise.race([this.#uploadPromise, canceled]);
+      if (!settled.ok) throw settled.error;
+      return settled.value;
     } finally {
       signal.removeEventListener("abort", cancel);
     }
@@ -766,58 +911,21 @@ export class EncryptedS3BlobStore implements BlobStorePort {
         ok: false,
       };
     }
-    try {
-      const key = await this.#keyService.unwrap(
-        record.value.wrappedDek,
-        record.value.kmsKeyRef,
-        {
-          blobId: record.value.raw.blobId,
-          formatVersion: record.value.encryptionFormatVersion,
-          purpose: record.value.purpose,
+    return {
+      ok: true,
+      value: Object.freeze({
+        body: new LazyDecryptedRawBody({
+          config: this.#config,
+          keyService: this.#keyService,
+          record: record.value,
+          s3: this.#s3,
+          signal,
           tenantId,
-        },
-        operationSignal,
-      );
-      const response = await this.#s3.send(
-        new GetObjectCommand({
-          Bucket: this.#bucket,
-          Key: record.value.objectKey,
-          ...(record.value.objectVersion === undefined
-            ? {}
-            : { VersionId: record.value.objectVersion }),
         }),
-        { abortSignal: operationSignal },
-      );
-      const encrypted = asyncBody(response.Body);
-      return {
-        ok: true,
-        value: Object.freeze({
-          body: decryptFrames(
-            encrypted,
-            key,
-            {
-              blobId: record.value.raw.blobId,
-              purpose: record.value.purpose,
-              tenantId,
-            },
-            record.value.raw.sha256,
-            record.value.raw.size,
-          ),
-          contentLength: record.value.raw.size,
-          mediaType: "message/rfc822",
-        }),
-      };
-    } catch (cause) {
-      return {
-        error: asFailure(
-          this.#errors,
-          "blob_open_raw",
-          "Encrypted S3 blob could not be opened.",
-          cause,
-        ),
-        ok: false,
-      };
-    }
+        contentLength: record.value.raw.size,
+        mediaType: "message/rfc822",
+      }),
+    };
   }
 
   async purge(

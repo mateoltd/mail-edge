@@ -8,7 +8,11 @@ import {
 import { OwnedOneShotBody } from "@mail-edge/core";
 
 import { executeInboundIngress } from "../src/provider-ingress.service.js";
-import type { InboundIngestionServices, InboundProviderAdapter } from "../src/spi.js";
+import type {
+  InboundIngressCommit,
+  InboundIngestionServices,
+  InboundProviderAdapter,
+} from "../src/spi.js";
 import { descriptor, providerInstanceId } from "./fixtures.js";
 
 const receiptId = parseReceiptId("018f1f2e-7b4a-7c11-8a00-000000000009");
@@ -151,5 +155,49 @@ describe("inbound ingress ownership", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INGRESS_LIMIT_EXCEEDED");
     expect(input.body.state).toBe("aborted");
+  });
+
+  it.each([
+    {
+      duplicate: false,
+      receiptId: receiptId.value,
+      response: { class: "success", statusCode: 203 },
+    },
+    {
+      receiptId: receiptId.value,
+      response: { class: "success", statusCode: 200 },
+    },
+    {
+      duplicate: false,
+      extra: true,
+      receiptId: receiptId.value,
+      response: { class: "success", statusCode: 200 },
+    },
+    {
+      duplicate: false,
+      receiptId: receiptId.value,
+      response: { class: "accepted", statusCode: 200 },
+    },
+  ])("fails closed for a malformed successful commit: %#", async (commit) => {
+    const adapter: InboundProviderAdapter = {
+      descriptor,
+      async ingest(inboundRequest) {
+        for await (const chunk of inboundRequest.body) void chunk;
+        return { ok: true, value: commit as unknown as InboundIngressCommit };
+      },
+    };
+    const input = request();
+    const result = await executeInboundIngress(
+      adapter,
+      input,
+      context,
+      services,
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      error: { code: "INGRESS_FAILED", safeDetails: { reason: "invalid_commit" } },
+      ok: false,
+    });
+    expect(input.body.state).toBe("completed");
   });
 });

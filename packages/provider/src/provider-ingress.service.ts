@@ -1,14 +1,16 @@
 import {
   MailEdgeError,
-  parseReceiptId,
+  UUID_V7_PATTERN,
   type BoundedBodyCollector,
   type OneShotBody,
   type OneShotProviderHttpRequest,
   type ProviderFeedbackV1,
   type ProviderHttpIngressContext,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 import { MAX_COLLECTED_BODY_BYTES, validateProviderHttpRequestMetadata } from "@mail-edge/core";
+import { Type } from "@sinclair/typebox";
 
 import { validateProviderFeedbackBatch } from "./feedback.js";
 import type {
@@ -36,6 +38,35 @@ const ingressLimitFailure = (limit: number, actual: number): MailEdgeError =>
     retryable: false,
     safeDetails: { actual, limit },
   });
+
+const InboundIngressCommitSchema = Type.Object(
+  {
+    duplicate: Type.Boolean(),
+    receiptId: Type.String({ pattern: UUID_V7_PATTERN }),
+    response: Type.Object(
+      {
+        class: Type.Literal("success"),
+        statusCode: Type.Union([
+          Type.Literal(200),
+          Type.Literal(201),
+          Type.Literal(202),
+          Type.Literal(204),
+        ]),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const validateInboundIngressCommit = (
+  value: unknown,
+): Result<InboundIngressCommit, MailEdgeError> => {
+  const validated = validateContract(InboundIngressCommitSchema, value);
+  return validated.ok
+    ? { ok: true, value: validated.value as InboundIngressCommit }
+    : { error: ingressFailure("invalid_commit"), ok: false };
+};
 
 class LimitEnforcedOneShotBody implements OneShotBody {
   readonly #source: OneShotBody;
@@ -160,10 +191,7 @@ export class ProviderInboundIngressService {
         await releaseIncompleteBody(request, "body_incomplete");
         return { error: ingressFailure("body_incomplete"), ok: false };
       }
-      if (!parseReceiptId(result.value.receiptId).ok) {
-        return { error: ingressFailure("invalid_commit_receipt_id"), ok: false };
-      }
-      return result;
+      return validateInboundIngressCommit(result.value);
     }
     await releaseIncompleteBody(request, "adapter_returned_error");
     return result;

@@ -30,6 +30,9 @@ const feedbackError = (reason: string): MailEdgeError =>
 const feedbackIdentity = (event: ProviderFeedbackV1): string =>
   `${event.providerInstanceId}\0${event.providerEventKey}`;
 
+const compareCodeUnits = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 const compareFeedback = (left: ProviderFeedbackV1, right: ProviderFeedbackV1): number => {
   if (
     left.providerInstanceId === right.providerInstanceId &&
@@ -39,7 +42,8 @@ const compareFeedback = (left: ProviderFeedbackV1, right: ProviderFeedbackV1): n
   ) {
     return left.sequenceHint - right.sequenceHint;
   }
-  return `${left.occurredAt}\0${left.receivedAt}\0${left.providerEventKey}\0${left.feedbackEventId}`.localeCompare(
+  return compareCodeUnits(
+    `${left.occurredAt}\0${left.receivedAt}\0${left.providerEventKey}\0${left.feedbackEventId}`,
     `${right.occurredAt}\0${right.receivedAt}\0${right.providerEventKey}\0${right.feedbackEventId}`,
   );
 };

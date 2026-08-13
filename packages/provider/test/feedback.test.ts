@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
 
 import { parseFeedbackEventId, type ProviderFeedbackV1 } from "@mail-edge/contracts";
@@ -6,7 +8,8 @@ import { MAX_PROVIDER_FEEDBACK_EVENTS, validateProviderFeedbackBatch } from "../
 import { descriptor, providerId, providerInstanceId } from "./fixtures.js";
 
 const eventId = parseFeedbackEventId("018f1f2e-7b4a-7c11-8a00-000000000007");
-if (!eventId.ok) throw new Error("Invalid feedback test ID.");
+const secondEventId = parseFeedbackEventId("018f1f2e-7b4a-7c11-8a00-000000000008");
+if (!eventId.ok || !secondEventId.ok) throw new Error("Invalid feedback test ID.");
 
 const feedback = (overrides: Partial<ProviderFeedbackV1> = {}): ProviderFeedbackV1 => ({
   feedbackEventId: eventId.value,
@@ -63,5 +66,44 @@ describe("normalized provider feedback boundary", () => {
         providerInstanceId,
       ).ok,
     ).toBe(false);
+  });
+
+  it("orders fallback identities identically under distinct process locales", () => {
+    const { sequenceHint: _firstSequence, ...first } = feedback({
+      feedbackEventId: eventId.value,
+      providerEventKey: "ä",
+    });
+    const { sequenceHint: _secondSequence, ...second } = feedback({
+      feedbackEventId: secondEventId.value,
+      providerEventKey: "z",
+    });
+    void _firstSequence;
+    void _secondSequence;
+    const moduleUrl = new URL("../dist/index.js", import.meta.url).href;
+    const childSource = `
+      import { validateProviderFeedbackBatch } from ${JSON.stringify(moduleUrl)};
+      const result = validateProviderFeedbackBatch(
+        ${JSON.stringify([first, second])},
+        ${JSON.stringify(descriptor)},
+        ${JSON.stringify(providerInstanceId)}
+      );
+      if (!result.ok) throw new Error(result.error.code);
+      console.log(JSON.stringify({
+        locale: Intl.Collator().resolvedOptions().locale,
+        order: result.value.events.map((event) => event.providerEventKey)
+      }));
+    `;
+    const run = (locale: string): { readonly locale: string; readonly order: readonly string[] } =>
+      JSON.parse(
+        execFileSync(process.execPath, ["--input-type=module", "--eval", childSource], {
+          encoding: "utf8",
+          env: { ...process.env, LANG: locale, LC_ALL: locale },
+        }),
+      ) as { readonly locale: string; readonly order: readonly string[] };
+    const english = run("en_US.UTF-8");
+    const swedish = run("sv_SE.UTF-8");
+    expect(english.locale).not.toBe(swedish.locale);
+    expect(english.order).toEqual(["z", "ä"]);
+    expect(swedish.order).toEqual(english.order);
   });
 });

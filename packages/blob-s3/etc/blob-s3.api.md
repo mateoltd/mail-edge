@@ -55,7 +55,7 @@ export interface BlobErrorFactory {
         readonly operation: string;
         readonly message: string;
         readonly retryable: boolean;
-        readonly code?: "INGRESS_LIMIT_EXCEEDED" | "NOT_FOUND" | "STORAGE_UNAVAILABLE" | "CONFLICT";
+        readonly code?: "INGRESS_LIMIT_EXCEEDED" | "NOT_FOUND" | "STORAGE_UNAVAILABLE" | "CONFLICT" | "VALIDATION_FAILED";
         readonly cause?: unknown;
     }): BlobFailure;
 }

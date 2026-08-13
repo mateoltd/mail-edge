@@ -1,7 +1,9 @@
 import {
   ProviderDispatchError,
   type ProviderAcceptanceV1,
+  ProviderAcceptanceV1Schema,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 
 import type { CanonicalSmtpEnvelope } from "./envelope.js";
@@ -26,15 +28,20 @@ export const validateProviderAcceptance = (
   acceptance: ProviderAcceptanceV1,
   submitted: CanonicalSmtpEnvelope,
 ): Result<ProviderAcceptanceV1, ProviderDispatchError> => {
+  const schemaResult = validateContract(ProviderAcceptanceV1Schema, acceptance);
+  if (!schemaResult.ok) {
+    return { error: invalidAcceptance("malformed_provider_acceptance"), ok: false };
+  }
+  const validated = schemaResult.value;
   const expected = new Set(submitted.wire.rcptTo.map((recipient) => recipient.address));
   const seen = new Set<string>();
-  for (const address of acceptance.acceptedRecipients) {
+  for (const address of validated.acceptedRecipients) {
     if (!expected.has(address) || seen.has(address)) {
       return { error: invalidAcceptance("invalid_accepted_recipient"), ok: false };
     }
     seen.add(address);
   }
-  for (const outcome of acceptance.rejectedRecipients) {
+  for (const outcome of validated.rejectedRecipients) {
     if (!expected.has(outcome.address) || seen.has(outcome.address)) {
       return { error: invalidAcceptance("invalid_rejected_recipient"), ok: false };
     }
@@ -43,5 +50,5 @@ export const validateProviderAcceptance = (
   if (seen.size !== expected.size) {
     return { error: invalidAcceptance("missing_recipient_outcome"), ok: false };
   }
-  return { ok: true, value: acceptance };
+  return { ok: true, value: validated };
 };

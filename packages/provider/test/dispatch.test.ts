@@ -178,4 +178,32 @@ describe("strict provider dispatch boundary", () => {
     );
     expect(result.action).toBe("quarantine_unknown");
   });
+
+  it("rejects a schema-invalid success after the boundary with unknown delivery certainty", async () => {
+    const boundary = new DispatchBoundaryRecorder({ mode: "smtp", providerId, transport: "smtp" });
+    const malformed = {
+      ...acceptance(),
+      acceptedAt: "not-a-timestamp",
+      adapterLeak: "unexpected",
+    } as unknown as ProviderAcceptanceV1;
+    const result = await executeProviderDispatch(
+      adapter((_input, dispatch) => {
+        dispatch.boundary.recordSmtpRawBytesWritten(1);
+        dispatch.boundary.markAuthenticatedAcceptance();
+        return Promise.resolve({ ok: true, value: malformed });
+      }),
+      submission,
+      context(boundary),
+      new AbortController().signal,
+    );
+    expect(result.action).toBe("quarantine_unknown");
+    expect(result.result).toMatchObject({
+      error: {
+        deliveryCertainty: "unknown",
+        evidenceCode: "malformed_provider_acceptance",
+        retryable: false,
+      },
+      ok: false,
+    });
+  });
 });
