@@ -1,6 +1,7 @@
 import {
   DEFAULT_MAX_RAW_MESSAGE_BYTES,
   type HeaderPatchPlanV1,
+  HeaderPatchPlanV1Schema,
   MailEdgeError,
   type RawMessageRefV1,
   RawMessageRefV1Schema,
@@ -65,10 +66,35 @@ export class DerivedMessageService {
     input: DerivedMessageInput,
     signal: AbortSignal,
   ): Promise<Result<RawMessageRefV1, MailEdgeError>> {
-    if (input.patchPlan.sourceSha256 !== input.source.sha256) {
+    const patchPlan = validateContract(HeaderPatchPlanV1Schema, input.patchPlan);
+    if (!patchPlan.ok) {
+      return {
+        error: derivationFailure("VALIDATION_FAILED", "header_patch_plan_schema"),
+        ok: false,
+      };
+    }
+    let checkedPatchPlan: HeaderPatchPlanV1;
+    try {
+      checkedPatchPlan = Object.freeze({
+        operations: Object.freeze(
+          patchPlan.value.operations.map((operation) => Object.freeze({ ...operation })),
+        ),
+        reason: patchPlan.value.reason,
+        schemaVersion: patchPlan.value.schemaVersion,
+        sourceSha256: patchPlan.value.sourceSha256,
+      });
+    } catch {
+      return {
+        error: derivationFailure("VALIDATION_FAILED", "header_patch_plan_schema"),
+        ok: false,
+      };
+    }
+    const patchPlanDigest = headerPatchPlanDigest(checkedPatchPlan);
+    if (!patchPlanDigest.ok) return patchPlanDigest;
+    if (checkedPatchPlan.sourceSha256 !== input.source.sha256) {
       return { error: derivationFailure("VALIDATION_FAILED", "source_sha256_mismatch"), ok: false };
     }
-    if (input.patchPlan.operations.length === 0) {
+    if (checkedPatchPlan.operations.length === 0) {
       return { ok: true, value: input.source };
     }
     const maximumBytes = input.maximumBytes ?? DEFAULT_MAX_RAW_MESSAGE_BYTES;
@@ -104,7 +130,7 @@ export class DerivedMessageService {
     };
     let applied: Awaited<ReturnType<HeaderPatchApplierPort["apply"]>>;
     try {
-      applied = await this.#applier.apply(opened.value, input.patchPlan, stage.value, signal);
+      applied = await this.#applier.apply(opened.value, checkedPatchPlan, stage.value, signal);
     } catch (cause) {
       await abortStage("patcher_threw");
       return {
@@ -145,8 +171,8 @@ export class DerivedMessageService {
     const provenance = Object.freeze({
       createdAt: this.#clock.now(),
       derived: completed.value,
-      patchPlan: input.patchPlan,
-      patchPlanDigest: headerPatchPlanDigest(input.patchPlan),
+      patchPlan: checkedPatchPlan,
+      patchPlanDigest: patchPlanDigest.value,
       source: input.source,
       tenantId: input.tenantId,
     });

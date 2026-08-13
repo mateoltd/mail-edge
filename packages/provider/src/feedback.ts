@@ -1,5 +1,6 @@
 import {
   MailEdgeError,
+  type NormalizedEvidence,
   ProviderFeedbackV1Schema,
   type ProviderCapabilityDescriptorV1,
   type ProviderFeedbackV1,
@@ -48,8 +49,130 @@ const compareFeedback = (left: ProviderFeedbackV1, right: ProviderFeedbackV1): n
   );
 };
 
-const forbiddenEvidenceKey =
-  /(?:address|body|content|email|header|message|recipient|secret|subject|token|url)/iu;
+type FeedbackEvidenceValuePolicy =
+  "boolean" | "non_negative_integer" | "redacted" | "response_code" | "status_code" | "token";
+
+const feedbackEvidenceValuePolicy = Object.freeze({
+  attemptOrdinal: "non_negative_integer",
+  authenticated: "boolean",
+  authoritative: "boolean",
+  bounceType: "token",
+  category: "token",
+  complaintType: "token",
+  diagnostic: "redacted",
+  evidenceCode: "token",
+  providerResponse: "redacted",
+  reasonCode: "token",
+  responseCode: "response_code",
+  sequence: "non_negative_integer",
+  source: "token",
+  statusCode: "status_code",
+  suppressionReason: "token",
+} as const satisfies Readonly<Record<string, FeedbackEvidenceValuePolicy>>);
+
+const evidenceToken = /^[a-z0-9][a-z0-9_.-]{0,63}$/u;
+const statusCode = /^(?:[245][0-9]{2}|[245]\.[0-9]{1,3}\.[0-9]{1,3})$/u;
+const feedbackEvidenceAllowedTokens = Object.freeze({
+  bounceType: Object.freeze(["blocked", "hard", "policy", "soft", "unknown"]),
+  category: Object.freeze(["bounce", "complaint", "delivery", "engagement", "suppression"]),
+  complaintType: Object.freeze(["abuse", "fraud", "not_spam", "spam", "unknown"]),
+  evidenceCode: Object.freeze([
+    "authenticated",
+    "http_status",
+    "provider_event",
+    "smtp_status",
+    "webhook_verified",
+  ]),
+  reasonCode: Object.freeze([
+    "blocked",
+    "complaint",
+    "invalid_recipient",
+    "policy",
+    "spam",
+    "suppressed",
+    "unknown",
+  ]),
+  source: Object.freeze([
+    "api",
+    "conformance_fixture",
+    "delivery_webhook",
+    "fixture",
+    "provider",
+    "sample_adapter",
+    "smtp",
+    "webhook",
+  ]),
+  suppressionReason: Object.freeze(["bounce", "complaint", "manual", "policy", "spam", "unknown"]),
+} as const);
+
+const normalizeFeedbackEvidence = (
+  evidence: NormalizedEvidence,
+): Result<NormalizedEvidence, MailEdgeError> => {
+  const normalized: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(evidence)) {
+    if (!Object.hasOwn(feedbackEvidenceValuePolicy, key)) {
+      return { error: feedbackError("normalized_evidence_key_not_allowed"), ok: false };
+    }
+    const policy = feedbackEvidenceValuePolicy[key as keyof typeof feedbackEvidenceValuePolicy];
+    switch (policy) {
+      case "boolean":
+        if (typeof value !== "boolean") {
+          return { error: feedbackError("normalized_evidence_value_invalid"), ok: false };
+        }
+        normalized[key] = value;
+        break;
+      case "non_negative_integer":
+        if (!Number.isSafeInteger(value) || typeof value !== "number" || value < 0) {
+          return { error: feedbackError("normalized_evidence_value_invalid"), ok: false };
+        }
+        normalized[key] = value;
+        break;
+      case "redacted":
+        if (typeof value !== "string") {
+          return { error: feedbackError("normalized_evidence_value_invalid"), ok: false };
+        }
+        normalized[key] = "redacted";
+        break;
+      case "response_code":
+        if (
+          typeof value !== "number" ||
+          !Number.isSafeInteger(value) ||
+          value < 100 ||
+          value > 599
+        ) {
+          return { error: feedbackError("normalized_evidence_value_invalid"), ok: false };
+        }
+        normalized[key] = value;
+        break;
+      case "status_code":
+        if (typeof value !== "string" || !statusCode.test(value)) {
+          return { error: feedbackError("normalized_evidence_value_invalid"), ok: false };
+        }
+        normalized[key] = value;
+        break;
+      case "token":
+        if (
+          typeof value !== "string" ||
+          !evidenceToken.test(value) ||
+          !feedbackEvidenceAllowedTokens[key as keyof typeof feedbackEvidenceAllowedTokens].some(
+            (candidate) => candidate === value,
+          )
+        ) {
+          return { error: feedbackError("normalized_evidence_value_invalid"), ok: false };
+        }
+        normalized[key] = value;
+        break;
+    }
+  }
+  return {
+    ok: true,
+    value: Object.freeze(
+      Object.fromEntries(
+        Object.entries(normalized).toSorted(([left], [right]) => compareCodeUnits(left, right)),
+      ),
+    ),
+  };
+};
 
 /**
  * Validates, privacy-checks, deterministically orders, and exactly deduplicates normalized provider
@@ -75,7 +198,7 @@ export const validateProviderFeedbackBatch = (
   const byIdentity = new Map<string, ProviderFeedbackV1>();
   const eventIdToIdentity = new Map<string, string>();
   let duplicateCount = 0;
-  for (const event of events) {
+  for (const event of schemaResult.value) {
     if (
       event.providerId !== descriptor.providerId ||
       event.providerInstanceId !== providerInstanceId
@@ -88,13 +211,19 @@ export const validateProviderFeedbackBatch = (
     if (descriptor.feedback.perRecipient && event.recipient === undefined) {
       return { error: feedbackError("recipient_evidence_missing"), ok: false };
     }
-    if (event.recipient !== undefined && !canonicalizeMailbox(event.recipient).ok) {
+    const recipient =
+      event.recipient === undefined ? undefined : canonicalizeMailbox(event.recipient);
+    if (recipient !== undefined && !recipient.ok) {
       return { error: feedbackError("recipient_invalid"), ok: false };
     }
-    if (Object.keys(event.normalizedEvidence).some((key) => forbiddenEvidenceKey.test(key))) {
-      return { error: feedbackError("normalized_evidence_key_forbidden"), ok: false };
-    }
-    const identity = feedbackIdentity(event);
+    const normalizedEvidence = normalizeFeedbackEvidence(event.normalizedEvidence);
+    if (!normalizedEvidence.ok) return normalizedEvidence;
+    const canonicalEvent = Object.freeze({
+      ...event,
+      normalizedEvidence: normalizedEvidence.value,
+      ...(recipient === undefined ? {} : { recipient: recipient.value.address }),
+    });
+    const identity = feedbackIdentity(canonicalEvent);
     const eventIdentity = eventIdToIdentity.get(event.feedbackEventId);
     if (eventIdentity !== undefined && eventIdentity !== identity) {
       return { error: feedbackError("feedback_event_id_reused"), ok: false };
@@ -102,13 +231,13 @@ export const validateProviderFeedbackBatch = (
     eventIdToIdentity.set(event.feedbackEventId, identity);
     const existing = byIdentity.get(identity);
     if (existing !== undefined) {
-      if (canonicalJson(existing) !== canonicalJson(event)) {
+      if (canonicalJson(existing) !== canonicalJson(canonicalEvent)) {
         return { error: feedbackError("provider_event_identity_conflict"), ok: false };
       }
       duplicateCount += 1;
       continue;
     }
-    byIdentity.set(identity, event);
+    byIdentity.set(identity, canonicalEvent);
   }
   return {
     ok: true,

@@ -1,9 +1,11 @@
 import {
   type HeaderPatchOperationV1,
   type HeaderPatchPlanV1,
+  HeaderPatchPlanV1Schema,
   MailEdgeError,
   type RawMessageRefV1,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 
 import { sha256CanonicalJson } from "./canonical-json.js";
@@ -109,14 +111,43 @@ const parseSafeRawField = (
   };
 };
 
-/** @public */
-export const headerPatchPlanDigest = (plan: HeaderPatchPlanV1): string =>
-  sha256CanonicalJson({
-    operations: plan.operations.map((operation) => ({ ...operation })),
-    reason: plan.reason,
-    schemaVersion: plan.schemaVersion,
-    sourceSha256: plan.sourceSha256,
-  });
+/** Validates and hashes one runtime header patch plan without throwing on malformed input. @public */
+const validateHeaderPatchPlan = (plan: unknown): Result<HeaderPatchPlanV1, MailEdgeError> => {
+  const validated = validateContract(HeaderPatchPlanV1Schema, plan);
+  if (!validated.ok) {
+    return { error: headerFailure("header_patch_plan_schema"), ok: false };
+  }
+  try {
+    return {
+      ok: true,
+      value: Object.freeze({
+        operations: Object.freeze(
+          validated.value.operations.map((operation) => Object.freeze({ ...operation })),
+        ),
+        reason: validated.value.reason,
+        schemaVersion: validated.value.schemaVersion,
+        sourceSha256: validated.value.sourceSha256,
+      }),
+    };
+  } catch {
+    return { error: headerFailure("header_patch_plan_schema"), ok: false };
+  }
+};
+
+/** Validates and hashes one runtime header patch plan without throwing on malformed input. @public */
+export const headerPatchPlanDigest = (plan: unknown): Result<string, MailEdgeError> => {
+  const validated = validateHeaderPatchPlan(plan);
+  if (!validated.ok) return validated;
+  return {
+    ok: true,
+    value: sha256CanonicalJson({
+      operations: validated.value.operations.map((operation) => ({ ...operation })),
+      reason: validated.value.reason,
+      schemaVersion: validated.value.schemaVersion,
+      sourceSha256: validated.value.sourceSha256,
+    }),
+  };
+};
 
 const normalizeReverseAliasHeaderPolicy = (
   policy: ReverseAliasHeaderPolicy,
@@ -263,17 +294,25 @@ export const normalizeReverseRouteResolution = (
 /** Pure total deterministic reverse-route plan compiler. @public */
 export const compileReverseRoutePlan = (
   resolution: ReverseRouteResolutionV1,
-  patchPlan: HeaderPatchPlanV1,
-): ReverseRoutePlan =>
-  Object.freeze({
-    patchPlan,
-    planDigest: sha256CanonicalJson({
-      envelope: resolution.envelope,
-      patchPlanDigest: headerPatchPlanDigest(patchPlan),
-      policyCode: resolution.policyCode,
+  patchPlan: unknown,
+): Result<ReverseRoutePlan, MailEdgeError> => {
+  const validatedPatchPlan = validateHeaderPatchPlan(patchPlan);
+  if (!validatedPatchPlan.ok) return validatedPatchPlan;
+  const patchPlanDigest = headerPatchPlanDigest(validatedPatchPlan.value);
+  if (!patchPlanDigest.ok) return patchPlanDigest;
+  return {
+    ok: true,
+    value: Object.freeze({
+      patchPlan: validatedPatchPlan.value,
+      planDigest: sha256CanonicalJson({
+        envelope: resolution.envelope,
+        patchPlanDigest: patchPlanDigest.value,
+        policyCode: resolution.policyCode,
+      }),
+      resolution,
     }),
-    resolution,
-  });
+  };
+};
 
 /** Calls the host resolver, validates its envelope, and emits an immutable patch plan. @public */
 export class ReverseRoutePlanningService {
@@ -300,9 +339,6 @@ export class ReverseRoutePlanningService {
     if (!resolution.ok) return resolution;
     const patchPlan = this.#planner.compile(resolution.value, request.raw);
     if (!patchPlan.ok) return patchPlan;
-    return {
-      ok: true,
-      value: compileReverseRoutePlan(resolution.value, patchPlan.value),
-    };
+    return compileReverseRoutePlan(resolution.value, patchPlan.value);
   }
 }

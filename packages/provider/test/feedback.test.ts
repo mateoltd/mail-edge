@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 
 import { parseFeedbackEventId, type ProviderFeedbackV1 } from "@mail-edge/contracts";
 
@@ -55,6 +56,70 @@ describe("normalized provider feedback boundary", () => {
         providerInstanceId,
       ).ok,
     ).toBe(false);
+    expect(
+      validateProviderFeedbackBatch(
+        [feedback({ normalizedEvidence: { source: "secret_customer_identifier" } })],
+        descriptor,
+        providerInstanceId,
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("canonicalizes recipient domains and applies the explicit evidence policy", () => {
+    const result = validateProviderFeedbackBatch(
+      [
+        feedback({
+          normalizedEvidence: {
+            authenticated: true,
+            diagnostic: "550 one@example.test rejected using secret-token",
+            responseCode: 550,
+            source: "delivery_webhook",
+            statusCode: "5.1.1",
+          },
+          recipient: "Local@BÜCHER.EXAMPLE",
+        }),
+      ],
+      descriptor,
+      providerInstanceId,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        events: [
+          {
+            normalizedEvidence: {
+              authenticated: true,
+              diagnostic: "redacted",
+              responseCode: 550,
+              source: "delivery_webhook",
+              statusCode: "5.1.1",
+            },
+            recipient: "Local@xn--bcher-kva.example",
+          },
+        ],
+      },
+    });
+  });
+
+  it("never persists arbitrary diagnostic content", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 256 }).filter((value) => value !== "redacted"),
+        (secret) => {
+          const result = validateProviderFeedbackBatch(
+            [feedback({ normalizedEvidence: { diagnostic: secret } })],
+            descriptor,
+            providerInstanceId,
+          );
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(result.value.events[0]?.normalizedEvidence).toEqual({
+              diagnostic: "redacted",
+            });
+          }
+        },
+      ),
+    );
   });
 
   it("bounds adapter-synthesized normalized event counts independently of body limits", () => {

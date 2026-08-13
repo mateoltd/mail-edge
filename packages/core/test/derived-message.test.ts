@@ -100,7 +100,9 @@ describe("derived message provenance", () => {
       new AbortController().signal,
     );
     expect(result).toEqual({ ok: true, value: derived });
-    expect(recorded?.patchPlanDigest).toBe(headerPatchPlanDigest(plan));
+    const digest = headerPatchPlanDigest(plan);
+    if (!digest.ok) throw digest.error;
+    expect(recorded?.patchPlanDigest).toBe(digest.value);
     expect(recorded?.source).toBe(raw);
     expect(recorded?.derived).toBe(derived);
   });
@@ -147,6 +149,13 @@ describe("derived message provenance", () => {
       new AbortController().signal,
     );
     expect(result).toEqual({ ok: true, value: raw });
+    expect(opened).toBe(false);
+
+    const malformed = await service.materialize(
+      { patchPlan: null as never, source: raw, tenantId },
+      new AbortController().signal,
+    );
+    expect(malformed).toMatchObject({ error: { code: "VALIDATION_FAILED" }, ok: false });
     expect(opened).toBe(false);
   });
 });

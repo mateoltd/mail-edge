@@ -5,6 +5,7 @@ import type { ProviderCapabilityDescriptorV1 } from "@mail-edge/contracts";
 import {
   inspectProviderCapabilityDescriptor,
   requiredConformanceChecks,
+  validateProviderCapabilityDescriptor,
 } from "../src/descriptor.js";
 import { descriptor } from "./fixtures.js";
 
@@ -53,5 +54,25 @@ describe("provider capability truthfulness", () => {
     expect(inspectProviderCapabilityDescriptor(lying).issues).toContain(
       "feedback_unsupported_claims_present",
     );
+  });
+
+  it("is total for null and malformed public descriptor shapes", () => {
+    for (const malformed of [
+      null,
+      [],
+      new Date("2026-08-14T00:00:00.000Z"),
+      { inbound: null },
+      new (class DescriptorFixture {
+        readonly providerId = "fixture";
+      })(),
+    ]) {
+      expect(() => inspectProviderCapabilityDescriptor(malformed)).not.toThrow();
+      expect(inspectProviderCapabilityDescriptor(malformed)).toMatchObject({
+        issues: ["descriptor_schema_invalid"],
+        valid: false,
+      });
+      expect(() => validateProviderCapabilityDescriptor(malformed)).not.toThrow();
+      expect(validateProviderCapabilityDescriptor(malformed).ok).toBe(false);
+    }
   });
 });

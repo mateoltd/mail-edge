@@ -8,7 +8,13 @@ import {
 import { sha256CanonicalJson } from "@mail-edge/core";
 
 import { validateProviderCapabilityDescriptor } from "./descriptor.js";
-import type { ProviderAdapterRegistration } from "./spi.js";
+import type {
+  FeedbackProviderAdapter,
+  InboundProviderAdapter,
+  OutboundProviderAdapter,
+  ProviderAdapterRegistration,
+  ProviderControlPlaneAdapter,
+} from "./spi.js";
 
 /** @public */
 export type ProviderRegistryState =
@@ -27,6 +33,86 @@ const registryKey = (providerId: ProviderId, adapterVersion: string, mode: strin
   `${providerId}\0${adapterVersion}\0${mode}`;
 
 const DEFAULT_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
+
+const cloneAndFreezeJson = <T>(value: T): T => {
+  if (Array.isArray(value)) {
+    const array = value as unknown as readonly unknown[];
+    return Object.freeze(array.map((item) => cloneAndFreezeJson(item))) as T;
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(value).map(([key, child]) => [key, cloneAndFreezeJson(child)]),
+      ),
+    ) as T;
+  }
+  return value;
+};
+
+const snapshotRegistration = (
+  registration: ProviderAdapterRegistration,
+): ProviderAdapterRegistration => {
+  const descriptor = cloneAndFreezeJson(registration.descriptor);
+  const lifecycleStart = registration.lifecycle.start.bind(registration.lifecycle);
+  const lifecycleClose = registration.lifecycle.close.bind(registration.lifecycle);
+  const inbound: InboundProviderAdapter | undefined =
+    registration.inbound === undefined
+      ? undefined
+      : (() => {
+          const ingest = registration.inbound.ingest.bind(registration.inbound);
+          return Object.freeze({ descriptor, ingest });
+        })();
+  const outbound: OutboundProviderAdapter | undefined =
+    registration.outbound === undefined
+      ? undefined
+      : (() => {
+          const submitRaw = registration.outbound.submitRaw.bind(registration.outbound);
+          const reconcile = registration.outbound.reconcile?.bind(registration.outbound);
+          return Object.freeze({
+            descriptor,
+            submitRaw,
+            ...(reconcile === undefined ? {} : { reconcile }),
+          });
+        })();
+  const feedback: FeedbackProviderAdapter | undefined =
+    registration.feedback === undefined
+      ? undefined
+      : (() => {
+          const ingestFeedback = registration.feedback.ingestFeedback.bind(registration.feedback);
+          return Object.freeze({ descriptor, ingestFeedback });
+        })();
+  const controlPlane: ProviderControlPlaneAdapter | undefined =
+    registration.controlPlane === undefined
+      ? undefined
+      : (() => {
+          const applyBindingPlan = registration.controlPlane.applyBindingPlan.bind(
+            registration.controlPlane,
+          );
+          const deleteBindingResources = registration.controlPlane.deleteBindingResources.bind(
+            registration.controlPlane,
+          );
+          const discoverBinding = registration.controlPlane.discoverBinding.bind(
+            registration.controlPlane,
+          );
+          const planBinding = registration.controlPlane.planBinding.bind(registration.controlPlane);
+          return Object.freeze({
+            applyBindingPlan,
+            deleteBindingResources,
+            descriptor,
+            discoverBinding,
+            planBinding,
+          });
+        })();
+  return Object.freeze({
+    descriptor,
+    identity: Object.freeze({ ...registration.identity }),
+    lifecycle: Object.freeze({ close: lifecycleClose, start: lifecycleStart }),
+    ...(inbound === undefined ? {} : { inbound }),
+    ...(outbound === undefined ? {} : { outbound }),
+    ...(feedback === undefined ? {} : { feedback }),
+    ...(controlPlane === undefined ? {} : { controlPlane }),
+  });
+};
 
 const awaitWithSignal = async <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   if (signal.aborted) throw signal.reason;
@@ -136,15 +222,16 @@ export class ProviderAdapterRegistry {
       throw new Error("Provider adapters may be registered only before registry startup.");
     }
     const descriptorDigest = assertRegistration(registration);
+    const snapshot = snapshotRegistration(registration);
     const key = registryKey(
-      registration.identity.providerId,
-      registration.identity.adapterVersion,
-      registration.identity.mode,
+      snapshot.identity.providerId,
+      snapshot.identity.adapterVersion,
+      snapshot.identity.mode,
     );
     if (this.#adapters.has(key)) {
       throw new Error("Duplicate provider adapter registration is forbidden.");
     }
-    this.#adapters.set(key, Object.freeze({ descriptorDigest, registration }));
+    this.#adapters.set(key, Object.freeze({ descriptorDigest, registration: snapshot }));
   }
 
   get(

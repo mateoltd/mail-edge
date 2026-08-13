@@ -460,7 +460,7 @@ export type IngressError = MailEdgeError;
 export const inspectBindingPlan: (plan: BindingPlanV1, identity: ProviderAdapterIdentity, now: string) => BindingPlanInspection;
 
 // @public
-export const inspectProviderCapabilityDescriptor: (descriptor: ProviderCapabilityDescriptorV1) => CapabilityDescriptorInspection;
+export const inspectProviderCapabilityDescriptor: (descriptor: unknown) => CapabilityDescriptorInspection;
 
 export { MailEdgeError }
 
@@ -1006,7 +1006,7 @@ export interface ValidatedProviderFeedbackBatch {
 }
 
 // @public
-export const validateProviderCapabilityDescriptor: (descriptor: ProviderCapabilityDescriptorV1) => Result<ProviderCapabilityDescriptorV1, MailEdgeError>;
+export const validateProviderCapabilityDescriptor: (descriptor: unknown) => Result<ProviderCapabilityDescriptorV1, MailEdgeError>;
 
 // @public
 export const validateProviderFeedbackBatch: (events: readonly ProviderFeedbackV1[], descriptor: ProviderCapabilityDescriptorV1, providerInstanceId: ProviderInstanceId) => Result<ValidatedProviderFeedbackBatch, MailEdgeError>;

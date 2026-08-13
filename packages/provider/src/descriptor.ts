@@ -5,7 +5,7 @@ import {
   type Result,
   validateContract,
 } from "@mail-edge/contracts";
-import { sha256CanonicalJson } from "@mail-edge/core";
+import { sha256CanonicalJson, sha256Text, type CanonicalJsonValue } from "@mail-edge/core";
 
 /** Checks always required before any adapter mode can be activated. @public */
 export const baseConformanceCheckIds = Object.freeze([
@@ -50,6 +50,14 @@ export interface CapabilityDescriptorInspection {
 
 const allFalse = (values: readonly boolean[]): boolean => values.every((value) => !value);
 
+const descriptorDigest = (descriptor: unknown): string => {
+  try {
+    return sha256CanonicalJson(descriptor as CanonicalJsonValue);
+  } catch {
+    return sha256Text("mail-edge-invalid-provider-capability-descriptor-v1");
+  }
+};
+
 /**
  * Applies semantic consistency checks beyond JSON Schema so an adapter cannot advertise an
  * unsupported surface while omitting the evidence-bearing details needed to use it safely.
@@ -57,23 +65,29 @@ const allFalse = (values: readonly boolean[]): boolean => values.every((value) =
  * @public
  */
 export const inspectProviderCapabilityDescriptor = (
-  descriptor: ProviderCapabilityDescriptorV1,
+  descriptor: unknown,
 ): CapabilityDescriptorInspection => {
   const issues = new Set<string>();
   const schema = validateContract(ProviderCapabilityDescriptorV1Schema, descriptor);
   if (!schema.ok) {
     issues.add("descriptor_schema_invalid");
+    return Object.freeze({
+      capabilityDigest: descriptorDigest(descriptor),
+      issues: Object.freeze([...issues]),
+      valid: false,
+    });
   }
+  const checked = schema.value;
 
   if (
     !/^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u.test(
-      descriptor.adapterVersion,
+      checked.adapterVersion,
     )
   ) {
     issues.add("adapter_version_not_semver");
   }
 
-  const inbound = descriptor.inbound;
+  const inbound = checked.inbound;
   if (inbound.supported) {
     if (inbound.acquisition.length === 0) issues.add("inbound_acquisition_missing");
     if (inbound.maxBytes === undefined || inbound.maxBytes < 1)
@@ -91,7 +105,7 @@ export const inspectProviderCapabilityDescriptor = (
     issues.add("inbound_unsupported_claims_present");
   }
 
-  const outbound = descriptor.outbound;
+  const outbound = checked.outbound;
   const envelopeFlags = [
     outbound.envelope.nullReversePath,
     outbound.envelope.multipleRecipients,
@@ -128,7 +142,7 @@ export const inspectProviderCapabilityDescriptor = (
     issues.add("reconciliation_unsupported_claims_present");
   }
 
-  const feedback = descriptor.feedback;
+  const feedback = checked.feedback;
   if (feedback.supported) {
     if (feedback.kinds.length === 0) issues.add("feedback_kinds_missing");
     if (feedback.signatureCoverage === "none") issues.add("feedback_authentication_missing");
@@ -140,7 +154,7 @@ export const inspectProviderCapabilityDescriptor = (
     issues.add("feedback_unsupported_claims_present");
   }
 
-  const control = descriptor.controlPlane;
+  const control = checked.controlPlane;
   const controlFlags = [
     control.domainProvisioning,
     control.dnsDiscovery,
@@ -155,14 +169,14 @@ export const inspectProviderCapabilityDescriptor = (
   }
 
   const evidenceIdentities = new Set<string>();
-  for (const evidence of descriptor.evidence) {
+  for (const evidence of checked.evidence) {
     const identity = `${evidence.source}\0${evidence.sourceUri}\0${evidence.reportDigest}`;
     if (evidenceIdentities.has(identity)) issues.add("duplicate_capability_evidence");
     evidenceIdentities.add(identity);
   }
 
   return Object.freeze({
-    capabilityDigest: sha256CanonicalJson(descriptor),
+    capabilityDigest: descriptorDigest(checked),
     issues: Object.freeze([...issues].toSorted()),
     valid: issues.size === 0,
   });
@@ -170,10 +184,10 @@ export const inspectProviderCapabilityDescriptor = (
 
 /** Validates a descriptor and returns a stable expected-domain error on failure. @public */
 export const validateProviderCapabilityDescriptor = (
-  descriptor: ProviderCapabilityDescriptorV1,
+  descriptor: unknown,
 ): Result<ProviderCapabilityDescriptorV1, MailEdgeError> => {
   const inspection = inspectProviderCapabilityDescriptor(descriptor);
-  if (inspection.valid) return { ok: true, value: descriptor };
+  if (inspection.valid) return { ok: true, value: descriptor as ProviderCapabilityDescriptorV1 };
   return {
     error: new MailEdgeError({
       code: "CAPABILITY_UNSUPPORTED",

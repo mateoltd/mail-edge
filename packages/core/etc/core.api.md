@@ -14,6 +14,7 @@ import type { BindingState } from '@mail-edge/contracts';
 import type { BlobId } from '@mail-edge/contracts';
 import { BoundedBodyCollector } from '@mail-edge/contracts';
 import type { ConformanceEvidenceV1 } from '@mail-edge/contracts';
+import { DEFAULT_MAX_RAW_MESSAGE_BYTES } from '@mail-edge/contracts';
 import { DeliveryCertainty } from '@mail-edge/contracts';
 import type { DeliveryId } from '@mail-edge/contracts';
 import { HeaderPatchPlanV1 } from '@mail-edge/contracts';
@@ -38,6 +39,10 @@ import type { ProviderFeedbackV1 } from '@mail-edge/contracts';
 import type { ProviderId } from '@mail-edge/contracts';
 import { ProviderInstanceId } from '@mail-edge/contracts';
 import { RawAccessGrantV1 } from '@mail-edge/contracts';
+import { RawMessageIntegrityError } from '@mail-edge/contracts';
+import { RawMessageIntegrityErrorOptions } from '@mail-edge/contracts';
+import { RawMessageIntegrityReason } from '@mail-edge/contracts';
+import { rawMessageIntegrityReasons } from '@mail-edge/contracts';
 import { RawMessageRefV1 } from '@mail-edge/contracts';
 import type { RawMessageStream } from '@mail-edge/contracts';
 import { ReceiptId } from '@mail-edge/contracts';
@@ -230,7 +235,7 @@ export const compileRecipientRoutePlan: (input: RecipientRoutingInput, hostDesti
 export const compileReverseAliasHeaderPatchPlan: (resolution: ReverseRouteResolutionV1, source: RawMessageRefV1, policy?: ReverseAliasHeaderPolicy) => Result<HeaderPatchPlanV1, MailEdgeError>;
 
 // @public
-export const compileReverseRoutePlan: (resolution: ReverseRouteResolutionV1, patchPlan: HeaderPatchPlanV1) => ReverseRoutePlan;
+export const compileReverseRoutePlan: (resolution: ReverseRouteResolutionV1, patchPlan: unknown) => Result<ReverseRoutePlan, MailEdgeError>;
 
 // @public
 export const constructSafeHeaderField: (name: string, value: string) => Result<string, MailEdgeError>;
@@ -240,6 +245,8 @@ export const createHostSignature: (claims: HostSignatureClaimsV1, key: Uint8Arra
 
 // @public
 export const decideOutboundRoute: (input: OutboundRoutePlanInput) => Result<OutboundRouteDecision, MailEdgeError>;
+
+export { DEFAULT_MAX_RAW_MESSAGE_BYTES }
 
 // @public (undocumented)
 export const DEFAULT_RECIPIENT_ROUTING_LIMITS: RecipientRoutingLimits;
@@ -381,8 +388,8 @@ export interface HeaderPatchApplierPort {
     apply(source: RawMessageStream, plan: HeaderPatchPlanV1, sink: BlobStageWriter, signal: AbortSignal): Promise<Result<HeaderPatchApplicationEvidence, MailEdgeError>>;
 }
 
-// @public (undocumented)
-export const headerPatchPlanDigest: (plan: HeaderPatchPlanV1) => string;
+// @public
+export const headerPatchPlanDigest: (plan: unknown) => Result<string, MailEdgeError>;
 
 // @public (undocumented)
 export interface HeaderPatchPlanner {
@@ -713,6 +720,14 @@ export interface ProviderRegistryPort {
 
 // @public
 export const providerScopedIdentityDigest: (providerInstanceId: ProviderInstanceId, providerIdentity: string) => string;
+
+export { RawMessageIntegrityError }
+
+export { RawMessageIntegrityErrorOptions }
+
+export { RawMessageIntegrityReason }
+
+export { rawMessageIntegrityReasons }
 
 // @public (undocumented)
 export interface RecipientGroup {
