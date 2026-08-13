@@ -28,6 +28,7 @@
     "build": "turbo run build",
     "changeset": "changeset",
     "changeset:status": "changeset status --since=origin/main",
+    "commitlint:check": "node ./scripts/check-commitlint.mjs",
     "clean-room:check": "node ./scripts/check-clean-room.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -42,7 +43,7 @@
     "sbom:generate": "node ./scripts/generate-sbom.mjs",
     "test": "turbo run test",
     "typecheck": "tsc -b --pretty false && turbo run typecheck",
-    "verify": "pnpm run repo:check && pnpm run format:check && pnpm run lint && pnpm run lint:boundaries && pnpm run typecheck && pnpm run build && pnpm run test && pnpm run knip && pnpm run api:check && pnpm run pack:check && pnpm run actions:check && pnpm run license:check"
+    "verify": "pnpm run repo:check && pnpm run commitlint:check && pnpm run format:check && pnpm run lint && pnpm run lint:boundaries && pnpm run typecheck && pnpm run build && pnpm run test && pnpm run knip && pnpm run api:check && pnpm run pack:check && pnpm run actions:check && pnpm run license:check"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.0",
