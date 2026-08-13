@@ -4,7 +4,12 @@ import { pipeline } from "node:stream/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { MailsplitStructuralInspector } from "../src/index.js";
+import {
+  DEFAULT_MIME_STRUCTURE_LIMITS,
+  MailsplitStructuralInspector,
+  type MimeCpuClock,
+  type MimeInspectionInstrumentationEvent,
+} from "../src/index.js";
 import { applyPlan, chunksOf, corpusMessage } from "./helpers.js";
 
 type StreamConstructor = new (options?: Readonly<Record<string, unknown>>) => Transform;
@@ -60,6 +65,7 @@ describe("mailsplit structural and differential oracle", () => {
             maxLineBytes: 1024 * 1024,
             maxMessageBytes: 2 * 1024 * 1024,
             maxParts: 512,
+            maxProcessingCpuMilliseconds: 2_000,
           },
           new AbortController().signal,
         );
@@ -87,5 +93,76 @@ describe("mailsplit structural and differential oracle", () => {
     ]);
     expect(patched.result.ok).toBe(true);
     expect((await mailsplitRoundTrip(patched.bytes)).equals(patched.bytes)).toBe(true);
+  });
+
+  it("owns and aborts a source whose next call never settles", async () => {
+    let returned = false;
+    const body: AsyncIterable<Uint8Array> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<Uint8Array>>(() => undefined),
+        return: () => {
+          returned = true;
+          return Promise.resolve({ done: true as const, value: undefined });
+        },
+      }),
+    };
+    const controller = new AbortController();
+    const startedAt = performance.now();
+    const inspection = new MailsplitStructuralInspector().inspect(
+      { body, contentLength: null },
+      DEFAULT_MIME_STRUCTURE_LIMITS,
+      controller.signal,
+    );
+    setTimeout(() => {
+      controller.abort(new Error("test abort"));
+    }, 10);
+    const result = await inspection;
+    expect(performance.now() - startedAt).toBeLessThan(500);
+    expect(returned).toBe(true);
+    expect(result).toMatchObject({
+      error: { safeDetails: { reason: "aborted" } },
+      ok: false,
+    });
+  });
+
+  it("instruments and enforces a CPU budget on pathological multipart input", async () => {
+    let microseconds = 0;
+    const clock: MimeCpuClock = {
+      nowMicroseconds: () => {
+        microseconds += 10;
+        return microseconds;
+      },
+    };
+    const events: MimeInspectionInstrumentationEvent[] = [];
+    const boundary = "cpu-budget";
+    const parts = Array.from(
+      { length: 128 },
+      (_, index) =>
+        `--${boundary}\r\nContent-Type: text/plain\r\nX-Part: ${String(index)}\r\n\r\nx\r\n`,
+    ).join("");
+    const raw = Buffer.from(
+      `MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n${parts}--${boundary}--\r\n`,
+      "utf8",
+    );
+    const result = await new MailsplitStructuralInspector({
+      clock,
+      sink: { record: (event) => events.push(event) },
+    }).inspect(
+      { body: chunksOf(raw, [1]), contentLength: raw.byteLength },
+      { ...DEFAULT_MIME_STRUCTURE_LIMITS, maxProcessingCpuMilliseconds: 1 },
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      error: { safeDetails: { limit: 1, reason: "processing_cpu_milliseconds" } },
+      ok: false,
+    });
+    expect(events).toEqual([
+      expect.objectContaining({
+        outcome: "fail",
+        phase: "structural",
+      }),
+    ]);
+    expect(events[0]?.cpuMilliseconds).toBeGreaterThan(1);
+    expect(events[0]?.totalBytes).toBeLessThan(raw.byteLength);
   });
 });

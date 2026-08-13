@@ -132,4 +132,31 @@ describe("bounded PostalMime semantic inspection", () => {
     );
     expect(lines.ok).toBe(false);
   });
+
+  it("aborts collection when an upstream semantic source never settles", async () => {
+    let returned = false;
+    const body: AsyncIterable<Uint8Array> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<Uint8Array>>(() => undefined),
+        return: () => {
+          returned = true;
+          return Promise.resolve({ done: true as const, value: undefined });
+        },
+      }),
+    };
+    const controller = new AbortController();
+    const inspection = new BoundedPostalMimeInspector().inspect(
+      { body, contentLength: null, mediaType: "message/rfc822" },
+      DEFAULT_SEMANTIC_INSPECTION_LIMITS,
+      controller.signal,
+    );
+    setTimeout(() => {
+      controller.abort(new Error("test abort"));
+    }, 10);
+    await expect(inspection).resolves.toMatchObject({
+      error: { safeDetails: { reason: "aborted" } },
+      ok: false,
+    });
+    expect(returned).toBe(true);
+  });
 });

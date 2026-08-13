@@ -1,7 +1,12 @@
-import type { MailEdgeError, RawMessageStream, Result } from "@mail-edge/contracts";
+import { MailEdgeError, type RawMessageStream, type Result } from "@mail-edge/contracts";
 import PostalMime, { type Address, type Email, type Mailbox } from "postal-mime";
 
+import { AbortableAsyncSourceOwner } from "./async-source-owner.js";
 import { mimeLimitFailure, mimeProcessingFailure, mimeValidationFailure } from "./errors.js";
+import {
+  MimeCpuBudgetOwner,
+  type MimeInspectionInstrumentationOptions,
+} from "./inspection-budget.js";
 import {
   MailsplitStructuralInspector,
   type MimeStructureSummary,
@@ -21,6 +26,7 @@ export interface SemanticInspectionLimits {
   readonly maxMimeDepth: number;
   readonly maxParts: number;
   readonly maxPreviewBytes: number;
+  readonly maxProcessingCpuMilliseconds: number;
   readonly maxRfc822Depth: number;
   readonly maxTextBytes: number;
 }
@@ -39,6 +45,7 @@ export const DEFAULT_SEMANTIC_INSPECTION_LIMITS: SemanticInspectionLimits = Obje
   maxMimeDepth: 16,
   maxParts: 256,
   maxPreviewBytes: 8 * 1024,
+  maxProcessingCpuMilliseconds: 5_000,
   maxRfc822Depth: 3,
   maxTextBytes: 256 * 1024,
 });
@@ -101,6 +108,7 @@ const validateLimits = (
     ["maxMimeDepth", limits.maxMimeDepth],
     ["maxParts", limits.maxParts],
     ["maxPreviewBytes", limits.maxPreviewBytes],
+    ["maxProcessingCpuMilliseconds", limits.maxProcessingCpuMilliseconds],
     ["maxRfc822Depth", limits.maxRfc822Depth],
     ["maxTextBytes", limits.maxTextBytes],
   ];
@@ -148,12 +156,16 @@ const oneChunk = async function* (bytes: Uint8Array): AsyncGenerator<Uint8Array>
  * @public
  */
 export class BoundedPostalMimeInspector {
+  readonly #instrumentation: MimeInspectionInstrumentationOptions;
   readonly #structuralInspector: MailsplitStructuralInspector;
 
   constructor(
-    structuralInspector: MailsplitStructuralInspector = new MailsplitStructuralInspector(),
+    structuralInspector?: MailsplitStructuralInspector,
+    instrumentation: MimeInspectionInstrumentationOptions = {},
   ) {
-    this.#structuralInspector = structuralInspector;
+    this.#instrumentation = instrumentation;
+    this.#structuralInspector =
+      structuralInspector ?? new MailsplitStructuralInspector(instrumentation);
   }
 
   async inspect(
@@ -178,29 +190,65 @@ export class BoundedPostalMimeInspector {
 
     const chunks: Uint8Array[] = [];
     let totalBytes = 0;
+    const budget = new MimeCpuBudgetOwner(
+      "semantic",
+      limits.maxProcessingCpuMilliseconds,
+      this.#instrumentation,
+    );
+    const failure = (error: MailEdgeError): Result<SemanticMessageView, MailEdgeError> => {
+      budget.complete("fail", totalBytes);
+      return { error, ok: false };
+    };
+    const checkpoint = (): Result<void, MailEdgeError> => {
+      try {
+        budget.checkpoint();
+        return { ok: true, value: undefined };
+      } catch (cause) {
+        return {
+          error:
+            cause instanceof MailEdgeError
+              ? cause
+              : mimeProcessingFailure("processing_cpu_budget", cause),
+          ok: false,
+        };
+      }
+    };
+    const source = new AbortableAsyncSourceOwner(input.body);
     try {
-      for await (const chunk of input.body) {
-        if (signal.aborted) return { error: mimeProcessingFailure("aborted"), ok: false };
+      for (;;) {
+        budget.checkpoint();
+        const next = await source.next(signal);
+        if (next.done) break;
+        const chunk = next.value;
+        if (signal.aborted) return failure(mimeProcessingFailure("aborted", signal.reason));
         if (!(chunk instanceof Uint8Array)) {
-          return { error: mimeValidationFailure("non_byte_source_chunk"), ok: false };
+          return failure(mimeValidationFailure("non_byte_source_chunk"));
         }
         totalBytes += chunk.byteLength;
         if (totalBytes > limits.maxMessageBytes) {
-          return {
-            error: mimeLimitFailure("message_bytes", limits.maxMessageBytes, totalBytes),
-            ok: false,
-          };
+          return failure(mimeLimitFailure("message_bytes", limits.maxMessageBytes, totalBytes));
         }
         // Own the bounded bytes so a small view into a much larger backing buffer cannot
         // retain memory outside the configured semantic ceiling or be mutated after receipt.
         chunks.push(Buffer.from(chunk));
+        budget.checkpoint();
       }
     } catch (cause) {
-      return { error: mimeProcessingFailure("source_stream", cause), ok: false };
+      return failure(
+        signal.aborted
+          ? mimeProcessingFailure("aborted", signal.reason)
+          : cause instanceof MailEdgeError
+            ? cause
+            : mimeProcessingFailure("source_stream", cause),
+      );
+    } finally {
+      await source.close();
     }
     if (input.contentLength !== null && input.contentLength !== totalBytes) {
-      return { error: mimeValidationFailure("content_length_mismatch"), ok: false };
+      return failure(mimeValidationFailure("content_length_mismatch"));
     }
+    const collectedWithinBudget = checkpoint();
+    if (!collectedWithinBudget.ok) return failure(collectedWithinBudget.error);
     const raw = Buffer.concat(chunks, totalBytes);
     const structure = await this.#structuralInspector.inspect(
       { body: oneChunk(raw), contentLength: totalBytes },
@@ -212,41 +260,41 @@ export class BoundedPostalMimeInspector {
         maxLineBytes: limits.maxLineBytes,
         maxMessageBytes: limits.maxMessageBytes,
         maxParts: limits.maxParts,
+        maxProcessingCpuMilliseconds: limits.maxProcessingCpuMilliseconds,
       },
       signal,
     );
-    if (!structure.ok) return structure;
+    if (!structure.ok) return failure(structure.error);
 
     let message: Email;
     try {
+      budget.checkpoint();
       message = await PostalMime.parse(raw, {
         attachmentEncoding: "arraybuffer",
         maxHeadersSize: limits.maxHeaderBytes,
         maxNestingDepth: limits.maxMimeDepth,
         maxRfc822NestingDepth: limits.maxRfc822Depth,
       });
+      budget.checkpoint();
     } catch (cause) {
-      return { error: mimeProcessingFailure("postal_mime", cause), ok: false };
+      return failure(
+        cause instanceof MailEdgeError ? cause : mimeProcessingFailure("postal_mime", cause),
+      );
     }
-    if (signal.aborted) return { error: mimeProcessingFailure("aborted"), ok: false };
+    if (signal.aborted) return failure(mimeProcessingFailure("aborted", signal.reason));
 
     const textBytes = Buffer.byteLength(message.text ?? "", "utf8");
     const htmlBytes = Buffer.byteLength(message.html ?? "", "utf8");
     if (textBytes > limits.maxTextBytes) {
-      return { error: mimeLimitFailure("text_bytes", limits.maxTextBytes, textBytes), ok: false };
+      return failure(mimeLimitFailure("text_bytes", limits.maxTextBytes, textBytes));
     }
     if (htmlBytes > limits.maxHtmlBytes) {
-      return { error: mimeLimitFailure("html_bytes", limits.maxHtmlBytes, htmlBytes), ok: false };
+      return failure(mimeLimitFailure("html_bytes", limits.maxHtmlBytes, htmlBytes));
     }
     if (message.attachments.length > limits.maxAttachments) {
-      return {
-        error: mimeLimitFailure(
-          "attachment_count",
-          limits.maxAttachments,
-          message.attachments.length,
-        ),
-        ok: false,
-      };
+      return failure(
+        mimeLimitFailure("attachment_count", limits.maxAttachments, message.attachments.length),
+      );
     }
     const attachmentBytes = message.attachments.reduce(
       (total, attachment) => total + contentBytes(attachment.content),
@@ -254,26 +302,19 @@ export class BoundedPostalMimeInspector {
     );
     const decodedBytes = textBytes + htmlBytes + attachmentBytes;
     if (decodedBytes > limits.maxDecodedBytes) {
-      return {
-        error: mimeLimitFailure("decoded_bytes", limits.maxDecodedBytes, decodedBytes),
-        ok: false,
-      };
+      return failure(mimeLimitFailure("decoded_bytes", limits.maxDecodedBytes, decodedBytes));
     }
     if (decodedBytes / Math.max(totalBytes, 1) > limits.maxDecodedRatio) {
-      return {
-        error: mimeLimitFailure("decoded_ratio", limits.maxDecodedRatio),
-        ok: false,
-      };
+      return failure(mimeLimitFailure("decoded_ratio", limits.maxDecodedRatio));
     }
     const encodedWordBytes = message.headers.reduce(
       (total, header) => total + Buffer.byteLength(header.value, "utf8"),
       0,
     );
     if (encodedWordBytes > limits.maxEncodedWordBytes) {
-      return {
-        error: mimeLimitFailure("encoded_word_bytes", limits.maxEncodedWordBytes, encodedWordBytes),
-        ok: false,
-      };
+      return failure(
+        mimeLimitFailure("encoded_word_bytes", limits.maxEncodedWordBytes, encodedWordBytes),
+      );
     }
 
     const attachments = Object.freeze(
@@ -294,6 +335,9 @@ export class BoundedPostalMimeInspector {
     );
     const textPreview = preview(message.text, limits.maxPreviewBytes);
     const htmlPreview = preview(message.html, limits.maxPreviewBytes);
+    const completedWithinBudget = checkpoint();
+    if (!completedWithinBudget.ok) return failure(completedWithinBudget.error);
+    budget.complete("pass", totalBytes);
     return {
       ok: true,
       value: Object.freeze({

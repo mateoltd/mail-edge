@@ -3,7 +3,12 @@ import { Readable } from "node:stream";
 import type { Transform } from "node:stream";
 
 import { MailEdgeError, type Result } from "@mail-edge/contracts";
+import { AbortableAsyncSourceOwner } from "./async-source-owner.js";
 import { mimeLimitFailure, mimeProcessingFailure, mimeValidationFailure } from "./errors.js";
+import {
+  MimeCpuBudgetOwner,
+  type MimeInspectionInstrumentationOptions,
+} from "./inspection-budget.js";
 
 interface MailsplitHeaders {
   getList(): readonly unknown[];
@@ -44,6 +49,7 @@ export interface MimeStructureLimits {
   readonly maxLineBytes: number;
   readonly maxMessageBytes: number;
   readonly maxParts: number;
+  readonly maxProcessingCpuMilliseconds: number;
 }
 
 /** @public */
@@ -55,6 +61,7 @@ export const DEFAULT_MIME_STRUCTURE_LIMITS: MimeStructureLimits = Object.freeze(
   maxLineBytes: 1024 * 1024,
   maxMessageBytes: 1024 * 1024,
   maxParts: 512,
+  maxProcessingCpuMilliseconds: 2_000,
 });
 
 /** @public */
@@ -96,6 +103,7 @@ const validateLimits = (
     ["maxLineBytes", limits.maxLineBytes],
     ["maxMessageBytes", limits.maxMessageBytes],
     ["maxParts", limits.maxParts],
+    ["maxProcessingCpuMilliseconds", limits.maxProcessingCpuMilliseconds],
   ];
   for (const [name, value] of entries) {
     if (!validLimit(value)) {
@@ -118,6 +126,12 @@ const nodeDepth = (node: MailsplitNode, maximum: number): number => {
 
 /** Bounded, read-only structural inspection backed by mailsplit. @public */
 export class MailsplitStructuralInspector {
+  readonly #instrumentation: MimeInspectionInstrumentationOptions;
+
+  constructor(instrumentation: MimeInspectionInstrumentationOptions = {}) {
+    this.#instrumentation = instrumentation;
+  }
+
   async inspect(
     input: MimeStructureInput,
     limits: MimeStructureLimits = DEFAULT_MIME_STRUCTURE_LIMITS,
@@ -140,8 +154,18 @@ export class MailsplitStructuralInspector {
 
     let totalBytes = 0;
     let lineBytes = 0;
+    const budget = new MimeCpuBudgetOwner(
+      "structural",
+      limits.maxProcessingCpuMilliseconds,
+      this.#instrumentation,
+    );
+    const source = new AbortableAsyncSourceOwner(input.body);
     const limitedBody = async function* (): AsyncGenerator<Uint8Array> {
-      for await (const chunk of input.body) {
+      for (;;) {
+        budget.checkpoint();
+        const next = await source.next(signal);
+        if (next.done) return;
+        const chunk = next.value;
         if (signal.aborted) throw mimeProcessingFailure("aborted");
         if (!(chunk instanceof Uint8Array)) throw mimeValidationFailure("non_byte_source_chunk");
         totalBytes += chunk.byteLength;
@@ -154,6 +178,7 @@ export class MailsplitStructuralInspector {
             throw mimeLimitFailure("line_bytes", limits.maxLineBytes, lineBytes);
           }
         }
+        budget.checkpoint();
         yield chunk;
       }
     };
@@ -163,6 +188,12 @@ export class MailsplitStructuralInspector {
       maxChildNodes: limits.maxParts,
       maxHeadSize: limits.maxHeaderBytes,
     });
+    const abort = (): void => {
+      const failure = mimeProcessingFailure("aborted", signal.reason);
+      readable.destroy(failure);
+      splitter.destroy(failure);
+    };
+    signal.addEventListener("abort", abort, { once: true });
     readable.once("error", (cause: unknown) => splitter.destroy(cause as Error));
     readable.pipe(splitter);
 
@@ -174,6 +205,7 @@ export class MailsplitStructuralInspector {
     try {
       const entries = splitter as unknown as AsyncIterable<MailsplitEntry>;
       for await (const entry of entries) {
+        budget.checkpoint();
         if (signal.aborted) throw mimeProcessingFailure("aborted");
         if (entry.type !== "node") continue;
         const depth = nodeDepth(entry, limits.maxDepth);
@@ -211,7 +243,12 @@ export class MailsplitStructuralInspector {
           }),
         );
       }
+      budget.checkpoint();
     } catch (cause) {
+      budget.complete("fail", totalBytes);
+      if (signal.aborted) {
+        return { error: mimeProcessingFailure("aborted", signal.reason), ok: false };
+      }
       if (cause instanceof MailEdgeError) return { error: cause, ok: false };
       if (
         typeof cause === "object" &&
@@ -226,13 +263,17 @@ export class MailsplitStructuralInspector {
       }
       return { error: mimeProcessingFailure("mailsplit", cause), ok: false };
     } finally {
+      signal.removeEventListener("abort", abort);
       readable.destroy();
       splitter.destroy();
+      await source.close();
     }
 
     if (input.contentLength !== null && input.contentLength !== totalBytes) {
+      budget.complete("fail", totalBytes);
       return { error: mimeValidationFailure("content_length_mismatch"), ok: false };
     }
+    budget.complete("pass", totalBytes);
     return {
       ok: true,
       value: Object.freeze({
