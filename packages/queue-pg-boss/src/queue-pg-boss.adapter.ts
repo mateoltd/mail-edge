@@ -64,6 +64,8 @@ const validateConfig = (config: PgBossWakeupConfig): void => {
   }
 };
 
+const isCanceled = (signal: AbortSignal): boolean => signal.aborted;
+
 const opaqueIdentifier = (wakeup: Wakeup): string => {
   switch (wakeup.type) {
     case "application_delivery":
@@ -134,6 +136,7 @@ export class PgBossWakeupScheduler implements WakeupScheduler {
   readonly #errors: QueueErrorFactory;
   readonly #executor: TransactionalSqlExecutor;
   readonly #workers = new Set<WakeupType>();
+  #bossStarted = false;
   #started = false;
 
   constructor(
@@ -170,36 +173,46 @@ export class PgBossWakeupScheduler implements WakeupScheduler {
       throw new DOMException("pg-boss start canceled.", "AbortError");
     }
     await this.#boss.start();
-    for (const queueName of Object.values(queueNames)) {
-      await this.#boss.createQueue(queueName, {
-        deleteAfterSeconds: this.#config.jobRetentionSeconds,
-        expireInSeconds: 60,
-        notify: true,
-        policy: "standard",
-        retentionSeconds: this.#config.jobRetentionSeconds,
-        retryBackoff: true,
-        retryDelay: 1,
-        retryDelayMax: 60,
-        retryLimit: 3,
-      });
+    this.#bossStarted = true;
+    try {
+      for (const queueName of Object.values(queueNames)) {
+        if (isCanceled(signal)) {
+          throw new DOMException("pg-boss start canceled.", "AbortError");
+        }
+        await this.#boss.createQueue(queueName, {
+          deleteAfterSeconds: this.#config.jobRetentionSeconds,
+          expireInSeconds: 60,
+          notify: true,
+          policy: "standard",
+          retentionSeconds: this.#config.jobRetentionSeconds,
+          retryBackoff: true,
+          retryDelay: 1,
+          retryDelayMax: 60,
+          retryLimit: 3,
+        });
+      }
+      this.#started = true;
+    } catch (cause) {
+      try {
+        await this.#stopBoss();
+      } catch (cleanupCause) {
+        throw new AggregateError(
+          [cause, cleanupCause],
+          "pg-boss queue startup failed and lifecycle cleanup did not complete.",
+        );
+      }
+      throw cause;
     }
-    this.#started = true;
   }
 
   async close(signal: AbortSignal): Promise<void> {
-    if (!this.#started) {
+    if (!this.#bossStarted) {
       return;
     }
     if (signal.aborted) {
       throw new DOMException("pg-boss close canceled.", "AbortError");
     }
-    await this.#boss.stop({
-      close: true,
-      graceful: true,
-      timeout: this.#config.gracefulStopMilliseconds,
-    });
-    this.#workers.clear();
-    this.#started = false;
+    await this.#stopBoss();
   }
 
   async schedule(
@@ -304,6 +317,17 @@ export class PgBossWakeupScheduler implements WakeupScheduler {
       },
     );
     this.#workers.add(type);
+  }
+
+  async #stopBoss(): Promise<void> {
+    await this.#boss.stop({
+      close: true,
+      graceful: true,
+      timeout: this.#config.gracefulStopMilliseconds,
+    });
+    this.#workers.clear();
+    this.#started = false;
+    this.#bossStarted = false;
   }
 }
 

@@ -26,6 +26,23 @@ const versionExpression =
 const registryKey = (providerId: ProviderId, adapterVersion: string, mode: string): string =>
   `${providerId}\0${adapterVersion}\0${mode}`;
 
+const DEFAULT_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
+
+const awaitWithSignal = async <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
+  if (signal.aborted) throw signal.reason;
+  let rejectCanceled: ((reason: unknown) => void) | undefined;
+  const canceled = new Promise<never>((_resolve, reject) => {
+    rejectCanceled = reject;
+  });
+  const cancel = (): void => rejectCanceled?.(signal.reason);
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    return await Promise.race([operation, canceled]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+};
+
 const lifecycleError = (reason: string, cause?: unknown): MailEdgeError =>
   new MailEdgeError({
     ...(cause === undefined ? {} : { cause }),
@@ -95,10 +112,18 @@ const assertRegistration = (registration: ProviderAdapterRegistration): string =
  */
 export class ProviderAdapterRegistry {
   readonly #adapters = new Map<string, RegisteredAdapter>();
-  readonly #startedKeys: string[] = [];
+  readonly #cleanupKeys: string[] = [];
+  readonly #cleanupTimeoutMilliseconds: number;
   #state: ProviderRegistryState = "constructed";
 
-  constructor(registrations: readonly ProviderAdapterRegistration[] = []) {
+  constructor(
+    registrations: readonly ProviderAdapterRegistration[] = [],
+    cleanupTimeoutMilliseconds = DEFAULT_CLEANUP_TIMEOUT_MILLISECONDS,
+  ) {
+    if (!Number.isSafeInteger(cleanupTimeoutMilliseconds) || cleanupTimeoutMilliseconds < 1) {
+      throw new TypeError("Provider registry cleanup timeout must be a positive safe integer.");
+    }
+    this.#cleanupTimeoutMilliseconds = cleanupTimeoutMilliseconds;
     for (const registration of registrations) this.register(registration);
   }
 
@@ -184,10 +209,11 @@ export class ProviderAdapterRegistry {
       left.localeCompare(right),
     )) {
       if (signal.aborted) {
-        await this.#closeStarted(signal);
+        await this.#closeStarted();
         this.#state = "failed";
         return { error: lifecycleError("start_aborted", signal.reason), ok: false };
       }
+      this.#cleanupKeys.push(key);
       let result: Result<void, MailEdgeError>;
       try {
         result = await stored.registration.lifecycle.start(signal);
@@ -195,40 +221,49 @@ export class ProviderAdapterRegistry {
         result = { error: lifecycleError("adapter_start_threw", cause), ok: false };
       }
       if (!result.ok) {
-        await this.#closeStarted(signal);
+        await this.#closeStarted();
         this.#state = "failed";
         return result;
       }
-      this.#startedKeys.push(key);
     }
     this.#state = "started";
     return { ok: true, value: undefined };
   }
 
-  async close(signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+  async close(callerSignal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+    void callerSignal;
     if (this.#state === "closed") return { ok: true, value: undefined };
     if (this.#state === "starting" || this.#state === "closing") {
       throw new Error(`Provider registry cannot close from state ${this.#state}.`);
     }
     this.#state = "closing";
-    const result = await this.#closeStarted(signal);
+    const result = await this.#closeStarted();
     this.#state = result.ok ? "closed" : "failed";
     return result;
   }
 
-  async #closeStarted(signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+  async #closeStarted(): Promise<Result<void, MailEdgeError>> {
+    const signal = AbortSignal.timeout(this.#cleanupTimeoutMilliseconds);
     let firstError: MailEdgeError | undefined;
-    for (const key of this.#startedKeys.toReversed()) {
+    for (const key of this.#cleanupKeys.toReversed()) {
+      if (signal.aborted) {
+        firstError ??= lifecycleError("adapter_close_timed_out", signal.reason);
+        continue;
+      }
       const stored = this.#adapters.get(key);
       if (stored === undefined) continue;
       try {
-        const result = await stored.registration.lifecycle.close(signal);
-        if (!result.ok && firstError === undefined) firstError = result.error;
+        const result = await awaitWithSignal(stored.registration.lifecycle.close(signal), signal);
+        if (result.ok) {
+          const index = this.#cleanupKeys.lastIndexOf(key);
+          if (index >= 0) this.#cleanupKeys.splice(index, 1);
+        } else {
+          firstError ??= result.error;
+        }
       } catch (cause) {
         firstError ??= lifecycleError("adapter_close_threw", cause);
       }
     }
-    this.#startedKeys.length = 0;
     return firstError === undefined
       ? { ok: true, value: undefined }
       : { error: firstError, ok: false };

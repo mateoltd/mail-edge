@@ -593,9 +593,9 @@ export interface ProviderAdapterRegistration {
 
 // @public
 export class ProviderAdapterRegistry {
-    constructor(registrations?: readonly ProviderAdapterRegistration[]);
+    constructor(registrations?: readonly ProviderAdapterRegistration[], cleanupTimeoutMilliseconds?: number);
     // (undocumented)
-    close(signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+    close(callerSignal: AbortSignal): Promise<Result<void, MailEdgeError>>;
     // (undocumented)
     get(providerId: ProviderId, adapterVersion: string, mode: string): ProviderAdapterRegistration | undefined;
     // (undocumented)
