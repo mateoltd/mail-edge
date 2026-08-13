@@ -17,7 +17,7 @@
       "outputs": ["dist/**", "*.tsbuildinfo"]
     },
     "lint": {
-      "dependsOn": ["^lint"],
+      "dependsOn": ["^build", "^lint"],
       "outputs": []
     },
     "pack": {

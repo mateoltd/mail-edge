@@ -36,14 +36,13 @@ deliveryId: TUnsafe<DeliveryId>;
 receiptId: TUnsafe<ReceiptId>;
 tenantId: TUnsafe<TenantId>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -52,6 +51,7 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 raw: TUnsafe<    {
 schemaVersion: "v1";
@@ -62,14 +62,14 @@ mediaType: "message/rfc822";
 }>;
 binding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -195,7 +195,46 @@ failedChecks: TArray<TString>;
 }>;
 
 // @public
-export const contractSchemas: readonly (TUnion<TLiteral<"not_sent" | "accepted" | "unknown">[]> | TString | TRecord<TString, TUnion<[TString, TNumber, TBoolean]>> | TObject<    {
+export const contractSchemas: readonly (TString | TRecord<TString, TString> | TRecord<TString, TUnion<[TString, TNumber, TBoolean]>> | TUnsafe<ProviderId> | TUnsafe<TenantId> | TUnsafe<BindingId> | TUnsafe<ProviderInstanceId> | TUnsafe<BlobId> | TUnsafe<ReceiptId> | TUnsafe<IntentId> | TUnsafe<AttemptId> | TUnsafe<DeliveryId> | TUnsafe<FeedbackEventId> | TUnsafe<RawAccessGrantId> | TUnsafe<AuditId> | TUnsafe<IdempotencyKey> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+bindingId: TUnsafe<BindingId>;
+bindingVersion: TInteger;
+tenantId: TUnsafe<TenantId>;
+domainALabel: TUnsafe<string>;
+direction: TUnion<TLiteral<"inbound" | "outbound">[]>;
+providerId: TUnsafe<ProviderId>;
+adapterVersion: TString;
+providerInstanceId: TUnsafe<ProviderInstanceId>;
+providerResourceIds: TUnsafe<    {
+[x: string]: string;
+}>;
+capabilityDigest: TUnsafe<string>;
+configRevision: TString;
+createdAt: TUnsafe<string>;
+}> | TUnion<[TTuple<[TLiteral<"never">]>, TArray<TUnion<TLiteral<"success" | "failure" | "delay">[]>>]> | TObject<    {
+address: TString;
+dsn: TOptional<TObject<    {
+notify: TOptional<TUnsafe<["never"] | ("success" | "failure" | "delay")[]>>;
+originalRecipient: TOptional<TString>;
+}>>;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+mailFrom: TUnion<[TString, TNull]>;
+rcptTo: TArray<TUnsafe<    {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}>>;
+smtpUtf8: TBoolean;
+body: TOptional<TUnion<TLiteral<"7bit" | "8bitmime" | "binarymime">[]>>;
+requireTls: TOptional<TBoolean>;
+dsn: TOptional<TObject<    {
+ret: TOptional<TUnion<[TLiteral<"full">, TLiteral<"headers">]>>;
+envelopeId: TOptional<TString>;
+}>>;
+}> | TUnion<TLiteral<"not_sent" | "accepted" | "unknown">[]> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 type: TString;
 title: TString;
@@ -210,7 +249,7 @@ safeDetails: TOptional<TUnsafe<    {
 [x: string]: string | number | boolean;
 }>>;
 occurredAt: TOptional<TUnsafe<string>>;
-}> | TRecord<TString, TString> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 source: TUnion<[TLiteral<"official_doc">, TLiteral<"maintained_source">, TLiteral<"live_conformance">]>;
 sourceUri: TString;
@@ -220,7 +259,7 @@ reportDigest: TUnsafe<string>;
 environment: TUnsafe<    {
 [x: string]: string;
 }>;
-}> | TUnsafe<ProviderId> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 providerId: TUnsafe<ProviderId>;
 adapterVersion: TString;
@@ -277,8 +316,8 @@ exactDomainCatchAll: TBoolean;
 prerequisites: TArray<TString>;
 evidence: TArray<TUnsafe<    {
 sourceRevision?: string;
-schemaVersion: "v1";
 source: "official_doc" | "maintained_source" | "live_conformance";
+schemaVersion: "v1";
 sourceUri: string;
 observedAt: string;
 reportDigest: string;
@@ -322,46 +361,7 @@ descriptorDigest: TUnsafe<string>;
 reportDigest: TUnsafe<string>;
 passedChecks: TArray<TString>;
 failedChecks: TArray<TString>;
-}> | TUnsafe<ReceiptId> | TUnsafe<TenantId> | TUnsafe<ProviderInstanceId> | TUnsafe<BindingId> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-bindingId: TUnsafe<BindingId>;
-bindingVersion: TInteger;
-tenantId: TUnsafe<TenantId>;
-domainALabel: TUnsafe<string>;
-direction: TUnion<TLiteral<"inbound" | "outbound">[]>;
-providerId: TUnsafe<ProviderId>;
-adapterVersion: TString;
-providerInstanceId: TUnsafe<ProviderInstanceId>;
-providerResourceIds: TUnsafe<    {
-[x: string]: string;
-}>;
-capabilityDigest: TUnsafe<string>;
-configRevision: TString;
-createdAt: TUnsafe<string>;
-}> | TUnion<[TTuple<[TLiteral<"never">]>, TArray<TUnion<TLiteral<"success" | "failure" | "delay">[]>>]> | TObject<    {
-address: TString;
-dsn: TOptional<TObject<    {
-notify: TOptional<TUnsafe<["never"] | ("success" | "failure" | "delay")[]>>;
-originalRecipient: TOptional<TString>;
-}>>;
 }> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-mailFrom: TUnion<[TString, TNull]>;
-rcptTo: TArray<TUnsafe<    {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}>>;
-smtpUtf8: TBoolean;
-body: TOptional<TUnion<TLiteral<"7bit" | "8bitmime" | "binarymime">[]>>;
-requireTls: TOptional<TBoolean>;
-dsn: TOptional<TObject<    {
-ret: TOptional<TUnion<[TLiteral<"full">, TLiteral<"headers">]>>;
-envelopeId: TOptional<TString>;
-}>>;
-}> | TUnsafe<BlobId> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 blobId: TUnsafe<BlobId>;
 sha256: TUnsafe<string>;
@@ -376,14 +376,14 @@ providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerReceiptKey: TString;
 binding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -392,14 +392,13 @@ configRevision: string;
 createdAt: string;
 }>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -408,6 +407,7 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 raw: TUnsafe<    {
 schemaVersion: "v1";
@@ -420,20 +420,19 @@ verificationEvidenceDigest: TUnsafe<string>;
 receivedAt: TUnsafe<string>;
 state: TUnion<TLiteral<"delivered" | "received" | "acquiring" | "stored" | "routing" | "delivering" | "retry_wait" | "quarantined" | "dead_letter" | "purged">[]>;
 version: TInteger;
-}> | TUnsafe<DeliveryId> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 deliveryId: TUnsafe<DeliveryId>;
 receiptId: TUnsafe<ReceiptId>;
 tenantId: TUnsafe<TenantId>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -442,6 +441,7 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 raw: TUnsafe<    {
 schemaVersion: "v1";
@@ -452,14 +452,14 @@ mediaType: "message/rfc822";
 }>;
 binding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -469,7 +469,7 @@ createdAt: string;
 }>;
 attempt: TInteger;
 occurredAt: TUnsafe<string>;
-}> | TUnsafe<IntentId> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 intentId: TUnsafe<IntentId>;
 tenantId: TUnsafe<TenantId>;
@@ -481,14 +481,13 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -497,17 +496,18 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 primaryBinding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -517,14 +517,14 @@ createdAt: string;
 }>;
 fallbackBindings: TArray<TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -543,7 +543,7 @@ fingerprint: TUnsafe<string>;
 state: TUnion<TLiteral<"accepted" | "retry_wait" | "ready" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown" | "canceled">[]>;
 createdAt: TUnsafe<string>;
 version: TInteger;
-}> | TUnsafe<AttemptId> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 intentId: TUnsafe<IntentId>;
 attemptId: TUnsafe<AttemptId>;
@@ -563,14 +563,13 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -579,17 +578,18 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 routeBinding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -609,8 +609,8 @@ providerMessageId: TOptional<TString>;
 acceptedRecipients: TArray<TString>;
 rejectedRecipients: TArray<TUnsafe<    {
 statusCode?: string;
-evidenceCode: string;
 address: string;
+evidenceCode: string;
 outcome: "accepted" | "rejected";
 }>>;
 acceptedAt: TUnsafe<string>;
@@ -626,14 +626,14 @@ ordinal: TInteger;
 fence: TInteger;
 routeBinding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -659,8 +659,8 @@ schemaVersion: "v1";
 acceptedRecipients: string[];
 rejectedRecipients: {
 statusCode?: string;
-evidenceCode: string;
 address: string;
+evidenceCode: string;
 outcome: "accepted" | "rejected";
 }[];
 acceptedAt: string;
@@ -671,7 +671,7 @@ normalizedEvidence: {
 lastEvidence: TOptional<TUnsafe<    {
 [x: string]: string | number | boolean;
 }>>;
-}> | TUnsafe<FeedbackEventId> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 feedbackEventId: TUnsafe<FeedbackEventId>;
 providerId: TUnsafe<ProviderId>;
@@ -713,7 +713,7 @@ occurredAt: TUnsafe<string>;
 normalizedEvidence: TUnsafe<    {
 [x: string]: string | number | boolean;
 }>;
-}> | TUnsafe<RawAccessGrantId> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 grantId: TUnsafe<RawAccessGrantId>;
 tenantId: TUnsafe<TenantId>;
@@ -752,7 +752,7 @@ feedbackEventId: TUnsafe<FeedbackEventId>;
 schemaVersion: TLiteral<"v1">;
 type: TLiteral<"application_delivery">;
 deliveryId: TUnsafe<DeliveryId>;
-}>]> | TUnsafe<AuditId> | TObject<    {
+}>]> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 auditId: TUnsafe<AuditId>;
 tenantId: TOptional<TUnsafe<TenantId>>;
@@ -768,7 +768,7 @@ metadata: TUnsafe<    {
 [x: string]: string | number | boolean;
 }>;
 occurredAt: TUnsafe<string>;
-}> | TUnsafe<IdempotencyKey>)[];
+}>)[];
 
 // @public
 export class ContractValidator {
@@ -1028,14 +1028,14 @@ ordinal: TInteger;
 fence: TInteger;
 routeBinding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1061,8 +1061,8 @@ schemaVersion: "v1";
 acceptedRecipients: string[];
 rejectedRecipients: {
 statusCode?: string;
-evidenceCode: string;
 address: string;
+evidenceCode: string;
 outcome: "accepted" | "rejected";
 }[];
 acceptedAt: string;
@@ -1097,14 +1097,13 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -1113,17 +1112,18 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 primaryBinding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1133,14 +1133,14 @@ createdAt: string;
 }>;
 fallbackBindings: TArray<TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1185,14 +1185,13 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -1201,17 +1200,18 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 routeBinding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1287,8 +1287,8 @@ providerMessageId: TOptional<TString>;
 acceptedRecipients: TArray<TString>;
 rejectedRecipients: TArray<TUnsafe<    {
 statusCode?: string;
-evidenceCode: string;
 address: string;
+evidenceCode: string;
 outcome: "accepted" | "rejected";
 }>>;
 acceptedAt: TUnsafe<string>;
@@ -1358,8 +1358,8 @@ exactDomainCatchAll: TBoolean;
 prerequisites: TArray<TString>;
 evidence: TArray<TUnsafe<    {
 sourceRevision?: string;
-schemaVersion: "v1";
 source: "official_doc" | "maintained_source" | "live_conformance";
+schemaVersion: "v1";
 sourceUri: string;
 observedAt: string;
 reportDigest: string;
@@ -1744,14 +1744,14 @@ providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerReceiptKey: TString;
 binding: TUnsafe<    {
 schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
 direction: "inbound" | "outbound";
 providerId: ProviderId;
 adapterVersion: string;
-tenantId: TenantId;
 providerInstanceId: ProviderInstanceId;
-bindingId: BindingId;
-bindingVersion: number;
-domainALabel: string;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1760,14 +1760,13 @@ configRevision: string;
 createdAt: string;
 }>;
 envelope: TUnsafe<    {
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
 dsn?: {
-ret?: "headers" | "full";
+ret?: "full" | "headers";
 envelopeId?: string;
 };
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
 schemaVersion: "v1";
-smtpUtf8: boolean;
 mailFrom: string | null;
 rcptTo: {
 dsn?: {
@@ -1776,6 +1775,7 @@ originalRecipient?: string;
 };
 address: string;
 }[];
+smtpUtf8: boolean;
 }>;
 raw: TUnsafe<    {
 schemaVersion: "v1";

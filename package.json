@@ -37,7 +37,7 @@
     "license:check": "node ./scripts/check-licenses.mjs",
     "lint": "corepack pnpm run lint:root && turbo run lint",
     "lint:boundaries": "depcruise --config ./dependency-cruiser.config.mjs --output-type err-long .",
-    "lint:root": "eslint . --max-warnings 0",
+    "lint:root": "eslint . --ignore-pattern 'apps/**' --ignore-pattern 'packages/**' --max-warnings 0",
     "pack:check": "node ./scripts/check-packages.mjs",
     "repo:check": "node ./scripts/check-repository.mjs",
     "schema:check": "corepack pnpm --filter @mail-edge/contracts schema:check",
