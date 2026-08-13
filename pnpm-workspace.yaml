@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+onlyBuiltDependencies: []
+overrides:
+  undici: 7.29.0
+strictDepBuilds: true

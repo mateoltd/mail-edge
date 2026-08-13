@@ -1,0 +1,36 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "config/**",
+    "dependency-cruiser.config.mjs",
+    "eslint.config.mjs",
+    "prettier.config.mjs",
+    "tsconfig.base.json"
+  ],
+  "tasks": {
+    "api:check": {
+      "dependsOn": ["build", "^build"],
+      "outputs": []
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "*.tsbuildinfo"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": []
+    },
+    "pack": {
+      "dependsOn": ["build", "api:check"],
+      "outputs": ["*.tgz"]
+    },
+    "test": {
+      "dependsOn": ["build", "^build"],
+      "outputs": ["coverage/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    }
+  }
+}
