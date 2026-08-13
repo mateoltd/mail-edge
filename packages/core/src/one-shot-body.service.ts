@@ -6,6 +6,7 @@ export class OwnedOneShotBody implements OneShotBody {
   readonly #aborter: (reason?: unknown) => Promise<void>;
   #state: OneShotBodyState = "available";
   #iterator: AsyncIterator<Uint8Array> | undefined;
+  #abortPromise: Promise<void> | undefined;
 
   constructor(
     source: AsyncIterable<Uint8Array>,
@@ -28,8 +29,14 @@ export class OwnedOneShotBody implements OneShotBody {
     this.#iterator = sourceIterator;
     return {
       next: async () => {
+        if (this.#isAborted()) {
+          return { done: true, value: undefined };
+        }
         try {
           const item = await sourceIterator.next();
+          if (this.#isAborted()) {
+            return { done: true, value: undefined };
+          }
           if (item.done === true) {
             this.#state = "completed";
           }
@@ -53,14 +60,23 @@ export class OwnedOneShotBody implements OneShotBody {
   }
 
   async abort(reason?: unknown): Promise<void> {
-    if (this.#state === "completed" || this.#state === "aborted") {
+    if (this.#state === "completed") {
       return;
     }
+    if (this.#abortPromise !== undefined) return this.#abortPromise;
     this.#state = "aborted";
-    try {
-      await this.#iterator?.return?.();
-    } finally {
-      await this.#aborter(reason);
-    }
+    const iterator = this.#iterator;
+    this.#abortPromise = (async () => {
+      try {
+        await iterator?.return?.();
+      } finally {
+        await this.#aborter(reason);
+      }
+    })();
+    return this.#abortPromise;
+  }
+
+  #isAborted(): boolean {
+    return this.#state === "aborted";
   }
 }

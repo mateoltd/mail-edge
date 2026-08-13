@@ -4,10 +4,10 @@
 
 ```ts
 
-import type { BlobStagePort } from '@mail-edge/core';
+import { BlobStagePort } from '@mail-edge/core';
 import type { BlobStageReservation } from '@mail-edge/core';
-import type { BlobStageWriter } from '@mail-edge/core';
-import type { BlobStorePort } from '@mail-edge/core';
+import { BlobStageWriter } from '@mail-edge/core';
+import { BlobStorePort } from '@mail-edge/core';
 import { KMSClient } from '@aws-sdk/client-kms';
 import { S3Client } from '@aws-sdk/client-s3';
 
@@ -110,6 +110,8 @@ export interface BlobMetadataStore {
     listPendingPromotions(tenantId: BlobTenantId, limit: number, signal: AbortSignal): Promise<DriverResult<readonly PendingBlobPromotion[]>>;
     // (undocumented)
     listRetentionCandidates(tenantId: BlobTenantId, now: string, limit: number, signal: AbortSignal): Promise<DriverResult<readonly string[]>>;
+    // (undocumented)
+    markCorrupt(claim: RawBlobIntegrityClaim, occurredAt: string, signal: AbortSignal): Promise<DriverResult<void>>;
     // (undocumented)
     markObjectDeleted(claim: BlobPurgeClaim, occurredAt: string, signal: AbortSignal): Promise<DriverResult<void>>;
     // (undocumented)
@@ -389,6 +391,8 @@ export interface EncryptedS3BlobStoreConfig {
     // (undocumented)
     readonly keyPrefix: string;
     // (undocumented)
+    readonly maximumRawMessageBytes?: number;
+    // (undocumented)
     readonly multipartPartBytes: number;
     // (undocumented)
     readonly multipartQueueSize: number;
@@ -469,6 +473,16 @@ interface PurgingBlobStore extends BlobStorePort {
 interface PurgingBlobStore_2 extends BlobStorePort {
     // (undocumented)
     purge(claim: BlobPurgeClaim, occurredAt: string, signal: AbortSignal): Promise<DriverResult<void>>;
+}
+
+// @public (undocumented)
+export interface RawBlobIntegrityClaim {
+    // (undocumented)
+    readonly blobId: string;
+    // (undocumented)
+    readonly expectedVersion: number;
+    // (undocumented)
+    readonly tenantId: BlobTenantId;
 }
 
 // @public (undocumented)

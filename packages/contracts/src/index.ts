@@ -142,8 +142,18 @@ export {
   ProviderDispatchError,
   providerDispatchPhases,
 } from "./problem.schema.js";
-export type { RawMessageRefV1, RawMessageStream } from "./raw.schema.js";
-export { DEFAULT_MAX_RAW_MESSAGE_BYTES, RawMessageRefV1Schema } from "./raw.schema.js";
+export type {
+  RawMessageIntegrityErrorOptions,
+  RawMessageIntegrityReason,
+  RawMessageRefV1,
+  RawMessageStream,
+} from "./raw.schema.js";
+export {
+  DEFAULT_MAX_RAW_MESSAGE_BYTES,
+  RawMessageIntegrityError,
+  rawMessageIntegrityReasons,
+  RawMessageRefV1Schema,
+} from "./raw.schema.js";
 export type { Result, ValidationError, ValidationIssue } from "./result.js";
 export { err, ok, validationError } from "./result.js";
 export { contractSchemas } from "./schemas.js";

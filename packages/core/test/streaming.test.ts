@@ -60,6 +60,39 @@ describe("one-shot stream ownership", () => {
     expect(body.state).toBe("aborted");
     expect(reasons).toEqual(["consumer_released_before_eof"]);
   });
+
+  it("cannot yield a source next result that resolves after abort", async () => {
+    let resolveNext: ((value: IteratorResult<Uint8Array>) => void) | undefined;
+    let iteratorReturnCalls = 0;
+    let aborterCalls = 0;
+    const source: AsyncIterable<Uint8Array> = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: () =>
+            new Promise<IteratorResult<Uint8Array>>((resolve) => {
+              resolveNext = resolve;
+            }),
+          return: async () => {
+            iteratorReturnCalls += 1;
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    };
+    const body = new OwnedOneShotBody(source, async () => {
+      aborterCalls += 1;
+    });
+    const iterator = body[Symbol.asyncIterator]();
+    const pending = iterator.next();
+    await body.abort("request_canceled");
+    resolveNext?.({ done: false, value: Uint8Array.of(1, 2, 3) });
+
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    await body.abort("second_abort");
+    expect(body.state).toBe("aborted");
+    expect(iteratorReturnCalls).toBe(1);
+    expect(aborterCalls).toBe(1);
+  });
 });
 
 describe("provider ingress metadata", () => {

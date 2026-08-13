@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MailEdgeError, ok } from "@mail-edge/contracts";
+import { MailEdgeError, ok, type ProviderCapabilityDescriptorV1 } from "@mail-edge/contracts";
 
 import { ProviderAdapterRegistry } from "../src/provider-registry.service.js";
 import type { ProviderAdapterRegistration } from "../src/spi.js";
@@ -10,22 +10,23 @@ const registration = (
   events: string[],
   mode = "fixture",
   lifecycle: Partial<ProviderAdapterRegistration["lifecycle"]> = {},
+  registrationDescriptor: ProviderCapabilityDescriptorV1 = descriptor,
 ): ProviderAdapterRegistration => {
   const inbound = {
-    descriptor,
+    descriptor: registrationDescriptor,
     ingest: () => Promise.resolve({ error: new Error() as never, ok: false as const }),
   };
   const outbound = {
-    descriptor,
+    descriptor: registrationDescriptor,
     reconcile: () => Promise.resolve({ error: new Error() as never, ok: false as const }),
     submitRaw: () => Promise.resolve({ error: new Error() as never, ok: false as const }),
   };
   const feedback = {
-    descriptor,
+    descriptor: registrationDescriptor,
     ingestFeedback: () => Promise.resolve({ error: new Error() as never, ok: false as const }),
   };
   const controlPlane = {
-    descriptor,
+    descriptor: registrationDescriptor,
     applyBindingPlan: () => Promise.resolve({ error: new Error() as never, ok: false as const }),
     deleteBindingResources: () =>
       Promise.resolve({ error: new Error() as never, ok: false as const }),
@@ -34,7 +35,7 @@ const registration = (
   };
   return {
     controlPlane,
-    descriptor,
+    descriptor: registrationDescriptor,
     feedback,
     identity: { adapterVersion: "1.0.0", mode, providerId },
     inbound,
@@ -89,6 +90,37 @@ describe("provider adapter registry lifecycle", () => {
   it("rejects duplicate registrations as fatal startup configuration", () => {
     const adapter = registration([]);
     expect(() => new ProviderAdapterRegistry([adapter, adapter])).toThrow(/Duplicate/u);
+  });
+
+  it("snapshots registrations and returns deeply immutable list views", async () => {
+    const events: string[] = [];
+    const mutableDescriptor: ProviderCapabilityDescriptorV1 = structuredClone(descriptor);
+    const candidate = registration(events, "fixture", {}, mutableDescriptor);
+    const registry = new ProviderAdapterRegistry([candidate]);
+
+    (candidate.identity as { mode: string }).mode = "mutated";
+    (candidate.lifecycle as { start: ProviderAdapterRegistration["lifecycle"]["start"] }).start =
+      async () => {
+        events.push("mutated-start");
+        return ok(undefined);
+      };
+    (mutableDescriptor.outbound.transports as string[]).splice(0);
+
+    const listed = registry.list();
+    expect(Object.isFrozen(listed)).toBe(true);
+    expect(Object.isFrozen(listed[0])).toBe(true);
+    expect(Object.isFrozen(listed[0]?.descriptor)).toBe(true);
+    expect(Object.isFrozen(listed[0]?.descriptor.outbound.transports)).toBe(true);
+    expect(listed[0]?.identity.mode).toBe("fixture");
+    expect(listed[0]?.descriptor.outbound.transports).toEqual(descriptor.outbound.transports);
+    expect(() => (listed as ProviderAdapterRegistration[]).push(candidate)).toThrow();
+
+    expect(await registry.start(new AbortController().signal)).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(events).toEqual(["start:fixture"]);
+    await registry.close(new AbortController().signal);
   });
 
   it("cleans a partially started adapter and retains a failed close for retry", async () => {

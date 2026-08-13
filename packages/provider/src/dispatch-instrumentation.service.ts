@@ -1,5 +1,6 @@
 import {
   ProviderDispatchError,
+  RawMessageIntegrityError,
   type DeliveryCertainty,
   type OutboundSubmissionV1,
   type ProviderAcceptanceV1,
@@ -16,7 +17,7 @@ import {
   type DispatchTransport,
 } from "@mail-edge/core";
 
-import type { OutboundProviderAdapter, ProviderDispatchContext } from "./spi.js";
+import type { OutboundProviderAdapter, ProviderDispatchContext, ProviderRawSource } from "./spi.js";
 
 /** Bounded provider dispatch instrumentation event. @public */
 export interface ProviderDispatchInstrumentationEvent {
@@ -281,6 +282,44 @@ const actionFor = (
   return result.error.retryable ? "retry_not_sent" : "fail_not_sent";
 };
 
+class IntegrityTrackingRawSource implements ProviderRawSource {
+  readonly #source: ProviderRawSource;
+  #failure: RawMessageIntegrityError | undefined;
+
+  constructor(source: ProviderRawSource) {
+    this.#source = source;
+  }
+
+  get failure(): RawMessageIntegrityError | undefined {
+    return this.#failure;
+  }
+
+  async open(
+    ...arguments_: Parameters<ProviderRawSource["open"]>
+  ): ReturnType<ProviderRawSource["open"]> {
+    const opened = await this.#source.open(...arguments_);
+    if (!opened.ok) return opened;
+    return {
+      ok: true,
+      value: Object.freeze({
+        ...opened.value,
+        body: this.#track(opened.value.body),
+      }),
+    };
+  }
+
+  async *#track(body: AsyncIterable<Uint8Array>): AsyncGenerator<Uint8Array> {
+    try {
+      yield* body;
+    } catch (cause) {
+      if (cause instanceof RawMessageIntegrityError) {
+        this.#failure ??= cause;
+      }
+      throw cause;
+    }
+  }
+}
+
 /** Coordinates one injected outbound adapter under strict byte-boundary evidence. @public */
 export class ProviderDispatchService {
   readonly #adapter: OutboundProviderAdapter;
@@ -332,8 +371,10 @@ export class ProviderDispatchService {
     }
 
     let returned: Result<ProviderAcceptanceV1, ProviderDispatchErrorType>;
+    const rawSource = new IntegrityTrackingRawSource(context.rawSource);
+    const trackedContext = Object.freeze({ ...context, rawSource });
     try {
-      const adapterResult = await this.#adapter.submitRaw(input, context, signal);
+      const adapterResult = await this.#adapter.submitRaw(input, trackedContext, signal);
       if (adapterResult.ok) {
         const boundary = context.boundary.snapshot();
         if (boundary.classification.certainty !== "accepted") {
@@ -376,6 +417,21 @@ export class ProviderDispatchService {
           signal.aborted ? "dispatch_aborted" : "adapter_threw",
           cause,
         ),
+        ok: false,
+      };
+    }
+
+    if (rawSource.failure !== undefined) {
+      returned = {
+        error: new ProviderDispatchError({
+          cause: rawSource.failure,
+          code: "PROVIDER_UNKNOWN",
+          deliveryCertainty: "unknown",
+          evidenceCode: "raw_integrity_failure",
+          message: "Raw message integrity failed during provider dispatch.",
+          phase: context.boundary.snapshot().phase,
+          retryable: false,
+        }),
         ok: false,
       };
     }

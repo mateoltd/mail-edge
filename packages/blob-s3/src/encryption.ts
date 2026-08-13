@@ -6,6 +6,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
+import { RawMessageIntegrityError, type RawMessageIntegrityReason } from "@mail-edge/core";
+
 /** @public */
 export const ENCRYPTION_FORMAT_VERSION = 1;
 /** @public */
@@ -60,6 +62,9 @@ const parseEncryptionHeader = (bytes: Uint8Array): EncryptionHeader => {
   }
   if (value.readUInt16BE(8) !== ENCRYPTION_FORMAT_VERSION) {
     throw new TypeError("Encrypted blob format version is unsupported.");
+  }
+  if (value.readUInt16BE(46) !== 0) {
+    throw new TypeError("Encrypted blob header reserved bytes are not canonical.");
   }
   return createEncryptionHeader(value.subarray(14, 46), value.readUInt32BE(10));
 };
@@ -122,6 +127,9 @@ export const encryptFrame = (
   return Object.freeze({ bytes: Buffer.concat([prefix, ciphertext, tag]), tag });
 };
 
+class EncryptedStreamTruncatedError extends Error {}
+class EncryptedStreamTrailingDataError extends Error {}
+
 class ByteReader {
   readonly #iterator: AsyncIterator<Uint8Array>;
   #chunk = Buffer.alloc(0);
@@ -140,7 +148,7 @@ class ByteReader {
         const next = await this.#iterator.next();
         if (next.done === true) {
           this.#done = true;
-          throw new TypeError("Encrypted blob is truncated.");
+          throw new EncryptedStreamTruncatedError("Encrypted blob is truncated.");
         }
         this.#chunk = Buffer.from(next.value);
         this.#offset = 0;
@@ -158,12 +166,16 @@ class ByteReader {
 
   async assertEnd(): Promise<void> {
     if (this.#offset !== this.#chunk.length) {
-      throw new TypeError("Encrypted blob has trailing bytes after its final frame.");
+      throw new EncryptedStreamTrailingDataError(
+        "Encrypted blob has trailing bytes after its final frame.",
+      );
     }
     if (!this.#done) {
       const next = await this.#iterator.next();
       if (next.done !== true) {
-        throw new TypeError("Encrypted blob has trailing frames after its final frame.");
+        throw new EncryptedStreamTrailingDataError(
+          "Encrypted blob has trailing frames after its final frame.",
+        );
       }
       this.#done = true;
     }
@@ -184,41 +196,108 @@ export async function* decryptFrames(
   const reader = new ByteReader(source);
   const plaintextDigest = createHash("sha256");
   let plaintextBytes = 0;
+  let verifiedPrefixBytes = 0;
   let index = 0n;
   let previousTag = Buffer.alloc(authenticationTagBytes);
+  const failure = (reason: RawMessageIntegrityReason, cause?: unknown): RawMessageIntegrityError =>
+    new RawMessageIntegrityError({
+      ...(cause === undefined ? {} : { cause }),
+      reason,
+      verifiedPrefixBytes,
+    });
   try {
-    const header = parseEncryptionHeader(await reader.readExact(headerBytes));
+    if (
+      key.byteLength !== 32 ||
+      !Number.isSafeInteger(expectedBytes) ||
+      expectedBytes < 0 ||
+      !/^[0-9a-f]{64}$/u.test(expectedSha256)
+    ) {
+      throw failure("invalid_encryption_input");
+    }
+    let header: EncryptionHeader;
+    try {
+      header = parseEncryptionHeader(await reader.readExact(headerBytes));
+    } catch (cause) {
+      if (cause instanceof EncryptedStreamTruncatedError) {
+        throw failure("encrypted_stream_truncated", cause);
+      }
+      if (cause instanceof TypeError) {
+        throw failure("noncanonical_encryption_header", cause);
+      }
+      throw cause;
+    }
     let finalFrame = false;
     while (!finalFrame) {
-      const prefix = await reader.readExact(framePrefixBytes);
+      let prefix: Buffer;
+      try {
+        prefix = await reader.readExact(framePrefixBytes);
+      } catch (cause) {
+        if (cause instanceof EncryptedStreamTruncatedError) {
+          throw failure("encrypted_stream_truncated", cause);
+        }
+        throw cause;
+      }
       const frameIndex = prefix.readBigUInt64BE(0);
       const length = prefix.readUInt32BE(8);
       const flags = prefix.readUInt8(12);
-      if (frameIndex !== index || length > header.frameSize || (flags !== 0 && flags !== 1)) {
-        throw new TypeError("Encrypted blob frame order, length, or flags are invalid.");
-      }
       finalFrame = flags === 1;
-      const encrypted = await reader.readExact(length + authenticationTagBytes);
+      if (
+        frameIndex !== index ||
+        length > header.frameSize ||
+        (flags !== 0 && flags !== 1) ||
+        (!finalFrame && length !== header.frameSize) ||
+        (finalFrame && length === 0 && index !== 0n)
+      ) {
+        throw failure("noncanonical_frame_shape");
+      }
+      let encrypted: Buffer;
+      try {
+        encrypted = await reader.readExact(length + authenticationTagBytes);
+      } catch (cause) {
+        if (cause instanceof EncryptedStreamTruncatedError) {
+          throw failure("encrypted_stream_truncated", cause);
+        }
+        throw cause;
+      }
       const ciphertext = encrypted.subarray(0, length);
       const tag = encrypted.subarray(length);
-      const decipher = createDecipheriv("aes-256-gcm", key, frameNonce(header.nonceSeed, index), {
-        authTagLength: authenticationTagBytes,
-      });
-      decipher.setAAD(frameAad(header.digest, identity, prefix, previousTag));
-      decipher.setAuthTag(tag);
-      const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      let plaintext: Buffer;
+      try {
+        const decipher = createDecipheriv("aes-256-gcm", key, frameNonce(header.nonceSeed, index), {
+          authTagLength: authenticationTagBytes,
+        });
+        decipher.setAAD(frameAad(header.digest, identity, prefix, previousTag));
+        decipher.setAuthTag(tag);
+        plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      } catch (cause) {
+        throw failure("frame_authentication_failed", cause);
+      }
+      const nextPlaintextBytes = plaintextBytes + plaintext.byteLength;
+      if (!Number.isSafeInteger(nextPlaintextBytes) || nextPlaintextBytes > expectedBytes) {
+        throw failure("plaintext_size_exceeded");
+      }
       previousTag = Buffer.from(tag);
       plaintextDigest.update(plaintext);
-      plaintextBytes += plaintext.byteLength;
-      if (plaintext.byteLength > 0) {
-        yield plaintext;
+      plaintextBytes = nextPlaintextBytes;
+      if (finalFrame) {
+        try {
+          await reader.assertEnd();
+        } catch (cause) {
+          if (cause instanceof EncryptedStreamTrailingDataError) {
+            throw failure("encrypted_stream_trailing_data", cause);
+          }
+          throw cause;
+        }
+        const digest = plaintextDigest.digest("hex");
+        if (plaintextBytes !== expectedBytes || digest !== expectedSha256) {
+          throw failure("plaintext_metadata_mismatch");
+        }
       }
       index += 1n;
-    }
-    await reader.assertEnd();
-    const digest = plaintextDigest.digest("hex");
-    if (plaintextBytes !== expectedBytes || digest !== expectedSha256) {
-      throw new TypeError("Decrypted blob size or plaintext digest does not match PostgreSQL.");
+      if (plaintext.byteLength > 0) {
+        verifiedPrefixBytes += plaintext.byteLength;
+        yield plaintext;
+      }
     }
   } finally {
     key.fill(0);

@@ -59,4 +59,30 @@ describe("Ed25519 evidence signing", () => {
       await verifySignedConformanceReport(signed.value, untrusted, new AbortController().signal),
     ).toEqual({ ok: true, value: false });
   });
+
+  it("keeps the built-in verifier and rejects non-64-byte signatures", async () => {
+    const keys = generateKeyPairSync("ed25519");
+    const signer = new Ed25519EvidenceSigner(
+      "trusted",
+      keys.privateKey.export({ format: "pem", type: "pkcs8" }),
+    );
+    const verifier = new Ed25519EvidenceVerifier({
+      trusted: keys.publicKey.export({ format: "pem", type: "spki" }),
+    });
+    const payload = Buffer.from("domain-separated-payload");
+    const signed = await signer.sign(payload, new AbortController().signal);
+    if (!signed.ok) throw signed.error;
+    expect(signed.value).toHaveLength(64);
+    await expect(
+      verifier.verify(
+        {
+          algorithm: "ed25519",
+          keyId: "trusted",
+          payload,
+          signature: signed.value.subarray(0, 63),
+        },
+        new AbortController().signal,
+      ),
+    ).resolves.toEqual({ ok: true, value: false });
+  });
 });

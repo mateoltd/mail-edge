@@ -13,7 +13,13 @@ import {
   type ServerSideEncryption,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
-import type { BlobStagePort, BlobStageWriter, BlobStorePort } from "@mail-edge/core";
+import {
+  DEFAULT_MAX_RAW_MESSAGE_BYTES,
+  RawMessageIntegrityError,
+  type BlobStagePort,
+  type BlobStageWriter,
+  type BlobStorePort,
+} from "@mail-edge/core";
 
 import {
   createEncryptionHeader,
@@ -46,6 +52,7 @@ export interface EncryptedS3BlobStoreConfig {
   readonly encryptionFrameBytes: number;
   readonly multipartPartBytes: number;
   readonly multipartQueueSize: number;
+  readonly maximumRawMessageBytes?: number;
   readonly scratchLifetimeMilliseconds: number;
   readonly rawRetentionMilliseconds: number;
   readonly cleanupTimeoutMilliseconds: number;
@@ -78,6 +85,7 @@ const asFailure = (
 
 const validateConfig = (config: EncryptedS3BlobStoreConfig): void => {
   const operationTimeoutMilliseconds = config.operationTimeoutMilliseconds ?? 30_000;
+  const maximumRawMessageBytes = config.maximumRawMessageBytes ?? DEFAULT_MAX_RAW_MESSAGE_BYTES;
   if (
     config.bucket.length < 3 ||
     config.bucket.length > 255 ||
@@ -92,6 +100,9 @@ const validateConfig = (config: EncryptedS3BlobStoreConfig): void => {
     !Number.isSafeInteger(config.multipartQueueSize) ||
     config.multipartQueueSize < 1 ||
     config.multipartQueueSize > 4 ||
+    !Number.isSafeInteger(maximumRawMessageBytes) ||
+    maximumRawMessageBytes < 1 ||
+    maximumRawMessageBytes > DEFAULT_MAX_RAW_MESSAGE_BYTES ||
     !Number.isSafeInteger(config.scratchLifetimeMilliseconds) ||
     config.scratchLifetimeMilliseconds < 60_000 ||
     !Number.isSafeInteger(config.rawRetentionMilliseconds) ||
@@ -186,8 +197,10 @@ const destroyResponseBody = (value: unknown, cause?: unknown): void => {
 };
 
 class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
+  readonly #clock: BlobClock;
   readonly #config: Readonly<EncryptedS3BlobStoreConfig>;
   readonly #keyService: EnvelopeKeyService;
+  readonly #metadata: BlobMetadataStore;
   readonly #record: StoredBlobRecord;
   readonly #s3: S3Client;
   readonly #signal: AbortSignal;
@@ -196,14 +209,18 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
 
   constructor(input: {
     readonly config: Readonly<EncryptedS3BlobStoreConfig>;
+    readonly clock: BlobClock;
     readonly keyService: EnvelopeKeyService;
+    readonly metadata: BlobMetadataStore;
     readonly record: StoredBlobRecord;
     readonly s3: S3Client;
     readonly signal: AbortSignal;
     readonly tenantId: BlobTenantId;
   }) {
     this.#config = input.config;
+    this.#clock = input.clock;
     this.#keyService = input.keyService;
+    this.#metadata = input.metadata;
     this.#record = input.record;
     this.#s3 = input.s3;
     this.#signal = input.signal;
@@ -261,6 +278,42 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
         this.#record.raw.sha256,
         this.#record.raw.size,
       );
+    } catch (cause) {
+      if (cause instanceof RawMessageIntegrityError) {
+        try {
+          const quarantined = await this.#metadata.markCorrupt(
+            {
+              blobId: this.#record.raw.blobId,
+              expectedVersion: this.#record.optimisticVersion,
+              tenantId: this.#tenantId,
+            },
+            this.#clock.now(),
+            cleanupSignal(this.#config),
+          );
+          if (quarantined.ok) throw cause;
+          throw new RawMessageIntegrityError({
+            cause: new AggregateError(
+              [cause, quarantined.error],
+              "Raw message integrity failed and metadata quarantine did not commit.",
+            ),
+            reason: cause.reason,
+            verifiedPrefixBytes: cause.verifiedPrefixBytes,
+          });
+        } catch (quarantineCause) {
+          if (quarantineCause === cause || quarantineCause instanceof RawMessageIntegrityError) {
+            throw quarantineCause;
+          }
+          throw new RawMessageIntegrityError({
+            cause: new AggregateError(
+              [cause, quarantineCause],
+              "Raw message integrity failed and metadata quarantine threw.",
+            ),
+            reason: cause.reason,
+            verifiedPrefixBytes: cause.verifiedPrefixBytes,
+          });
+        }
+      }
+      throw cause;
     } finally {
       operationSignal.removeEventListener("abort", cancel);
       key?.fill(0);
@@ -753,40 +806,71 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
     reservation: BlobReservation,
     signal: AbortSignal,
   ): Promise<DriverResult<BlobStageWriter>> {
+    let maximumBytes: unknown;
+    try {
+      maximumBytes = (reservation as Partial<BlobReservation> | null)?.maximumBytes;
+    } catch {
+      maximumBytes = undefined;
+    }
+    const maximumRawMessageBytes =
+      this.#config.maximumRawMessageBytes ?? DEFAULT_MAX_RAW_MESSAGE_BYTES;
+    if (
+      typeof maximumBytes !== "number" ||
+      !Number.isSafeInteger(maximumBytes) ||
+      maximumBytes < 0 ||
+      maximumBytes > maximumRawMessageBytes
+    ) {
+      return {
+        error: this.#errors.create({
+          code: "VALIDATION_FAILED",
+          message:
+            "Blob stage maximum bytes must be a finite safe integer within the global limit.",
+          operation: "blob_stage_reserve",
+          retryable: false,
+        }),
+        ok: false,
+      };
+    }
     const operationSignal = boundedOperationSignal(this.#config, signal);
-    const blobId = reservation.stageId;
     let envelopeKey: Awaited<ReturnType<EnvelopeKeyService["generate"]>> | undefined;
     try {
+      const checkedReservation: BlobReservation = Object.freeze({
+        maximumBytes,
+        purpose: reservation.purpose,
+        stageId: reservation.stageId,
+        tenantId: reservation.tenantId,
+      });
+      const blobId = checkedReservation.stageId;
       const now = this.#clock.now();
       envelopeKey = await this.#keyService.generate(
         {
           blobId,
           formatVersion: ENCRYPTION_FORMAT_VERSION,
-          purpose: reservation.purpose,
-          tenantId: reservation.tenantId,
+          purpose: checkedReservation.purpose,
+          tenantId: checkedReservation.tenantId,
         },
         operationSignal,
       );
       const nonceSeed = randomBytes(32);
       const header = createEncryptionHeader(nonceSeed, this.#config.encryptionFrameBytes);
       nonceSeed.fill(0);
-      const scratchKey = `${this.#config.keyPrefix}/scratch/${reservation.tenantId}/${reservation.stageId}.meb`;
+      const scratchKey = `${this.#config.keyPrefix}/scratch/${checkedReservation.tenantId}/${checkedReservation.stageId}.meb`;
       const reserved = await this.#metadata.reserveStage(
         {
           encryptionMetadata: Object.freeze({
             formatVersion: ENCRYPTION_FORMAT_VERSION,
             frameBytes: this.#config.encryptionFrameBytes,
-            purpose: reservation.purpose,
+            purpose: checkedReservation.purpose,
           }),
-          expectedMaximumBytes: reservation.maximumBytes,
+          expectedMaximumBytes: checkedReservation.maximumBytes,
           expiresAt: new Date(
             new Date(now).getTime() + this.#config.scratchLifetimeMilliseconds,
           ).toISOString(),
           kmsKeyRef: envelopeKey.keyReference,
           objectKey: scratchKey,
-          purpose: reservation.purpose,
-          stageId: reservation.stageId,
-          tenantId: reservation.tenantId,
+          purpose: checkedReservation.purpose,
+          stageId: checkedReservation.stageId,
+          tenantId: checkedReservation.tenantId,
           wrappedDek: envelopeKey.wrappedKey,
         },
         operationSignal,
@@ -796,8 +880,8 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
         return reserved;
       }
       const uploading = await this.#metadata.markUploading(
-        reservation.tenantId,
-        reservation.stageId,
+        checkedReservation.tenantId,
+        checkedReservation.stageId,
         reserved.value.optimisticVersion,
         this.#clock.now(),
         operationSignal,
@@ -817,7 +901,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
           header,
           metadata: this.#metadata,
           optimisticVersion: uploading.value.optimisticVersion,
-          reservation,
+          reservation: checkedReservation,
           s3: this.#s3,
           scratchKey,
         }),
@@ -915,8 +999,10 @@ export class EncryptedS3BlobStore implements BlobStorePort {
       ok: true,
       value: Object.freeze({
         body: new LazyDecryptedRawBody({
+          clock: this.#clock,
           config: this.#config,
           keyService: this.#keyService,
+          metadata: this.#metadata,
           record: record.value,
           s3: this.#s3,
           signal,
@@ -1088,6 +1174,7 @@ export const defaultEncryptedS3BlobStoreConfig = (
     keyPrefix,
     multipartPartBytes: 5 * 1024 * 1024,
     multipartQueueSize: 1,
+    maximumRawMessageBytes: DEFAULT_MAX_RAW_MESSAGE_BYTES,
     operationTimeoutMilliseconds: 30_000,
     rawRetentionMilliseconds: 30 * 24 * 60 * 60 * 1000,
     requireObjectVersion: true,

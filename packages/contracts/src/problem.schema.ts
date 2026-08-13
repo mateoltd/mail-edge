@@ -138,6 +138,7 @@ const sanitizeSafeDetails = (
           (typeof value === "string" && value.length <= 256))
       );
     })
+    .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .slice(0, 16) as [string, string | number | boolean][];
   return entries.length === 0 ? undefined : Object.freeze(Object.fromEntries(entries));
 };

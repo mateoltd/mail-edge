@@ -11,9 +11,11 @@ import {
   compileOutboundRoutePlan,
   compileRecipientRoutePlan,
   compileReverseAliasHeaderPatchPlan,
+  compileReverseRoutePlan,
   constructSafeHeaderField,
   decideOutboundRoute,
   ExactRoutePlannerService,
+  headerPatchPlanDigest,
   normalizeReverseRouteResolution,
   RecipientRoutingService,
   ReverseAliasHeaderPatchPlanner,
@@ -335,5 +337,25 @@ describe("host recipient and reverse routing", () => {
       ok: true,
       value: { envelope: { mailFrom: "sender@example.test" } },
     });
+  });
+
+  it("returns Result failures for malformed runtime header patch plans", () => {
+    const resolution = {
+      envelope,
+      policyCode: "reply_alias",
+      visibleHeaderFields: [] as string[],
+    };
+    for (const malformed of [null, new Date(), new Uint8Array([1]), { schemaVersion: "v1" }]) {
+      expect(() => headerPatchPlanDigest(malformed)).not.toThrow();
+      expect(headerPatchPlanDigest(malformed)).toMatchObject({
+        error: { code: "VALIDATION_FAILED" },
+        ok: false,
+      });
+      expect(() => compileReverseRoutePlan(resolution, malformed)).not.toThrow();
+      expect(compileReverseRoutePlan(resolution, malformed)).toMatchObject({
+        error: { code: "VALIDATION_FAILED" },
+        ok: false,
+      });
+    }
   });
 });

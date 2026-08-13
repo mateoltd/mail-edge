@@ -82,6 +82,36 @@ describe("MailEdgeError projection", () => {
     );
   });
 
+  it("projects equivalent safe-detail maps identically before truncation", () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.stringMatching(/^[a-z][A-Za-z0-9]{0,15}$/u), {
+          maxLength: 24,
+          minLength: 17,
+        }),
+        (keys) => {
+          const entries = keys.map((key, index) => [key, index] as const);
+          const left = new MailEdgeError({
+            code: "INTERNAL",
+            deliveryCertainty: "not_sent",
+            message: "fixture",
+            retryable: false,
+            safeDetails: Object.fromEntries(entries),
+          });
+          const right = new MailEdgeError({
+            code: "INTERNAL",
+            deliveryCertainty: "not_sent",
+            message: "fixture",
+            retryable: false,
+            safeDetails: Object.fromEntries(entries.toReversed()),
+          });
+          expect(right.safeDetails).toEqual(left.safeDetails);
+          expect(Object.keys(left.safeDetails ?? {})).toEqual(keys.toSorted().slice(0, 16));
+        },
+      ),
+    );
+  });
+
   it("makes unknown provider delivery non-retryable by construction", () => {
     const error = new ProviderDispatchError({
       cause: hostileCause(),

@@ -1,3 +1,12 @@
+export type {
+  RawMessageIntegrityErrorOptions,
+  RawMessageIntegrityReason,
+} from "@mail-edge/contracts";
+export {
+  DEFAULT_MAX_RAW_MESSAGE_BYTES,
+  RawMessageIntegrityError,
+  rawMessageIntegrityReasons,
+} from "@mail-edge/contracts";
 export type { CanonicalJsonObject, CanonicalJsonValue } from "./canonical-json.js";
 export { validateProviderAcceptance } from "./acceptance.js";
 export type { DerivedMessageInput } from "./derived-message.service.js";

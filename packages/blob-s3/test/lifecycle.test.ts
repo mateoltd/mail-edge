@@ -3,6 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { GetObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { RawMessageIntegrityError } from "@mail-edge/core";
+
 import {
   EncryptedS3BlobStagePort,
   EncryptedS3BlobStore,
@@ -116,6 +118,34 @@ afterEach(() => {
 });
 
 describe("encrypted stage lifecycle", () => {
+  it("rejects every unbounded reservation before KMS or persistence", async () => {
+    const generate = vi.fn(async () => ({
+      keyReference: "test-key",
+      plaintextKey: randomBytes(32),
+      wrappedKey: Uint8Array.of(1),
+    }));
+    const reserveStage = vi.fn(async () => success({ optimisticVersion: 0 }));
+    const port = new EncryptedS3BlobStagePort({
+      clock: { now: () => "2026-08-14T08:00:00.000Z" },
+      config: { ...config, maximumRawMessageBytes: 2048 },
+      errors,
+      keyService: { generate, unwrap: async () => randomBytes(32) },
+      metadata: { reserveStage } as unknown as BlobMetadataStore,
+      s3: { send: async () => ({}) } as unknown as S3Client,
+    });
+
+    for (const maximumBytes of [NaN, Infinity, -1, 1.5, 2049, Number.MAX_SAFE_INTEGER]) {
+      await expect(
+        port.reserve(
+          { maximumBytes, purpose: "inbound", stageId, tenantId },
+          new AbortController().signal,
+        ),
+      ).resolves.toMatchObject({ error: { code: "VALIDATION_FAILED" }, ok: false });
+    }
+    expect(generate).not.toHaveBeenCalled();
+    expect(reserveStage).not.toHaveBeenCalled();
+  });
+
   it("owns an immediately rejected upload promise before the host can report it unhandled", async () => {
     uploadState.rejectImmediately = true;
     const unhandled: unknown[] = [];
@@ -177,11 +207,15 @@ const availableRecord = (sha256: string, size: number): StoredBlobRecord => ({
   wrappedDek: Uint8Array.of(1),
 });
 
-const readMetadata = (record: StoredBlobRecord): BlobMetadataStore =>
-  ({ getBlob: async () => success(record) }) as unknown as BlobMetadataStore;
+const readMetadata = (
+  record: StoredBlobRecord,
+  markCorrupt: BlobMetadataStore["markCorrupt"] = async () => success(undefined),
+): BlobMetadataStore =>
+  ({ getBlob: async () => success(record), markCorrupt }) as unknown as BlobMetadataStore;
 
 const openStore = (input: {
   readonly key: Uint8Array;
+  readonly markCorrupt?: BlobMetadataStore["markCorrupt"];
   readonly record: StoredBlobRecord;
   readonly send: (command: unknown) => Promise<unknown>;
   readonly unwrapCalls: { value: number };
@@ -200,7 +234,7 @@ const openStore = (input: {
     config,
     errors,
     keyService,
-    metadata: readMetadata(input.record),
+    metadata: readMetadata(input.record, input.markCorrupt),
     s3: { send: input.send } as unknown as S3Client,
   });
 };
@@ -349,5 +383,92 @@ describe("lazy encrypted reads", () => {
     await expect(reading).rejects.toThrow(/request canceled/u);
     expect(destroyed).toBeGreaterThan(0);
     expect([...key]).toEqual(Array.from({ length: 32 }, () => 0));
+  });
+
+  it("quarantines metadata when a later frame fails after an authentic prefix", async () => {
+    const plaintextPrefix = Buffer.alloc(4096, 0x61);
+    const tail = Buffer.from("tail");
+    const encryptionKey = randomBytes(32);
+    const header = createEncryptionHeader(randomBytes(32), 4096);
+    const identity = { blobId: stageId, purpose: "inbound" as const, tenantId };
+    const first = encryptFrame(
+      plaintextPrefix,
+      false,
+      0n,
+      Buffer.alloc(16),
+      encryptionKey,
+      header,
+      identity,
+    );
+    const final = encryptFrame(tail, true, 1n, first.tag, encryptionKey, header, identity);
+    const encrypted = Buffer.concat([header.bytes, first.bytes, final.bytes]);
+    const corruptOffset = header.bytes.length + first.bytes.length + 13;
+    encrypted[corruptOffset] = (encrypted[corruptOffset] ?? 0) ^ 1;
+    const digest = createHash("sha256").update(plaintextPrefix).update(tail).digest("hex");
+    const quarantineClaims: unknown[] = [];
+    const body = await openBody(
+      openStore({
+        key: Uint8Array.from(encryptionKey),
+        markCorrupt: async (claim) => {
+          quarantineClaims.push(claim);
+          return success(undefined);
+        },
+        record: availableRecord(digest, plaintextPrefix.byteLength + tail.byteLength),
+        send: async () => ({
+          Body: {
+            destroy: () => undefined,
+            async *[Symbol.asyncIterator]() {
+              yield encrypted;
+            },
+          },
+        }),
+        unwrapCalls: { value: 0 },
+      }),
+    );
+    const iterator = body[Symbol.asyncIterator]();
+    expect(await iterator.next()).toEqual({ done: false, value: plaintextPrefix });
+    await expect(iterator.next()).rejects.toMatchObject({
+      reason: "frame_authentication_failed",
+      verifiedPrefixBytes: 4096,
+    });
+    expect(quarantineClaims).toEqual([{ blobId: stageId, expectedVersion: 0, tenantId }]);
+  });
+
+  it("retains the typed integrity signal when durable quarantine throws", async () => {
+    const key = randomBytes(32);
+    const header = createEncryptionHeader(randomBytes(32), 4096);
+    const identity = { blobId: stageId, purpose: "inbound" as const, tenantId };
+    const frame = encryptFrame(
+      Buffer.from("payload"),
+      true,
+      0n,
+      Buffer.alloc(16),
+      key,
+      header,
+      identity,
+    );
+    const encrypted = Buffer.concat([header.bytes, frame.bytes]);
+    const corruptOffset = header.bytes.length + 13;
+    encrypted[corruptOffset] = (encrypted[corruptOffset] ?? 0) ^ 1;
+    const body = await openBody(
+      openStore({
+        key: Uint8Array.from(key),
+        markCorrupt: async () => {
+          throw new Error("database unavailable");
+        },
+        record: availableRecord(createHash("sha256").update("payload").digest("hex"), 7),
+        send: async () => ({
+          Body: {
+            async *[Symbol.asyncIterator]() {
+              yield encrypted;
+            },
+          },
+        }),
+        unwrapCalls: { value: 0 },
+      }),
+    );
+    await expect(body[Symbol.asyncIterator]().next()).rejects.toBeInstanceOf(
+      RawMessageIntegrityError,
+    );
   });
 });

@@ -41,7 +41,11 @@ const signedEvidence = (): SignedConformanceReportV1 => {
     report,
     reportDigest: conformanceReportDigest(report),
     schemaVersion: "v1",
-    signature: { algorithm: "ed25519", keyId: "trusted-key", value: "AQIDBA" + "A".repeat(58) },
+    signature: {
+      algorithm: "ed25519",
+      keyId: "trusted-key",
+      value: Buffer.alloc(64, 7).toString("base64url"),
+    },
   };
 };
 

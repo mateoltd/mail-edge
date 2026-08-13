@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   conformanceCheckDigest,
@@ -92,5 +92,42 @@ describe("deterministic signed conformance evidence", () => {
     const result = await signConformanceReport(invalid, signer, new AbortController().signal);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it.each([63, 65])("rejects a %i-byte injected Ed25519 signature", async (length) => {
+    const malformedSigner: EvidenceSigner = {
+      algorithm: "ed25519",
+      keyId: "test-key",
+      sign: async () => ({ ok: true, value: new Uint8Array(length) }),
+    };
+    const result = await signConformanceReport(
+      report(),
+      malformedSigner,
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      error: { code: "VALIDATION_FAILED", safeDetails: { reason: "signature_length" } },
+      ok: false,
+    });
+  });
+
+  it("rejects a non-64-byte wire signature before invoking the verifier", async () => {
+    const signed = await signConformanceReport(report(), signer, new AbortController().signal);
+    if (!signed.ok) throw signed.error;
+    const verify = vi.fn<EvidenceVerifier["verify"]>();
+    verify.mockImplementation((input, signal) => verifier.verify(input, signal));
+    const result = await verifySignedConformanceReport(
+      {
+        ...signed.value,
+        signature: {
+          ...signed.value.signature,
+          value: Buffer.alloc(63, 7).toString("base64url"),
+        },
+      },
+      { verify },
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({ error: { code: "VALIDATION_FAILED" }, ok: false });
+    expect(verify).not.toHaveBeenCalled();
   });
 });
