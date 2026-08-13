@@ -78,7 +78,7 @@ export {
   PROVIDER_CONFORMANCE_SUITE_VERSION,
   ProviderConformanceKit,
 } from "./conformance-kit.service.js";
-export type { ProviderConformanceFixtures } from "./fixtures.js";
+export type { ProviderConformanceFixtures } from "./conformance-fixtures.adapter.js";
 export {
   FixtureBlobStagePort,
   FixtureClock,
@@ -90,8 +90,11 @@ export {
   createFixtureInboundServices,
   createFixtureIngressContext,
   createProviderConformanceFixtures,
-} from "./fixtures.js";
-export type { SignedProviderConformanceRun } from "./run.js";
-export { runAndSignProviderConformance } from "./run.js";
-export type { EvidenceKeyInput } from "./signing.js";
-export { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "./signing.js";
+} from "./conformance-fixtures.adapter.js";
+export type { SignedProviderConformanceRun } from "./signed-conformance.service.js";
+export {
+  runAndSignProviderConformance,
+  SignedProviderConformanceService,
+} from "./signed-conformance.service.js";
+export type { EvidenceKeyInput } from "./evidence-signing.adapter.js";
+export { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "./evidence-signing.adapter.js";

@@ -2,12 +2,12 @@ import {
   DispatchBoundaryRecorder,
   MailEdgeError,
   ProviderAdapterRegistry,
+  ProviderDispatchService,
+  ProviderFeedbackIngressService,
+  ProviderInboundIngressService,
   StrictBoundedBodyCollector,
   conformanceCheckDigest,
   evaluateReconciliationEvidence,
-  executeFeedbackIngress,
-  executeInboundIngress,
-  executeProviderDispatch,
   inspectProviderCapabilityDescriptor,
   requiredConformanceChecks,
   sha256CanonicalJson,
@@ -37,7 +37,7 @@ import {
   createFixtureIngressContext,
   createProviderConformanceFixtures,
   type ProviderConformanceFixtures,
-} from "./fixtures.js";
+} from "./conformance-fixtures.adapter.js";
 
 /** @public */
 export const PROVIDER_CONFORMANCE_SUITE_VERSION = "1.0.0";
@@ -289,13 +289,10 @@ export class ProviderConformanceKit {
       return Object.freeze([]);
     const supplied = await this.#target.driver.createInboundRequest(fixtures);
     const stage = new FixtureBlobStagePort();
-    const result = await executeInboundIngress(
+    const result = await new ProviderInboundIngressService(
       inbound,
-      supplied.request,
-      supplied.context ?? createFixtureIngressContext(fixtures),
       supplied.services ?? createFixtureInboundServices(fixtures, stage),
-      signal,
-    );
+    ).execute(supplied.request, supplied.context ?? createFixtureIngressContext(fixtures), signal);
     let secondReadRejected = false;
     try {
       supplied.request.body[Symbol.asyncIterator]();
@@ -335,8 +332,7 @@ export class ProviderConformanceKit {
       await this.#target.driver.prepareDispatchScenario?.(scenario, fixtures);
       const sink = new CountingInstrumentationSink();
       const context = contextForDispatch(this.#target, fixtures, sink);
-      const execution = await executeProviderDispatch(
-        outbound,
+      const execution = await new ProviderDispatchService(outbound).execute(
         fixtures.submission,
         context,
         signal,
@@ -385,11 +381,9 @@ export class ProviderConformanceKit {
     const run = async (scenario: FeedbackConformanceScenario) => {
       const request = await this.#target.driver.createFeedbackRequest?.(scenario, fixtures);
       if (request === undefined) throw new Error("Feedback conformance driver disappeared.");
-      return executeFeedbackIngress(
-        adapter,
+      return new ProviderFeedbackIngressService(adapter, new StrictBoundedBodyCollector()).execute(
         request,
         createFixtureIngressContext(fixtures),
-        new StrictBoundedBodyCollector(),
         signal,
       );
     };

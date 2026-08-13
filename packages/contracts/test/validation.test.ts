@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Type } from "@sinclair/typebox";
 
 import {
   contractSchemas,
@@ -10,6 +11,8 @@ import {
   SafeDetailsSchema,
   SmtpEnvelopeV1Schema,
   WorkflowWakeupV1Schema,
+  validateContract,
+  validateContractBatch,
 } from "../src/index.js";
 
 const validEnvelope = {
@@ -20,6 +23,17 @@ const validEnvelope = {
 };
 
 describe("strict runtime schemas", () => {
+  it("offers total function validation for individual values and bounded batches", () => {
+    expect(validateContract(SmtpEnvelopeV1Schema, validEnvelope).ok).toBe(true);
+    const batch = validateContractBatch(SmtpEnvelopeV1Schema, [
+      validEnvelope,
+      { ...validEnvelope, provider: "implicit" },
+    ]);
+    expect(batch.ok).toBe(false);
+    if (!batch.ok) expect(batch.error.issues[0]?.path.startsWith("/1")).toBe(true);
+    expect(validateContract(Type.Ref("urn:mail-edge:schema:v1:missing"), {}).ok).toBe(false);
+  });
+
   it("registers every schema in strict Ajv without warnings or missing references", () => {
     const validator = createContractValidator();
     expect(contractSchemas).toHaveLength(47);

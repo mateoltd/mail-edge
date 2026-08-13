@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import type { TenantId } from "@mail-edge/contracts";
 
-import type { SensitiveValueCipher } from "./repositories.js";
+import type { SensitiveValueCipher } from "./workflow.repository.js";
 
 /** @public */
 export interface SensitiveValueKeyProvider {

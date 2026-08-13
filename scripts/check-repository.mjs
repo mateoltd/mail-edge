@@ -10,6 +10,18 @@ import { presentWorkspaceUnits, readJson, repositoryRoot } from "./workspace.mjs
 
 const errors = [];
 const rootManifest = readJson(resolve(repositoryRoot, "package.json"));
+const presentUnits = presentWorkspaceUnits();
+
+const filesBelow = (directory) => {
+  if (!existsSync(directory)) return [];
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) files.push(...filesBelow(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+};
 
 const expectEqual = (actual, expected, label) => {
   if (actual !== expected) {
@@ -76,6 +88,23 @@ expectEqual(
   "NodeNext",
   "TypeScript moduleResolution",
 );
+
+const rootProject = readJson(resolve(repositoryRoot, "tsconfig.json"));
+const actualProjectReferences = (rootProject.references ?? []).map((reference) => reference.path);
+const expectedProjectReferences = presentUnits
+  .filter((unit) => existsSync(resolve(unit.directory, "tsconfig.json")))
+  .map((unit) => unit.root);
+for (const reference of new Set([...actualProjectReferences, ...expectedProjectReferences])) {
+  const actualCount = actualProjectReferences.filter((candidate) => candidate === reference).length;
+  const expectedCount = expectedProjectReferences.filter(
+    (candidate) => candidate === reference,
+  ).length;
+  if (actualCount !== expectedCount) {
+    errors.push(
+      `Root TypeScript project reference ${reference} must occur ${String(expectedCount)} time(s); found ${String(actualCount)}.`,
+    );
+  }
+}
 
 const turboConfig = readJson(resolve(repositoryRoot, "turbo.json"));
 for (const task of ["api:check", "build", "lint", "pack", "test", "typecheck"]) {
@@ -145,7 +174,7 @@ for (const parent of ["apps", "packages"]) {
   }
 }
 
-for (const unit of presentWorkspaceUnits()) {
+for (const unit of presentUnits) {
   const manifest = readJson(unit.manifestPath);
   expectEqual(manifest.name, unit.name, `${unit.root} package name`);
   expectEqual(manifest.type, "module", `${unit.name} module type`);
@@ -164,22 +193,58 @@ for (const unit of presentWorkspaceUnits()) {
     if (!existsSync(resolve(unit.directory, "api-extractor.json"))) {
       errors.push(`${unit.name} must provide api-extractor.json.`);
     }
+    expectEqual(manifest.sideEffects, false, `${unit.name} sideEffects`);
   } else {
     expectEqual(manifest.private, true, `${unit.name} private flag`);
+  }
+
+  for (const script of ["build", "lint", "test", "typecheck"]) {
+    if (typeof manifest.scripts?.[script] !== "string") {
+      errors.push(`${unit.name} must define the ${script} script.`);
+    }
+  }
+  if (unit.publishable && typeof manifest.scripts?.["api:check"] !== "string") {
+    errors.push(`${unit.name} must define the api:check script.`);
+  }
+
+  for (const testFile of filesBelow(resolve(unit.directory, "test"))) {
+    if (testFile.endsWith(".integration.test.ts")) {
+      errors.push(
+        `${testFile.slice(repositoryRoot.length + 1)} encodes integration scope in its file name; place it under test/integration with a *.test.ts name.`,
+      );
+    }
+    if (
+      (testFile.includes("/test/integration/") || testFile.includes("/test/e2e/")) &&
+      testFile.endsWith(".ts") &&
+      !testFile.endsWith(".test.ts")
+    ) {
+      errors.push(
+        `${testFile.slice(repositoryRoot.length + 1)} must use the *.test.ts convention in its scoped test directory.`,
+      );
+    }
   }
 
   const allowedNames = new Set(
     unit.dependencies.map((dependencyId) => workspaceUnitById.get(dependencyId)?.name),
   );
-  for (const [dependencyName, version] of Object.entries(manifest.dependencies ?? {})) {
-    if (!dependencyName.startsWith("@mail-edge/")) {
-      continue;
-    }
-    if (!allowedNames.has(dependencyName)) {
-      errors.push(`${unit.name} declares forbidden workspace dependency ${dependencyName}.`);
-    }
-    if (version !== "workspace:^") {
-      errors.push(`${unit.name} must declare ${dependencyName} as workspace:^.`);
+  for (const section of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]) {
+    for (const [dependencyName, version] of Object.entries(manifest[section] ?? {})) {
+      if (!dependencyName.startsWith("@mail-edge/")) {
+        continue;
+      }
+      if (!allowedNames.has(dependencyName)) {
+        errors.push(
+          `${unit.name} declares forbidden workspace dependency ${dependencyName} in ${section}.`,
+        );
+      }
+      if (version !== "workspace:^") {
+        errors.push(`${unit.name} must declare ${dependencyName} as workspace:^ in ${section}.`);
+      }
     }
   }
 }

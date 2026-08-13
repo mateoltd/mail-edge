@@ -21,8 +21,16 @@ export type {
   CanonicalSmtpRecipient,
 } from "./envelope.js";
 export { canonicalizeMailbox, canonicalizeSmtpEnvelope } from "./envelope.js";
-export type { OutboundRoutePlan, OutboundRoutePlanInput } from "./exact-route-planner.service.js";
-export { ExactRoutePlannerService } from "./exact-route-planner.service.js";
+export type {
+  OutboundRouteDecision,
+  OutboundRoutePlan,
+  OutboundRoutePlanInput,
+} from "./exact-route-planner.service.js";
+export {
+  compileOutboundRoutePlan,
+  decideOutboundRoute,
+  ExactRoutePlannerService,
+} from "./exact-route-planner.service.js";
 export type { FeedbackProjectionInput } from "./feedback.js";
 export { projectRecipientFeedback } from "./feedback.js";
 export type {
@@ -88,8 +96,13 @@ export type {
   WakeupScheduler,
 } from "./ports.js";
 export { MAX_RAW_ACCESS_GRANT_LIFETIME_MS, validateRawAccessGrant } from "./raw-access.js";
-export type { RecipientRoutePlan, RecipientRoutingLimits } from "./recipient-routing.service.js";
+export type {
+  RecipientRoutePlan,
+  RecipientRoutingInput,
+  RecipientRoutingLimits,
+} from "./recipient-routing.service.js";
 export {
+  compileRecipientRoutePlan,
   DEFAULT_RECIPIENT_ROUTING_LIMITS,
   RecipientRoutingService,
 } from "./recipient-routing.service.js";
@@ -100,9 +113,12 @@ export type {
   ReverseRoutePlan,
 } from "./reverse-route-planner.service.js";
 export {
+  compileReverseAliasHeaderPatchPlan,
+  compileReverseRoutePlan,
   constructSafeHeaderField,
   DEFAULT_REVERSE_ALIAS_HEADER_POLICY,
   headerPatchPlanDigest,
+  normalizeReverseRouteResolution,
   ReverseAliasHeaderPatchPlanner,
   ReverseRoutePlanningService,
 } from "./reverse-route-planner.service.js";

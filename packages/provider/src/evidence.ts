@@ -126,73 +126,103 @@ const evidenceError = (
     safeDetails: { reason },
   });
 
-/** Produces a deterministic detached Ed25519 evidence envelope. @public */
-export const signConformanceReport = async (
+/** Owns one injected evidence signer and its asynchronous side effects. @public */
+export class ConformanceEvidenceSigningService {
+  readonly #signer: EvidenceSigner;
+
+  constructor(signer: EvidenceSigner) {
+    this.#signer = signer;
+  }
+
+  async sign(
+    report: ProviderConformanceReportV1,
+    signal: AbortSignal,
+  ): Promise<Result<SignedConformanceReportV1, MailEdgeError>> {
+    const validation = validateConformanceReport(report);
+    if (!validation.valid) {
+      return {
+        error: evidenceError("VALIDATION_FAILED", validation.issues[0] ?? "invalid_report"),
+        ok: false,
+      };
+    }
+    if (signal.aborted) {
+      return { error: evidenceError("INTERNAL", "aborted", signal.reason), ok: false };
+    }
+    const signed = await this.#signer.sign(conformanceSignaturePayload(report), signal);
+    if (!signed.ok) return signed;
+    const envelope: SignedConformanceReportV1 = Object.freeze({
+      report,
+      reportDigest: conformanceReportDigest(report),
+      schemaVersion: "v1",
+      signature: Object.freeze({
+        algorithm: this.#signer.algorithm,
+        keyId: this.#signer.keyId,
+        value: Buffer.from(signed.value).toString("base64url"),
+      }),
+    });
+    return { ok: true, value: envelope };
+  }
+}
+
+/** Owns one injected evidence verifier and its asynchronous trust lookup. @public */
+export class ConformanceEvidenceVerificationService {
+  readonly #verifier: EvidenceVerifier;
+
+  constructor(verifier: EvidenceVerifier) {
+    this.#verifier = verifier;
+  }
+
+  async verify(
+    signed: SignedConformanceReportV1,
+    signal: AbortSignal,
+  ): Promise<Result<boolean, MailEdgeError>> {
+    const validate = signedValidator();
+    if (!validate(signed)) {
+      return {
+        error: evidenceError(
+          "VALIDATION_FAILED",
+          schemaIssues(validate.errors)[0] ?? "invalid_signed_report",
+        ),
+        ok: false,
+      };
+    }
+    const reportValidation = validateConformanceReport(signed.report);
+    if (!reportValidation.valid || conformanceReportDigest(signed.report) !== signed.reportDigest) {
+      return { ok: true, value: false };
+    }
+    let signature: Uint8Array;
+    try {
+      signature = Buffer.from(signed.signature.value, "base64url");
+    } catch (cause) {
+      return { error: evidenceError("VALIDATION_FAILED", "signature_encoding", cause), ok: false };
+    }
+    return this.#verifier.verify(
+      {
+        algorithm: signed.signature.algorithm,
+        keyId: signed.signature.keyId,
+        payload: conformanceSignaturePayload(signed.report),
+        signature,
+      },
+      signal,
+    );
+  }
+}
+
+/** Compatibility entry point for one-off evidence signing. @public */
+export const signConformanceReport = (
   report: ProviderConformanceReportV1,
   signer: EvidenceSigner,
   signal: AbortSignal,
-): Promise<Result<SignedConformanceReportV1, MailEdgeError>> => {
-  const validation = validateConformanceReport(report);
-  if (!validation.valid) {
-    return {
-      error: evidenceError("VALIDATION_FAILED", validation.issues[0] ?? "invalid_report"),
-      ok: false,
-    };
-  }
-  if (signal.aborted) {
-    return { error: evidenceError("INTERNAL", "aborted", signal.reason), ok: false };
-  }
-  const signed = await signer.sign(conformanceSignaturePayload(report), signal);
-  if (!signed.ok) return signed;
-  const envelope: SignedConformanceReportV1 = Object.freeze({
-    report,
-    reportDigest: conformanceReportDigest(report),
-    schemaVersion: "v1",
-    signature: Object.freeze({
-      algorithm: signer.algorithm,
-      keyId: signer.keyId,
-      value: Buffer.from(signed.value).toString("base64url"),
-    }),
-  });
-  return { ok: true, value: envelope };
-};
+): Promise<Result<SignedConformanceReportV1, MailEdgeError>> =>
+  new ConformanceEvidenceSigningService(signer).sign(report, signal);
 
-/** Verifies schema, all nested digests, report digest, and the detached signature. @public */
-export const verifySignedConformanceReport = async (
+/** Compatibility entry point for one-off evidence verification. @public */
+export const verifySignedConformanceReport = (
   signed: SignedConformanceReportV1,
   verifier: EvidenceVerifier,
   signal: AbortSignal,
-): Promise<Result<boolean, MailEdgeError>> => {
-  const validate = signedValidator();
-  if (!validate(signed)) {
-    return {
-      error: evidenceError(
-        "VALIDATION_FAILED",
-        schemaIssues(validate.errors)[0] ?? "invalid_signed_report",
-      ),
-      ok: false,
-    };
-  }
-  const reportValidation = validateConformanceReport(signed.report);
-  if (!reportValidation.valid || conformanceReportDigest(signed.report) !== signed.reportDigest) {
-    return { ok: true, value: false };
-  }
-  let signature: Uint8Array;
-  try {
-    signature = Buffer.from(signed.signature.value, "base64url");
-  } catch (cause) {
-    return { error: evidenceError("VALIDATION_FAILED", "signature_encoding", cause), ok: false };
-  }
-  return verifier.verify(
-    {
-      algorithm: signed.signature.algorithm,
-      keyId: signed.signature.keyId,
-      payload: conformanceSignaturePayload(signed.report),
-      signature,
-    },
-    signal,
-  );
-};
+): Promise<Result<boolean, MailEdgeError>> =>
+  new ConformanceEvidenceVerificationService(verifier).verify(signed, signal);
 
 /** Stable identity for the entire signed evidence envelope. @public */
 export const signedConformanceEvidenceIdentity = (signed: SignedConformanceReportV1): string =>

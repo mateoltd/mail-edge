@@ -461,7 +461,7 @@ export interface LegalHoldTable {
 }
 
 // @public
-export const loadVerifiedMigrations: (directory?: string) => Promise<readonly (MigrationIdentity & {
+export const loadVerifiedMigrations: (directory?: string, signal?: AbortSignal) => Promise<readonly (MigrationIdentity & {
     readonly sql: string;
 })[]>;
 

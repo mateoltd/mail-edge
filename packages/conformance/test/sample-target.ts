@@ -1,4 +1,4 @@
-import { createFixtureHttpRequest } from "../src/fixtures.js";
+import { createFixtureHttpRequest } from "../src/conformance-fixtures.adapter.js";
 import type { ProviderConformanceTarget } from "../src/conformance-kit.service.js";
 
 import {

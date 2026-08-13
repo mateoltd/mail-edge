@@ -1,11 +1,11 @@
 import {
-  createContractValidator,
   DEFAULT_MAX_RAW_MESSAGE_BYTES,
   type HeaderPatchPlanV1,
   MailEdgeError,
   type RawMessageRefV1,
   RawMessageRefV1Schema,
   type Result,
+  validateContract,
   type TenantId,
 } from "@mail-edge/contracts";
 
@@ -132,7 +132,7 @@ export class DerivedMessageService {
     }
     const completed = await stage.value.complete(signal);
     if (!completed.ok) return completed;
-    const validated = createContractValidator().validate(RawMessageRefV1Schema, completed.value);
+    const validated = validateContract(RawMessageRefV1Schema, completed.value);
     if (
       !validated.ok ||
       completed.value.sha256 !== applied.value.derivedSha256 ||

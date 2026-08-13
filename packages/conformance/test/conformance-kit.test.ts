@@ -8,8 +8,8 @@ import {
 } from "@mail-edge/provider";
 
 import { ProviderConformanceKit } from "../src/conformance-kit.service.js";
-import { runAndSignProviderConformance } from "../src/run.js";
-import { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "../src/signing.js";
+import { runAndSignProviderConformance } from "../src/signed-conformance.service.js";
+import { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "../src/evidence-signing.adapter.js";
 import { createSampleTarget } from "./sample-target.js";
 
 const observedAt = "2026-08-13T08:00:00Z";

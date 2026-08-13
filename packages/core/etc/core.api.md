@@ -221,10 +221,25 @@ export interface Clock {
 }
 
 // @public
+export const compileOutboundRoutePlan: (decision: OutboundRouteDecision, binding: RouteBindingSnapshotV1) => Result<OutboundRoutePlan, MailEdgeError>;
+
+// @public
+export const compileRecipientRoutePlan: (input: RecipientRoutingInput, hostDestinations: unknown, limits?: RecipientRoutingLimits) => Result<RecipientRoutePlan, MailEdgeError>;
+
+// @public
+export const compileReverseAliasHeaderPatchPlan: (resolution: ReverseRouteResolutionV1, source: RawMessageRefV1, policy?: ReverseAliasHeaderPolicy) => Result<HeaderPatchPlanV1, MailEdgeError>;
+
+// @public
+export const compileReverseRoutePlan: (resolution: ReverseRouteResolutionV1, patchPlan: HeaderPatchPlanV1) => ReverseRoutePlan;
+
+// @public
 export const constructSafeHeaderField: (name: string, value: string) => Result<string, MailEdgeError>;
 
 // @public
 export const createHostSignature: (claims: HostSignatureClaimsV1, key: Uint8Array) => Result<HostSignatureV1, MailEdgeError>;
+
+// @public
+export const decideOutboundRoute: (input: OutboundRoutePlanInput) => Result<OutboundRouteDecision, MailEdgeError>;
 
 // @public (undocumented)
 export const DEFAULT_RECIPIENT_ROUTING_LIMITS: RecipientRoutingLimits;
@@ -507,6 +522,9 @@ export const MAX_COLLECTED_BODY_BYTES: number;
 // @public
 export const MAX_RAW_ACCESS_GRANT_LIFETIME_MS: number;
 
+// @public
+export const normalizeReverseRouteResolution: (hostResolution: unknown) => Result<ReverseRouteResolutionV1, MailEdgeError>;
+
 // @public (undocumented)
 export type OutboundAttemptEvent = {
     readonly type: "accept";
@@ -577,6 +595,18 @@ export interface OutboundReducerDecision {
     readonly postCommitActions: readonly OutboundPostCommitAction[];
     // (undocumented)
     readonly state: OutboundWorkflowState;
+}
+
+// @public
+export interface OutboundRouteDecision {
+    // (undocumented)
+    readonly domainALabel: string;
+    // (undocumented)
+    readonly envelope: SmtpEnvelopeV1;
+    // (undocumented)
+    readonly raw: RawMessageRefV1;
+    // (undocumented)
+    readonly tenantId: TenantId;
 }
 
 // @public (undocumented)
@@ -727,6 +757,16 @@ export interface RecipientRouter {
 }
 
 // @public (undocumented)
+export interface RecipientRoutingInput {
+    // (undocumented)
+    readonly envelope: SmtpEnvelopeV1;
+    // (undocumented)
+    readonly receiptId: ReceiptId;
+    // (undocumented)
+    readonly tenantId: TenantId;
+}
+
+// @public (undocumented)
 export interface RecipientRoutingLimits {
     // (undocumented)
     readonly maxDestinations: number;
@@ -738,11 +778,7 @@ export interface RecipientRoutingLimits {
 export class RecipientRoutingService {
     constructor(router: RecipientRouter, limits?: RecipientRoutingLimits);
     // (undocumented)
-    resolve(input: {
-        readonly envelope: SmtpEnvelopeV1;
-        readonly receiptId: ReceiptId;
-        readonly tenantId: TenantId;
-    }, signal: AbortSignal): Promise<Result<RecipientRoutePlan, MailEdgeError>>;
+    resolve(input: RecipientRoutingInput, signal: AbortSignal): Promise<Result<RecipientRoutePlan, MailEdgeError>>;
 }
 
 // @public (undocumented)

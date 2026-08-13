@@ -1,4 +1,4 @@
-import { createContractValidator, Rfc3339TimestampSchema } from "@mail-edge/contracts";
+import { Rfc3339TimestampSchema, validateContract } from "@mail-edge/contracts";
 import { sha256CanonicalJson, type CanonicalJsonValue } from "@mail-edge/core";
 
 import type { BindingPlanV1, ProviderAdapterIdentity } from "./spi.js";
@@ -21,10 +21,9 @@ export const inspectBindingPlan = (
   now: string,
 ): BindingPlanInspection => {
   const issues = new Set<string>();
-  const validator = createContractValidator();
-  const created = validator.validate(Rfc3339TimestampSchema, plan.createdAt);
-  const expires = validator.validate(Rfc3339TimestampSchema, plan.expiresAt);
-  const current = validator.validate(Rfc3339TimestampSchema, now);
+  const created = validateContract(Rfc3339TimestampSchema, plan.createdAt);
+  const expires = validateContract(Rfc3339TimestampSchema, plan.expiresAt);
+  const current = validateContract(Rfc3339TimestampSchema, now);
   if (!created.ok || !expires.ok || !current.ok) issues.add("plan_time_invalid");
   else {
     if (Date.parse(plan.createdAt) >= Date.parse(plan.expiresAt)) issues.add("plan_window_invalid");

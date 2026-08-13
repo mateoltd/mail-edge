@@ -26,7 +26,7 @@
     "actions:check": "node ./scripts/check-actions.mjs",
     "api:check": "node ./scripts/check-api.mjs",
     "api:generate": "node ./scripts/check-api.mjs --generate",
-    "build": "turbo run build",
+    "build": "node ./scripts/clean-typescript-outputs.mjs && turbo run build",
     "changeset": "changeset",
     "changeset:status": "changeset status --since=origin/main",
     "commitlint:check": "node ./scripts/check-commitlint.mjs",
@@ -34,11 +34,13 @@
     "clean-room:check": "node ./scripts/check-clean-room.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "knip": "knip",
+    "knip": "knip --treat-config-hints-as-errors --treat-tag-hints-as-errors",
     "license:check": "node ./scripts/check-licenses.mjs",
-    "lint": "corepack pnpm run lint:root && turbo run lint",
+    "lint": "corepack pnpm run lint:rules && corepack pnpm run lint:root && turbo run lint",
     "lint:boundaries": "depcruise --config ./dependency-cruiser.config.mjs --output-type err-long .",
+    "lint:rules": "node ./scripts/check-eslint-rules.mjs",
     "lint:root": "eslint . --ignore-pattern 'apps/**' --ignore-pattern 'packages/**' --max-warnings 0",
+    "migrations:check": "corepack pnpm --filter @mail-edge/postgres migrations:check",
     "pack:check": "node ./scripts/check-packages.mjs",
     "repo:check": "node ./scripts/check-repository.mjs",
     "schema:check": "corepack pnpm --filter @mail-edge/contracts schema:check && corepack pnpm --filter @mail-edge/provider schema:check",
@@ -48,7 +50,7 @@
     "test": "turbo run test",
     "test:w2-integration": "corepack pnpm run build && node ./scripts/test-w2-integration.mjs",
     "typecheck": "tsc -b --pretty false && turbo run typecheck",
-    "verify": "corepack pnpm run repo:check && corepack pnpm run commitlint:check && corepack pnpm run format:check && corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run build && corepack pnpm run test && corepack pnpm run corpus:check && corepack pnpm run schema:check && corepack pnpm run knip && corepack pnpm run api:check && corepack pnpm run pack:check && corepack pnpm run actions:check && corepack pnpm run license:check && corepack pnpm run sbom:check"
+    "verify": "corepack pnpm run repo:check && corepack pnpm run commitlint:check && corepack pnpm run format:check && corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run build && corepack pnpm run test && corepack pnpm run corpus:check && corepack pnpm run schema:check && corepack pnpm run migrations:check && corepack pnpm run knip && corepack pnpm run api:check && corepack pnpm run pack:check && corepack pnpm run actions:check && corepack pnpm run license:check && corepack pnpm run sbom:check"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1109.0",

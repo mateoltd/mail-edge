@@ -48,6 +48,7 @@ export interface EncryptedS3BlobStoreConfig {
   readonly scratchLifetimeMilliseconds: number;
   readonly rawRetentionMilliseconds: number;
   readonly cleanupTimeoutMilliseconds: number;
+  readonly operationTimeoutMilliseconds?: number;
   readonly requireObjectVersion: boolean;
   readonly serverSideEncryption?: "AES256" | "aws:kms";
   readonly serverSideEncryptionKmsKeyId?: string;
@@ -70,6 +71,7 @@ const asFailure = (
 ): BlobFailure => errors.create({ cause, message, operation, retryable });
 
 const validateConfig = (config: EncryptedS3BlobStoreConfig): void => {
+  const operationTimeoutMilliseconds = config.operationTimeoutMilliseconds ?? 30_000;
   if (
     config.bucket.length < 3 ||
     config.bucket.length > 255 ||
@@ -89,7 +91,9 @@ const validateConfig = (config: EncryptedS3BlobStoreConfig): void => {
     !Number.isSafeInteger(config.rawRetentionMilliseconds) ||
     config.rawRetentionMilliseconds < 1 ||
     !Number.isSafeInteger(config.cleanupTimeoutMilliseconds) ||
-    config.cleanupTimeoutMilliseconds < 1
+    config.cleanupTimeoutMilliseconds < 1 ||
+    !Number.isSafeInteger(operationTimeoutMilliseconds) ||
+    operationTimeoutMilliseconds < 1
   ) {
     throw new TypeError("Encrypted S3 blob store configuration is invalid or unbounded.");
   }
@@ -101,6 +105,12 @@ const validateConfig = (config: EncryptedS3BlobStoreConfig): void => {
     throw new TypeError("S3 SSE-KMS requires an explicit key identifier.");
   }
 };
+
+const boundedOperationSignal = (
+  config: Readonly<EncryptedS3BlobStoreConfig>,
+  signal: AbortSignal,
+): AbortSignal =>
+  AbortSignal.any([signal, AbortSignal.timeout(config.operationTimeoutMilliseconds ?? 30_000)]);
 
 const objectSse = (
   config: EncryptedS3BlobStoreConfig,
@@ -264,12 +274,13 @@ class EncryptedStageWriter implements BlobStageWriter {
       };
     }
     try {
+      const operationSignal = boundedOperationSignal(this.#config, signal);
       this.#plainDigest.update(chunk);
       this.#observedBytes += chunk.byteLength;
       let offset = 0;
       while (offset < chunk.byteLength) {
         if (this.#pendingBytes === this.#plainFrame.byteLength) {
-          await this.#flushFrame(false, signal);
+          await this.#flushFrame(false, operationSignal);
         }
         const count = Math.min(
           chunk.byteLength - offset,
@@ -310,10 +321,11 @@ class EncryptedStageWriter implements BlobStageWriter {
       };
     }
     let finalObjectKey: string | undefined;
+    const operationSignal = boundedOperationSignal(this.#config, signal);
     try {
-      await this.#flushFrame(true, signal);
+      await this.#flushFrame(true, operationSignal);
       this.#stream.end();
-      const uploaded = await this.#uploadPromise;
+      const uploaded = await this.#awaitUpload(operationSignal);
       if (this.#config.requireObjectVersion && uploaded.VersionId === undefined) {
         throw new TypeError("S3 bucket did not return a required immutable object version.");
       }
@@ -329,7 +341,7 @@ class EncryptedStageWriter implements BlobStageWriter {
           tenantId: this.#reservation.tenantId,
         },
         this.#clock.now(),
-        signal,
+        operationSignal,
       );
       if (!uploadedState.ok) {
         await this.abort(
@@ -344,7 +356,7 @@ class EncryptedStageWriter implements BlobStageWriter {
         this.#reservation.stageId,
         this.#state.optimisticVersion,
         this.#clock.now(),
-        signal,
+        operationSignal,
       );
       if (!verified.ok) {
         await this.abort(
@@ -363,7 +375,7 @@ class EncryptedStageWriter implements BlobStageWriter {
           tenantId: this.#reservation.tenantId,
         },
         this.#clock.now(),
-        signal,
+        operationSignal,
       );
       if (!prepared.ok) {
         await this.abort(
@@ -383,7 +395,7 @@ class EncryptedStageWriter implements BlobStageWriter {
           TaggingDirective: "REPLACE",
           ...objectSse(this.#config),
         }),
-        { abortSignal: signal },
+        { abortSignal: operationSignal },
       );
       if (this.#config.requireObjectVersion && copied.VersionId === undefined) {
         throw new TypeError("Promoted S3 object did not receive an immutable version.");
@@ -395,7 +407,7 @@ class EncryptedStageWriter implements BlobStageWriter {
           Key: finalObjectKey,
           ...(copied.VersionId === undefined ? {} : { VersionId: copied.VersionId }),
         }),
-        { abortSignal: signal },
+        { abortSignal: operationSignal },
       );
       if (copied.VersionId !== undefined) {
         const recorded = await this.#metadata.recordFinalObject(
@@ -407,7 +419,7 @@ class EncryptedStageWriter implements BlobStageWriter {
             tenantId: this.#reservation.tenantId,
           },
           this.#clock.now(),
-          signal,
+          operationSignal,
         );
         if (!recorded.ok) {
           this.#state.complete = true;
@@ -430,7 +442,7 @@ class EncryptedStageWriter implements BlobStageWriter {
           stageId: this.#reservation.stageId,
           tenantId: this.#reservation.tenantId,
         },
-        signal,
+        operationSignal,
       );
       if (!committed.ok) {
         this.#state.complete = true;
@@ -482,6 +494,7 @@ class EncryptedStageWriter implements BlobStageWriter {
     }
     this.#state.aborted = true;
     this.#stream.destroy();
+    const operationSignal = boundedOperationSignal(this.#config, signal);
     try {
       await this.#upload.abort();
     } catch {
@@ -501,14 +514,14 @@ class EncryptedStageWriter implements BlobStageWriter {
             ? {}
             : { VersionId: this.#state.objectVersion }),
         }),
-        { abortSignal: signal },
+        { abortSignal: operationSignal },
       );
       const abandoned = await this.#metadata.abandonStage(
         this.#reservation.tenantId,
         this.#reservation.stageId,
         this.#state.optimisticVersion,
         this.#clock.now(),
-        signal,
+        operationSignal,
       );
       this.#dek.fill(0);
       return abandoned;
@@ -523,6 +536,26 @@ class EncryptedStageWriter implements BlobStageWriter {
         ),
         ok: false,
       };
+    }
+  }
+
+  async #awaitUpload(signal: AbortSignal): Promise<Awaited<ReturnType<Upload["done"]>>> {
+    let rejectCanceled: ((reason: unknown) => void) | undefined;
+    const canceled = new Promise<never>((_resolve, reject) => {
+      rejectCanceled = reject;
+    });
+    const cancel = (): void => {
+      void this.#upload.abort().then(
+        () => rejectCanceled?.(signal.reason),
+        (cause: unknown) => rejectCanceled?.(cause),
+      );
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      if (signal.aborted) cancel();
+      return await Promise.race([this.#uploadPromise, canceled]);
+    } finally {
+      signal.removeEventListener("abort", cancel);
     }
   }
 
@@ -575,6 +608,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
     reservation: BlobReservation,
     signal: AbortSignal,
   ): Promise<DriverResult<BlobStageWriter>> {
+    const operationSignal = boundedOperationSignal(this.#config, signal);
     const blobId = reservation.stageId;
     let envelopeKey: Awaited<ReturnType<EnvelopeKeyService["generate"]>> | undefined;
     try {
@@ -586,7 +620,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
           purpose: reservation.purpose,
           tenantId: reservation.tenantId,
         },
-        signal,
+        operationSignal,
       );
       const nonceSeed = randomBytes(32);
       const header = createEncryptionHeader(nonceSeed, this.#config.encryptionFrameBytes);
@@ -610,7 +644,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
           tenantId: reservation.tenantId,
           wrappedDek: envelopeKey.wrappedKey,
         },
-        signal,
+        operationSignal,
       );
       if (!reserved.ok) {
         envelopeKey.plaintextKey.fill(0);
@@ -621,7 +655,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
         reservation.stageId,
         reserved.value.optimisticVersion,
         this.#clock.now(),
-        signal,
+        operationSignal,
       );
       if (!uploading.ok) {
         envelopeKey.plaintextKey.fill(0);
@@ -693,7 +727,8 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     blobId: BlobId,
     signal: AbortSignal,
   ): ReturnType<BlobStorePort["getAvailableReference"]> {
-    const record = await this.#metadata.getBlob(tenantId, blobId, signal);
+    const operationSignal = boundedOperationSignal(this.#config, signal);
+    const record = await this.#metadata.getBlob(tenantId, blobId, operationSignal);
     if (!record.ok) {
       return record;
     }
@@ -715,7 +750,8 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     blobId: BlobId,
     signal: AbortSignal,
   ): ReturnType<BlobStorePort["openRaw"]> {
-    const record = await this.#metadata.getBlob(tenantId, blobId, signal);
+    const operationSignal = boundedOperationSignal(this.#config, signal);
+    const record = await this.#metadata.getBlob(tenantId, blobId, operationSignal);
     if (!record.ok) {
       return record;
     }
@@ -740,7 +776,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
           purpose: record.value.purpose,
           tenantId,
         },
-        signal,
+        operationSignal,
       );
       const response = await this.#s3.send(
         new GetObjectCommand({
@@ -750,7 +786,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
             ? {}
             : { VersionId: record.value.objectVersion }),
         }),
-        { abortSignal: signal },
+        { abortSignal: operationSignal },
       );
       const encrypted = asyncBody(response.Body);
       return {
@@ -789,6 +825,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     occurredAt: string,
     signal: AbortSignal,
   ): Promise<DriverResult<void>> {
+    const operationSignal = boundedOperationSignal(this.#config, signal);
     try {
       await this.#s3.send(
         new DeleteObjectCommand({
@@ -796,13 +833,17 @@ export class EncryptedS3BlobStore implements BlobStorePort {
           Key: claim.objectKey,
           ...(claim.objectVersion === undefined ? {} : { VersionId: claim.objectVersion }),
         }),
-        { abortSignal: signal },
+        { abortSignal: operationSignal },
       );
-      const objectDeleted = await this.#metadata.markObjectDeleted(claim, occurredAt, signal);
+      const objectDeleted = await this.#metadata.markObjectDeleted(
+        claim,
+        occurredAt,
+        operationSignal,
+      );
       if (!objectDeleted.ok) {
         return objectDeleted;
       }
-      return await this.#metadata.completePurge(claim, occurredAt, signal);
+      return await this.#metadata.completePurge(claim, occurredAt, operationSignal);
     } catch (cause) {
       return {
         error: asFailure(
@@ -820,8 +861,9 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     pending: PendingBlobPromotion,
     signal: AbortSignal,
   ): Promise<DriverResult<StoredBlobRecord>> {
+    const operationSignal = boundedOperationSignal(this.#config, signal);
     try {
-      const finalObjectVersion = await this.#resolvePromotionVersion(pending, signal);
+      const finalObjectVersion = await this.#resolvePromotionVersion(pending, operationSignal);
       let expectedVersion = pending.expectedVersion;
       if (pending.finalObjectVersion === undefined && finalObjectVersion !== undefined) {
         const recorded = await this.#metadata.recordFinalObject(
@@ -833,7 +875,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
             tenantId: pending.tenantId,
           },
           this.#clock.now(),
-          signal,
+          operationSignal,
         );
         if (!recorded.ok) return recorded;
         expectedVersion = recorded.value.optimisticVersion;
@@ -852,7 +894,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
           stageId: pending.stageId,
           tenantId: pending.tenantId,
         },
-        signal,
+        operationSignal,
       );
     } catch (cause) {
       return {
@@ -938,6 +980,7 @@ export const defaultEncryptedS3BlobStoreConfig = (
     keyPrefix,
     multipartPartBytes: 5 * 1024 * 1024,
     multipartQueueSize: 1,
+    operationTimeoutMilliseconds: 30_000,
     rawRetentionMilliseconds: 30 * 24 * 60 * 60 * 1000,
     requireObjectVersion: true,
     scratchLifetimeMilliseconds: 24 * 60 * 60 * 1000,

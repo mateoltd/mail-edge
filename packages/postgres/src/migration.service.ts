@@ -24,6 +24,8 @@ export interface MigrationResult {
 
 const migrationNamePattern = /^\d{4}_[a-z][a-z0-9_]*\.sql$/u;
 const advisoryLockKey = 1_299_704_476_190_857_521n;
+const DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS = 30_000;
+const MAXIMUM_MIGRATION_COUNT = 1024;
 
 const defaultMigrationsDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -32,15 +34,19 @@ const defaultMigrationsDirectory = resolve(
 
 const digest = (contents: string): string => createHash("sha256").update(contents).digest("hex");
 
-const loadManifest = async (directory: string): Promise<ChecksumManifest> => {
-  const value: unknown = JSON.parse(await readFile(resolve(directory, "checksums.json"), "utf8"));
+const loadManifest = async (directory: string, signal: AbortSignal): Promise<ChecksumManifest> => {
+  const value: unknown = JSON.parse(
+    await readFile(resolve(directory, "checksums.json"), { encoding: "utf8", signal }),
+  );
   if (
     typeof value !== "object" ||
     value === null ||
     !("algorithm" in value) ||
     value.algorithm !== "sha256" ||
     !("migrations" in value) ||
-    !Array.isArray(value.migrations)
+    !Array.isArray(value.migrations) ||
+    value.migrations.length < 1 ||
+    value.migrations.length > MAXIMUM_MIGRATION_COUNT
   ) {
     throw new TypeError("Migration checksum manifest is invalid.");
   }
@@ -66,8 +72,10 @@ const loadManifest = async (directory: string): Promise<ChecksumManifest> => {
 /** Loads and verifies the immutable migration set before any database I/O. @public */
 export const loadVerifiedMigrations = async (
   directory = defaultMigrationsDirectory,
+  signal: AbortSignal = AbortSignal.timeout(DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS),
 ): Promise<readonly (MigrationIdentity & { readonly sql: string })[]> => {
-  const manifest = await loadManifest(directory);
+  signal.throwIfAborted();
+  const manifest = await loadManifest(directory, signal);
   const fileNames = (await readdir(directory))
     .filter((name) => migrationNamePattern.test(name))
     .toSorted();
@@ -77,17 +85,18 @@ export const loadVerifiedMigrations = async (
   ) {
     throw new TypeError("Migration files and checksum manifest are out of sync.");
   }
-  return Object.freeze(
-    await Promise.all(
-      manifest.migrations.map(async (identity) => {
-        const contents = await readFile(resolve(directory, identity.name), "utf8");
-        if (digest(contents) !== identity.sha256) {
-          throw new TypeError(`Migration ${identity.name} does not match its immutable checksum.`);
-        }
-        return Object.freeze({ ...identity, sql: contents });
-      }),
-    ),
-  );
+  const verified: (MigrationIdentity & { readonly sql: string })[] = [];
+  for (const identity of manifest.migrations) {
+    const contents = await readFile(resolve(directory, identity.name), {
+      encoding: "utf8",
+      signal,
+    });
+    if (digest(contents) !== identity.sha256) {
+      throw new TypeError(`Migration ${identity.name} does not match its immutable checksum.`);
+    }
+    verified.push(Object.freeze({ ...identity, sql: contents }));
+  }
+  return Object.freeze(verified);
 };
 
 /** Serialized, checksum-enforcing, forward-only PostgreSQL migration runner. @public */
@@ -96,13 +105,20 @@ export class PostgresMigrationRunner {
   readonly #migrationsDirectory: string;
 
   constructor(clientConfig: ClientConfig, migrationsDirectory = defaultMigrationsDirectory) {
-    this.#clientConfig = Object.freeze({ ...clientConfig });
+    this.#clientConfig = Object.freeze({
+      ...clientConfig,
+      connectionTimeoutMillis:
+        clientConfig.connectionTimeoutMillis ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS,
+      query_timeout: clientConfig.query_timeout ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS,
+      statement_timeout:
+        clientConfig.statement_timeout ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS,
+    });
     this.#migrationsDirectory = migrationsDirectory;
   }
 
   async migrate(signal: AbortSignal): Promise<MigrationResult> {
     signal.throwIfAborted();
-    const migrations = await loadVerifiedMigrations(this.#migrationsDirectory);
+    const migrations = await loadVerifiedMigrations(this.#migrationsDirectory, signal);
     const client = new Client(this.#clientConfig);
     await client.connect();
     const applied: MigrationIdentity[] = [];

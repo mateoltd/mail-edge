@@ -5,6 +5,7 @@ import type { EnvelopeKey, EnvelopeKeyService } from "./types.js";
 /** @public */
 export interface AwsKmsEnvelopeKeyConfig {
   readonly keyReference: string;
+  readonly operationTimeoutMilliseconds?: number;
 }
 
 const encryptionContext = (context: {
@@ -23,33 +24,45 @@ const encryptionContext = (context: {
 /** AWS KMS data-key adapter with a metadata-free, identity-bound encryption context. @public */
 export class AwsKmsEnvelopeKeyService implements EnvelopeKeyService {
   readonly #client: KMSClient;
-  readonly #config: Readonly<AwsKmsEnvelopeKeyConfig>;
+  readonly #keyReference: string;
+  readonly #operationTimeoutMilliseconds: number;
 
   constructor(client: KMSClient, config: AwsKmsEnvelopeKeyConfig) {
-    if (config.keyReference.length < 1 || config.keyReference.length > 512) {
-      throw new TypeError("KMS key reference must be bounded.");
+    const operationTimeoutMilliseconds = config.operationTimeoutMilliseconds ?? 30_000;
+    if (
+      config.keyReference.length < 1 ||
+      config.keyReference.length > 512 ||
+      !Number.isSafeInteger(operationTimeoutMilliseconds) ||
+      operationTimeoutMilliseconds < 1
+    ) {
+      throw new TypeError("KMS key reference and operation timeout must be bounded.");
     }
     this.#client = client;
-    this.#config = Object.freeze({ ...config });
+    this.#keyReference = config.keyReference;
+    this.#operationTimeoutMilliseconds = operationTimeoutMilliseconds;
   }
 
   async generate(
     context: Parameters<EnvelopeKeyService["generate"]>[0],
     signal: AbortSignal,
   ): Promise<EnvelopeKey> {
+    const operationSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(this.#operationTimeoutMilliseconds),
+    ]);
     const response = await this.#client.send(
       new GenerateDataKeyCommand({
         EncryptionContext: encryptionContext(context),
-        KeyId: this.#config.keyReference,
+        KeyId: this.#keyReference,
         KeySpec: "AES_256",
       }),
-      { abortSignal: signal },
+      { abortSignal: operationSignal },
     );
     if (response.Plaintext === undefined || response.CiphertextBlob === undefined) {
       throw new TypeError("KMS did not return both plaintext and wrapped data keys.");
     }
     return Object.freeze({
-      keyReference: response.KeyId ?? this.#config.keyReference,
+      keyReference: response.KeyId ?? this.#keyReference,
       plaintextKey: Uint8Array.from(response.Plaintext),
       wrappedKey: Uint8Array.from(response.CiphertextBlob),
     });
@@ -61,6 +74,10 @@ export class AwsKmsEnvelopeKeyService implements EnvelopeKeyService {
     context: Parameters<EnvelopeKeyService["unwrap"]>[2],
     signal: AbortSignal,
   ): Promise<Uint8Array> {
+    const operationSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(this.#operationTimeoutMilliseconds),
+    ]);
     const response = await this.#client.send(
       new DecryptCommand({
         CiphertextBlob: wrappedKey,
@@ -68,7 +85,7 @@ export class AwsKmsEnvelopeKeyService implements EnvelopeKeyService {
         EncryptionContext: encryptionContext(context),
         KeyId: keyReference,
       }),
-      { abortSignal: signal },
+      { abortSignal: operationSignal },
     );
     if (response.Plaintext?.byteLength !== 32) {
       throw new TypeError("KMS returned an invalid AES-256 data key.");

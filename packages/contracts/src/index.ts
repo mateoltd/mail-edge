@@ -147,7 +147,12 @@ export { DEFAULT_MAX_RAW_MESSAGE_BYTES, RawMessageRefV1Schema } from "./raw.sche
 export type { Result, ValidationError, ValidationIssue } from "./result.js";
 export { err, ok, validationError } from "./result.js";
 export { contractSchemas } from "./schemas.js";
-export { ContractValidator, createContractValidator } from "./validation.js";
+export {
+  ContractValidator,
+  createContractValidator,
+  validateContract,
+  validateContractBatch,
+} from "./validation.js";
 export type {
   AuditEventV1,
   ApplicationDeliveryState,

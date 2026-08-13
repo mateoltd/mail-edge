@@ -45,7 +45,7 @@ interface SafeHeaderField {
 
 const headerNameExpression = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,78}$/u;
 const policyCodeExpression = /^[a-z][a-z0-9_]{0,63}$/u;
-const threadHeaderNames = new Set(["in-reply-to", "message-id", "references"]);
+const threadHeaderNames = Object.freeze(["in-reply-to", "message-id", "references"] as const);
 
 const headerFailure = (reason: string): MailEdgeError =>
   new MailEdgeError({
@@ -118,87 +118,162 @@ export const headerPatchPlanDigest = (plan: HeaderPatchPlanV1): string =>
     sourceSha256: plan.sourceSha256,
   });
 
-/** Default reverse-alias planner. Thread headers are excluded unless policy opts in. @public */
+const normalizeReverseAliasHeaderPolicy = (
+  policy: ReverseAliasHeaderPolicy,
+): Result<ReverseAliasHeaderPolicy, MailEdgeError> => {
+  if (
+    !Number.isSafeInteger(policy.maxFieldBytes) ||
+    policy.maxFieldBytes < 1 ||
+    !Number.isSafeInteger(policy.maxFields) ||
+    policy.maxFields < 0
+  ) {
+    return { error: headerFailure("invalid_header_policy_limits"), ok: false };
+  }
+  const allowedNames = policy.allowedVisibleHeaderNames.map((name) => name.toLowerCase());
+  if (
+    new Set(allowedNames).size !== allowedNames.length ||
+    allowedNames.some((name) => !headerNameExpression.test(name))
+  ) {
+    return { error: headerFailure("invalid_header_policy_names"), ok: false };
+  }
+  return {
+    ok: true,
+    value: Object.freeze({
+      ...policy,
+      allowedVisibleHeaderNames: Object.freeze(allowedNames),
+    }),
+  };
+};
+
+/** Pure total compiler for a deterministic reverse-alias header plan. @public */
+export const compileReverseAliasHeaderPatchPlan = (
+  resolution: ReverseRouteResolutionV1,
+  source: RawMessageRefV1,
+  policy: ReverseAliasHeaderPolicy = DEFAULT_REVERSE_ALIAS_HEADER_POLICY,
+): Result<HeaderPatchPlanV1, MailEdgeError> => {
+  const normalizedPolicy = normalizeReverseAliasHeaderPolicy(policy);
+  if (!normalizedPolicy.ok) return normalizedPolicy;
+  const checkedPolicy = normalizedPolicy.value;
+  const allowedNameSet = new Set(checkedPolicy.allowedVisibleHeaderNames);
+  const policyCode: unknown = resolution.policyCode;
+  const visibleHeaderFields: unknown = resolution.visibleHeaderFields;
+  if (typeof policyCode !== "string" || !policyCodeExpression.test(policyCode)) {
+    return { error: headerFailure("invalid_policy_code"), ok: false };
+  }
+  if (!Array.isArray(visibleHeaderFields)) {
+    return { error: headerFailure("visible_headers_not_array"), ok: false };
+  }
+  if (visibleHeaderFields.length > checkedPolicy.maxFields) {
+    return { error: headerFailure("visible_header_limit"), ok: false };
+  }
+  const seen = new Set<string>();
+  const operations: HeaderPatchOperationV1[] = [];
+  for (const rawField of visibleHeaderFields) {
+    if (typeof rawField !== "string") {
+      return { error: headerFailure("visible_header_not_string"), ok: false };
+    }
+    const field = parseSafeRawField(rawField, checkedPolicy.maxFieldBytes);
+    if (!field.ok) return field;
+    if (
+      !allowedNameSet.has(field.value.name) ||
+      (!checkedPolicy.allowThreadHeaderMutation &&
+        threadHeaderNames.some((name) => name === field.value.name)) ||
+      seen.has(field.value.name)
+    ) {
+      return { error: headerFailure("header_not_allowed_or_duplicated"), ok: false };
+    }
+    seen.add(field.value.name);
+    operations.push(
+      Object.freeze({
+        name: field.value.name,
+        occurrence: 0,
+        op: "replaceOccurrence",
+        rawField: field.value.rawField,
+      }),
+    );
+  }
+  operations.sort((left, right) => {
+    const leftName = left.op === "insertBeforeBody" ? "" : left.name;
+    const rightName = right.op === "insertBeforeBody" ? "" : right.name;
+    return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
+  });
+  return {
+    ok: true,
+    value: Object.freeze({
+      operations: Object.freeze(operations),
+      reason: "reverse_alias",
+      schemaVersion: "v1",
+      sourceSha256: source.sha256,
+    }),
+  };
+};
+
+/** Compatibility adapter for consumers that inject the HeaderPatchPlanner port. @public */
 export class ReverseAliasHeaderPatchPlanner implements HeaderPatchPlanner {
-  readonly #allowedNames: ReadonlySet<string>;
   readonly #policy: ReverseAliasHeaderPolicy;
 
   constructor(policy: ReverseAliasHeaderPolicy = DEFAULT_REVERSE_ALIAS_HEADER_POLICY) {
-    if (
-      !Number.isSafeInteger(policy.maxFieldBytes) ||
-      policy.maxFieldBytes < 1 ||
-      !Number.isSafeInteger(policy.maxFields) ||
-      policy.maxFields < 0
-    ) {
-      throw new TypeError("Reverse-alias header limits are invalid.");
+    const checked = normalizeReverseAliasHeaderPolicy(policy);
+    if (!checked.ok) {
+      throw new TypeError("Reverse-alias header policy is invalid.", { cause: checked.error });
     }
-    const names = policy.allowedVisibleHeaderNames.map((name) => name.toLowerCase());
-    if (
-      new Set(names).size !== names.length ||
-      names.some((name) => !headerNameExpression.test(name))
-    ) {
-      throw new TypeError("Reverse-alias allowed header names are invalid or duplicated.");
-    }
-    this.#allowedNames = new Set(names);
-    this.#policy = Object.freeze({ ...policy, allowedVisibleHeaderNames: Object.freeze(names) });
+    this.#policy = checked.value;
   }
 
   compile(
     resolution: ReverseRouteResolutionV1,
     source: RawMessageRefV1,
   ): Result<HeaderPatchPlanV1, MailEdgeError> {
-    const policyCode: unknown = resolution.policyCode;
-    const visibleHeaderFields: unknown = resolution.visibleHeaderFields;
-    if (typeof policyCode !== "string" || !policyCodeExpression.test(policyCode)) {
-      return { error: headerFailure("invalid_policy_code"), ok: false };
-    }
-    if (!Array.isArray(visibleHeaderFields)) {
-      return { error: headerFailure("visible_headers_not_array"), ok: false };
-    }
-    if (visibleHeaderFields.length > this.#policy.maxFields) {
-      return { error: headerFailure("visible_header_limit"), ok: false };
-    }
-    const seen = new Set<string>();
-    const operations: HeaderPatchOperationV1[] = [];
-    for (const rawField of visibleHeaderFields) {
-      if (typeof rawField !== "string") {
-        return { error: headerFailure("visible_header_not_string"), ok: false };
-      }
-      const field = parseSafeRawField(rawField, this.#policy.maxFieldBytes);
-      if (!field.ok) return field;
-      if (
-        !this.#allowedNames.has(field.value.name) ||
-        (!this.#policy.allowThreadHeaderMutation && threadHeaderNames.has(field.value.name)) ||
-        seen.has(field.value.name)
-      ) {
-        return { error: headerFailure("header_not_allowed_or_duplicated"), ok: false };
-      }
-      seen.add(field.value.name);
-      operations.push(
-        Object.freeze({
-          name: field.value.name,
-          occurrence: 0,
-          op: "replaceOccurrence",
-          rawField: field.value.rawField,
-        }),
-      );
-    }
-    operations.sort((left, right) => {
-      const leftName = left.op === "insertBeforeBody" ? "" : left.name;
-      const rightName = right.op === "insertBeforeBody" ? "" : right.name;
-      return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
-    });
-    return {
-      ok: true,
-      value: Object.freeze({
-        operations: Object.freeze(operations),
-        reason: "reverse_alias",
-        schemaVersion: "v1",
-        sourceSha256: source.sha256,
-      }),
-    };
+    return compileReverseAliasHeaderPatchPlan(resolution, source, this.#policy);
   }
 }
+
+/** Pure total normalization of untrusted host reverse-route output. @public */
+export const normalizeReverseRouteResolution = (
+  hostResolution: unknown,
+): Result<ReverseRouteResolutionV1, MailEdgeError> => {
+  if (typeof hostResolution !== "object" || hostResolution === null) {
+    return { error: hostFailure("invalid_resolver_output"), ok: false };
+  }
+  const candidate = hostResolution as Readonly<Record<string, unknown>>;
+  const visibleHeaderFields = candidate["visibleHeaderFields"];
+  const policyCode = candidate["policyCode"];
+  if (
+    !Array.isArray(visibleHeaderFields) ||
+    visibleHeaderFields.some((field) => typeof field !== "string") ||
+    typeof policyCode !== "string"
+  ) {
+    return { error: hostFailure("invalid_resolver_output"), ok: false };
+  }
+  const canonicalEnvelope = canonicalizeSmtpEnvelope(candidate["envelope"]);
+  if (!canonicalEnvelope.ok) return canonicalEnvelope;
+  const canonicalVisibleHeaderFields = visibleHeaderFields.toSorted((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  ) as string[];
+  return {
+    ok: true,
+    value: Object.freeze({
+      envelope: canonicalEnvelope.value.wire,
+      policyCode,
+      visibleHeaderFields: Object.freeze(canonicalVisibleHeaderFields),
+    }),
+  };
+};
+
+/** Pure total deterministic reverse-route plan compiler. @public */
+export const compileReverseRoutePlan = (
+  resolution: ReverseRouteResolutionV1,
+  patchPlan: HeaderPatchPlanV1,
+): ReverseRoutePlan =>
+  Object.freeze({
+    patchPlan,
+    planDigest: sha256CanonicalJson({
+      envelope: resolution.envelope,
+      patchPlanDigest: headerPatchPlanDigest(patchPlan),
+      policyCode: resolution.policyCode,
+    }),
+    resolution,
+  });
 
 /** Calls the host resolver, validates its envelope, and emits an immutable patch plan. @public */
 export class ReverseRoutePlanningService {
@@ -221,43 +296,13 @@ export class ReverseRoutePlanningService {
       return { error: hostFailure("resolver_threw", cause), ok: false };
     }
     if (!resolved.ok) return resolved;
-    const hostResolution: unknown = resolved.value;
-    if (typeof hostResolution !== "object" || hostResolution === null) {
-      return { error: hostFailure("invalid_resolver_output"), ok: false };
-    }
-    const candidate = hostResolution as Readonly<Record<string, unknown>>;
-    const visibleHeaderFields = candidate["visibleHeaderFields"];
-    const policyCode = candidate["policyCode"];
-    if (
-      !Array.isArray(visibleHeaderFields) ||
-      visibleHeaderFields.some((field) => typeof field !== "string") ||
-      typeof policyCode !== "string"
-    ) {
-      return { error: hostFailure("invalid_resolver_output"), ok: false };
-    }
-    const canonicalEnvelope = canonicalizeSmtpEnvelope(candidate["envelope"]);
-    if (!canonicalEnvelope.ok) return canonicalEnvelope;
-    const canonicalVisibleHeaderFields = visibleHeaderFields.toSorted((left, right) =>
-      left < right ? -1 : left > right ? 1 : 0,
-    ) as string[];
-    const resolution: ReverseRouteResolutionV1 = Object.freeze({
-      envelope: canonicalEnvelope.value.wire,
-      policyCode,
-      visibleHeaderFields: Object.freeze(canonicalVisibleHeaderFields),
-    });
-    const patchPlan = this.#planner.compile(resolution, request.raw);
+    const resolution = normalizeReverseRouteResolution(resolved.value);
+    if (!resolution.ok) return resolution;
+    const patchPlan = this.#planner.compile(resolution.value, request.raw);
     if (!patchPlan.ok) return patchPlan;
     return {
       ok: true,
-      value: Object.freeze({
-        patchPlan: patchPlan.value,
-        planDigest: sha256CanonicalJson({
-          envelope: resolution.envelope,
-          patchPlanDigest: headerPatchPlanDigest(patchPlan.value),
-          policyCode: resolution.policyCode,
-        }),
-        resolution,
-      }),
+      value: compileReverseRoutePlan(resolution.value, patchPlan.value),
     };
   }
 }

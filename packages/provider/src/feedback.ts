@@ -1,11 +1,11 @@
 import {
-  createContractValidator,
   MailEdgeError,
   ProviderFeedbackV1Schema,
   type ProviderCapabilityDescriptorV1,
   type ProviderFeedbackV1,
   type ProviderInstanceId,
   type Result,
+  validateContractBatch,
 } from "@mail-edge/contracts";
 import { canonicalJson, canonicalizeMailbox } from "@mail-edge/core";
 
@@ -64,14 +64,14 @@ export const validateProviderFeedbackBatch = (
   if (events.length > MAX_PROVIDER_FEEDBACK_EVENTS) {
     return { error: feedbackError("feedback_event_limit_exceeded"), ok: false };
   }
-  const validator = createContractValidator();
+  const schemaResult = validateContractBatch(ProviderFeedbackV1Schema, events);
+  if (!schemaResult.ok) {
+    return { error: feedbackError("malformed_provider_event"), ok: false };
+  }
   const byIdentity = new Map<string, ProviderFeedbackV1>();
   const eventIdToIdentity = new Map<string, string>();
   let duplicateCount = 0;
   for (const event of events) {
-    if (!validator.validate(ProviderFeedbackV1Schema, event).ok) {
-      return { error: feedbackError("malformed_provider_event"), ok: false };
-    }
     if (
       event.providerId !== descriptor.providerId ||
       event.providerInstanceId !== providerInstanceId

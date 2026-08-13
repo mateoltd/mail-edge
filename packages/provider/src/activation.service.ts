@@ -8,9 +8,9 @@ import { evaluateActivation } from "@mail-edge/core";
 
 import { inspectProviderCapabilityDescriptor, requiredConformanceChecks } from "./descriptor.js";
 import {
+  ConformanceEvidenceVerificationService,
   projectConformanceEvidence,
   signedConformanceEvidenceIdentity,
-  verifySignedConformanceReport,
   type EvidenceVerifier,
 } from "./evidence.js";
 import type { SignedConformanceReportV1 } from "./evidence.schema.js";
@@ -37,17 +37,17 @@ export interface ProviderActivationInput {
 
 /** Signature-aware, fail-closed activation evaluator. @public */
 export class ProviderActivationGate {
-  readonly #verifier: EvidenceVerifier;
+  readonly #verification: ConformanceEvidenceVerificationService;
 
   constructor(verifier: EvidenceVerifier) {
-    this.#verifier = verifier;
+    this.#verification = new ConformanceEvidenceVerificationService(verifier);
   }
 
   async evaluate(
     input: ProviderActivationInput,
     signal: AbortSignal,
   ): Promise<Result<ProviderActivationEvaluation, MailEdgeError>> {
-    const verified = await verifySignedConformanceReport(input.evidence, this.#verifier, signal);
+    const verified = await this.#verification.verify(input.evidence, signal);
     if (!verified.ok) return verified;
 
     const inspection = inspectProviderCapabilityDescriptor(input.descriptor);

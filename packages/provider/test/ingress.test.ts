@@ -7,7 +7,7 @@ import {
 } from "@mail-edge/contracts";
 import { OwnedOneShotBody } from "@mail-edge/core";
 
-import { executeInboundIngress } from "../src/ingress-execution.js";
+import { executeInboundIngress } from "../src/provider-ingress.service.js";
 import type { InboundIngestionServices, InboundProviderAdapter } from "../src/spi.js";
 import { descriptor, providerInstanceId } from "./fixtures.js";
 

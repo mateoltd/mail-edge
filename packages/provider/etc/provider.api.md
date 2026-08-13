@@ -194,7 +194,21 @@ evidenceDigest: TString;
 details: TOptional<TRecord<TString, TUnion<[TString, TNumber, TBoolean]>>>;
 }>;
 
+// @public
+export class ConformanceEvidenceSigningService {
+    constructor(signer: EvidenceSigner);
+    // (undocumented)
+    sign(report: ProviderConformanceReportV1, signal: AbortSignal): Promise<Result<SignedConformanceReportV1, MailEdgeError>>;
+}
+
 export { ConformanceEvidenceV1 }
+
+// @public
+export class ConformanceEvidenceVerificationService {
+    constructor(verifier: EvidenceVerifier);
+    // (undocumented)
+    verify(signed: SignedConformanceReportV1, signal: AbortSignal): Promise<Result<boolean, MailEdgeError>>;
+}
 
 // @public
 export const conformanceReportDigest: (report: ProviderConformanceReportV1) => string;
@@ -736,6 +750,13 @@ export interface ProviderDispatchInstrumentationSink {
 export { ProviderDispatchPhase }
 
 // @public
+export class ProviderDispatchService {
+    constructor(adapter: OutboundProviderAdapter);
+    // (undocumented)
+    execute(input: OutboundSubmissionV1, context: ProviderDispatchContext, signal: AbortSignal): Promise<ProviderDispatchExecution>;
+}
+
+// @public
 export const providerEvidenceSchemas: readonly (TObject<    {
 checkId: TString;
 capability: TString;
@@ -804,11 +825,25 @@ export interface ProviderFeedbackCommit {
     readonly feedbackEventId: FeedbackEventId;
 }
 
+// @public
+export class ProviderFeedbackIngressService {
+    constructor(adapter: FeedbackProviderAdapter, collector: BoundedBodyCollector);
+    // (undocumented)
+    execute(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, signal: AbortSignal): Promise<Result<readonly ProviderFeedbackV1[], MailEdgeError>>;
+}
+
 export { ProviderFeedbackV1 }
 
 export { ProviderHttpIngressContext }
 
 export { ProviderId }
+
+// @public
+export class ProviderInboundIngressService {
+    constructor(adapter: InboundProviderAdapter, services: InboundIngestionServices);
+    // (undocumented)
+    execute(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, signal: AbortSignal): Promise<Result<InboundIngressCommit, MailEdgeError>>;
+}
 
 export { ProviderInstanceId }
 

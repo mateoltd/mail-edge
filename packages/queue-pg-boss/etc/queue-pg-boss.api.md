@@ -35,6 +35,8 @@ export interface PgBossWakeupConfig {
     // (undocumented)
     readonly pollingIntervalSeconds: number;
     // (undocumented)
+    readonly queryTimeoutMilliseconds?: number;
+    // (undocumented)
     readonly schema: string;
     // (undocumented)
     readonly workerBatchSize: number;

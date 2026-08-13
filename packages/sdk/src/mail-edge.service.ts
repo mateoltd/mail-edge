@@ -1,5 +1,4 @@
 import {
-  createContractValidator,
   DEFAULT_MAX_RAW_MESSAGE_BYTES,
   MailEdgeError,
   type OutboundIntentV1,
@@ -13,6 +12,7 @@ import {
   type IntentId,
   type IdempotencyKey,
   type VerifiedInboundReceiptV1,
+  validateContract,
 } from "@mail-edge/contracts";
 import type {
   ApplicationDeliverySink,
@@ -178,7 +178,7 @@ export class MailEdgeSdk {
     }
     const completed = await stage.value.complete(signal);
     if (!completed.ok) return completed;
-    const validated = createContractValidator().validate(RawMessageRefV1Schema, completed.value);
+    const validated = validateContract(RawMessageRefV1Schema, completed.value);
     if (!validated.ok || completed.value.size !== observed) {
       return {
         error: sdkError("INTERNAL", "Blob driver returned inconsistent immutable raw evidence."),

@@ -13,7 +13,7 @@ import type {
   WakeupScheduler,
 } from "@mail-edge/core";
 
-import { MailEdgeSdk, type MailEdgeSdkDependencies } from "./mail-edge-sdk.js";
+import { MailEdgeSdk, type MailEdgeSdkDependencies } from "./mail-edge.service.js";
 
 /** Builder with no infrastructure, provider, environment, or composition defaults. @public */
 export class MailEdgeSdkBuilder {

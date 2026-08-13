@@ -60,7 +60,7 @@ export type {
   OutboundSettlement,
 } from "./lease.repository.js";
 export { PostgresLeaseRepository } from "./lease.repository.js";
-export type { SensitiveValueCipher } from "./repositories.js";
+export type { SensitiveValueCipher } from "./workflow.repository.js";
 export type { SensitiveValueKeyProvider } from "./sensitive-value-cipher.adapter.js";
 export { AesGcmSensitiveValueCipher } from "./sensitive-value-cipher.adapter.js";
 export {
@@ -72,5 +72,5 @@ export {
   PostgresOutboundAttemptRepository,
   PostgresOutboundIntentRepository,
   PostgresRouteBindingRepository,
-} from "./repositories.js";
+} from "./workflow.repository.js";
 export { PostgresWakeupRepairRepository } from "./wakeup-repair.repository.js";

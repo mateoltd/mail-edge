@@ -1,6 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
-  "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
-  "ignoreDependencies": ["@cyclonedx/cdxgen", "@zone-eu/mailsplit", "publint"]
+  "ignoreDependencies": ["@cyclonedx/cdxgen", "@zone-eu/mailsplit", "publint"],
+  "workspaces": {
+    ".": {
+      "entry": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
+      "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"]
+    }
+  }
 }

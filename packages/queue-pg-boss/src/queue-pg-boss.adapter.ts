@@ -1,4 +1,4 @@
-import { type Db, type Job, PgBoss } from "pg-boss";
+import { type ConstructorOptions, type Db, type Job, PgBoss } from "pg-boss";
 
 import type { UnitOfWorkContext, Wakeup, WakeupScheduler } from "@mail-edge/core";
 
@@ -16,6 +16,7 @@ export interface PgBossWakeupConfig {
   readonly applicationName: string;
   readonly maximumPoolSize: number;
   readonly connectionTimeoutMilliseconds: number;
+  readonly queryTimeoutMilliseconds?: number;
   readonly pollingIntervalSeconds: number;
   readonly notifyPollingIntervalSeconds: number;
   readonly workerConcurrency: number;
@@ -35,17 +36,28 @@ const queueNames: Readonly<Record<WakeupType, string>> = Object.freeze({
 });
 
 const validateConfig = (config: PgBossWakeupConfig): void => {
+  const queryTimeoutMilliseconds = config.queryTimeoutMilliseconds ?? 30_000;
   if (
     !/^[a-z][a-z0-9_]{0,62}$/u.test(config.schema) ||
     !/^[a-z][a-z0-9_-]{0,62}$/u.test(config.applicationName) ||
+    !Number.isSafeInteger(config.maximumPoolSize) ||
     config.maximumPoolSize < 1 ||
+    config.maximumPoolSize > 100 ||
+    !Number.isSafeInteger(config.connectionTimeoutMilliseconds) ||
     config.connectionTimeoutMilliseconds < 1 ||
+    !Number.isSafeInteger(queryTimeoutMilliseconds) ||
+    queryTimeoutMilliseconds < 1 ||
     config.pollingIntervalSeconds < 0.5 ||
     config.notifyPollingIntervalSeconds < 0.5 ||
+    !Number.isSafeInteger(config.workerConcurrency) ||
     config.workerConcurrency < 1 ||
+    config.workerConcurrency > 100 ||
+    !Number.isSafeInteger(config.workerBatchSize) ||
     config.workerBatchSize < 1 ||
     config.workerBatchSize > 100 ||
+    !Number.isSafeInteger(config.gracefulStopMilliseconds) ||
     config.gracefulStopMilliseconds < 1 ||
+    !Number.isSafeInteger(config.jobRetentionSeconds) ||
     config.jobRetentionSeconds < 1
   ) {
     throw new TypeError("pg-boss wakeup configuration is invalid or unbounded.");
@@ -130,17 +142,24 @@ export class PgBossWakeupScheduler implements WakeupScheduler {
     errors: QueueErrorFactory,
   ) {
     validateConfig(config);
-    this.#config = Object.freeze({ ...config });
+    const queryTimeoutMilliseconds = config.queryTimeoutMilliseconds ?? 30_000;
+    this.#config = Object.freeze({ ...config, queryTimeoutMilliseconds });
     this.#executor = executor;
     this.#errors = errors;
-    this.#boss = new PgBoss({
+    const bossConfig: ConstructorOptions & {
+      readonly query_timeout: number;
+      readonly statement_timeout: number;
+    } = {
       application_name: config.applicationName,
       connectionString: config.connectionString,
       connectionTimeoutMillis: config.connectionTimeoutMilliseconds,
       max: config.maximumPoolSize,
+      query_timeout: queryTimeoutMilliseconds,
       schema: config.schema,
+      statement_timeout: queryTimeoutMilliseconds,
       useListenNotify: true,
-    });
+    };
+    this.#boss = new PgBoss(bossConfig);
   }
 
   async start(signal: AbortSignal): Promise<void> {
@@ -302,6 +321,7 @@ export const defaultPgBossWakeupConfig = (connectionString: string): PgBossWakeu
     maximumPoolSize: 10,
     notifyPollingIntervalSeconds: 30,
     pollingIntervalSeconds: 2,
+    queryTimeoutMilliseconds: 30_000,
     schema: "pgboss",
     workerBatchSize: 10,
     workerConcurrency: 4,

@@ -92,6 +92,7 @@ export type {
 export {
   DispatchBoundaryRecorder,
   executeProviderDispatch,
+  ProviderDispatchService,
 } from "./dispatch-instrumentation.service.js";
 export type {
   ConformanceCheckResultV1,
@@ -111,6 +112,8 @@ export type {
   EvidenceVerifier,
 } from "./evidence.js";
 export {
+  ConformanceEvidenceSigningService,
+  ConformanceEvidenceVerificationService,
   conformanceCheckDigest,
   conformanceReportDigest,
   conformanceSignaturePayload,
@@ -122,7 +125,12 @@ export {
 } from "./evidence.js";
 export type { ValidatedProviderFeedbackBatch } from "./feedback.js";
 export { MAX_PROVIDER_FEEDBACK_EVENTS, validateProviderFeedbackBatch } from "./feedback.js";
-export { executeFeedbackIngress, executeInboundIngress } from "./ingress-execution.js";
+export {
+  executeFeedbackIngress,
+  executeInboundIngress,
+  ProviderFeedbackIngressService,
+  ProviderInboundIngressService,
+} from "./provider-ingress.service.js";
 export type { ProviderRegistryState } from "./provider-registry.service.js";
 export { ProviderAdapterRegistry } from "./provider-registry.service.js";
 export type { ReconciliationTransition } from "./reconciliation.js";

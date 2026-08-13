@@ -120,14 +120,14 @@ export interface ProviderDispatchErrorOptions {
 
 const sanitizeSafeDetails = (
   details: Readonly<Record<string, unknown>> | undefined,
-  allowedKeys?: ReadonlySet<string>,
+  allowedKeys?: readonly string[],
 ): SafeDetails | undefined => {
   if (details === undefined) {
     return undefined;
   }
   const entries = Object.entries(details)
     .filter(([key, value]) => {
-      if (allowedKeys !== undefined && !allowedKeys.has(key)) {
+      if (allowedKeys !== undefined && !allowedKeys.includes(key)) {
         return false;
       }
       return (
@@ -272,10 +272,10 @@ interface ProblemPolicy {
   readonly title: string;
   readonly status: number;
   readonly detail: string;
-  readonly safeDetailKeys: ReadonlySet<string>;
+  readonly safeDetailKeys: readonly string[];
 }
 
-const keys = (...values: readonly string[]): ReadonlySet<string> => new Set(values);
+const keys = (...values: readonly string[]): readonly string[] => Object.freeze(values);
 
 const problemPolicies = {
   VALIDATION_FAILED: {

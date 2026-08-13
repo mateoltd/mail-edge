@@ -7,14 +7,14 @@ import { pathToFileURL } from "node:url";
 
 import {
   canonicalJson,
+  ConformanceEvidenceVerificationService,
   type CanonicalJsonValue,
   type SignedConformanceReportV1,
-  verifySignedConformanceReport,
 } from "@mail-edge/provider";
 
-import { runAndSignProviderConformance } from "./run.js";
+import { SignedProviderConformanceService } from "./signed-conformance.service.js";
 import type { ProviderConformanceTarget } from "./conformance-kit.service.js";
-import { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "./signing.js";
+import { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "./evidence-signing.adapter.js";
 
 type Command = "run" | "verify" | "keygen";
 
@@ -60,7 +60,11 @@ const validateExactOptions = (arguments_: ParsedArguments, expected: readonly st
     throw new TypeError(usage);
 };
 
-const loadTarget = async (modulePath: string): Promise<ProviderConformanceTarget> => {
+const loadTarget = async (
+  modulePath: string,
+  signal: AbortSignal,
+): Promise<ProviderConformanceTarget> => {
+  signal.throwIfAborted();
   const loaded = (await import(pathToFileURL(absolute(modulePath)).href)) as {
     readonly conformanceTarget?: unknown;
   };
@@ -85,16 +89,14 @@ const runCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Pro
     "--observed-at",
     "--out",
   ]);
-  const target = await loadTarget(required(arguments_, "--adapter"));
+  const target = await loadTarget(required(arguments_, "--adapter"), signal);
   const privateKeyPath = absolute(required(arguments_, "--private-key"));
   const signer = new Ed25519EvidenceSigner(
     required(arguments_, "--key-id"),
-    await readFile(privateKeyPath, "utf8"),
+    await readFile(privateKeyPath, { encoding: "utf8", signal }),
   );
-  const result = await runAndSignProviderConformance(
-    target,
+  const result = await new SignedProviderConformanceService(target, signer).run(
     required(arguments_, "--observed-at"),
-    signer,
     signal,
   );
   if (!result.ok) {
@@ -106,7 +108,7 @@ const runCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Pro
   await writeFile(
     absolute(required(arguments_, "--out")),
     `${canonicalJson(result.value.signedReport)}\n`,
-    { encoding: "utf8", flag: "wx" },
+    { encoding: "utf8", flag: "wx", signal },
   );
   process.stdout.write(
     `${canonicalJson({
@@ -121,15 +123,18 @@ const runCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Pro
 const verifyCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Promise<number> => {
   validateExactOptions(arguments_, ["--report", "--public-key", "--key-id"]);
   const report = JSON.parse(
-    await readFile(absolute(required(arguments_, "--report")), "utf8"),
+    await readFile(absolute(required(arguments_, "--report")), { encoding: "utf8", signal }),
   ) as SignedConformanceReportV1;
   const verifier = new Ed25519EvidenceVerifier({
     [required(arguments_, "--key-id")]: await readFile(
       absolute(required(arguments_, "--public-key")),
-      "utf8",
+      { encoding: "utf8", signal },
     ),
   });
-  const verified = await verifySignedConformanceReport(report, verifier, signal);
+  const verified = await new ConformanceEvidenceVerificationService(verifier).verify(
+    report,
+    signal,
+  );
   if (!verified.ok) {
     process.stderr.write(
       `${canonicalJson(verified.error.toJSON() as unknown as CanonicalJsonValue)}\n`,
@@ -142,7 +147,8 @@ const verifyCommand = async (arguments_: ParsedArguments, signal: AbortSignal): 
   return verified.value ? 0 : 1;
 };
 
-const keygenCommand = async (arguments_: ParsedArguments): Promise<number> => {
+const keygenCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Promise<number> => {
+  signal.throwIfAborted();
   validateExactOptions(arguments_, ["--private-key", "--public-key"]);
   const privateKeyPath = absolute(required(arguments_, "--private-key"));
   const publicKeyPath = absolute(required(arguments_, "--public-key"));
@@ -154,8 +160,8 @@ const keygenCommand = async (arguments_: ParsedArguments): Promise<number> => {
   let publicHandle: Awaited<ReturnType<typeof open>> | undefined;
   try {
     publicHandle = await open(publicKeyPath, "wx", 0o644);
-    await privateHandle.writeFile(pair.privateKey, { encoding: "utf8" });
-    await publicHandle.writeFile(pair.publicKey, { encoding: "utf8" });
+    await privateHandle.writeFile(pair.privateKey, { encoding: "utf8", signal });
+    await publicHandle.writeFile(pair.publicKey, { encoding: "utf8", signal });
   } catch (cause) {
     await publicHandle?.close();
     await privateHandle.close();
@@ -180,7 +186,7 @@ export const runConformanceCli = async (
     const parsed = parseArguments(arguments_);
     if (parsed.command === "run") return await runCommand(parsed, signal);
     if (parsed.command === "verify") return await verifyCommand(parsed, signal);
-    return await keygenCommand(parsed);
+    return await keygenCommand(parsed, signal);
   } catch (cause) {
     process.stderr.write(`${cause instanceof Error ? cause.message : "Conformance CLI failed."}\n`);
     return 2;
@@ -189,5 +195,8 @@ export const runConformanceCli = async (
 
 const invokedPath = process.argv[1];
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(invokedPath).href) {
-  process.exitCode = await runConformanceCli(process.argv.slice(2), new AbortController().signal);
+  process.exitCode = await runConformanceCli(
+    process.argv.slice(2),
+    AbortSignal.timeout(5 * 60_000),
+  );
 }

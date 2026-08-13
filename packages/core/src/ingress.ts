@@ -1,10 +1,10 @@
 import {
-  createContractValidator,
   DEFAULT_MAX_RAW_MESSAGE_BYTES,
   MailEdgeError,
   Rfc3339TimestampSchema,
   type OneShotProviderHttpRequest,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 
 const headerName = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/u;
@@ -79,7 +79,7 @@ export const validateProviderHttpRequestMetadata = (
   ) {
     return { error: invalidIngress("remoteAddress", "invalid_value"), ok: false };
   }
-  const receivedAt = createContractValidator().validate(Rfc3339TimestampSchema, request.receivedAt);
+  const receivedAt = validateContract(Rfc3339TimestampSchema, request.receivedAt);
   if (!receivedAt.ok) {
     return { error: invalidIngress("receivedAt", "invalid_timestamp"), ok: false };
   }

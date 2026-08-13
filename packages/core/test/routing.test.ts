@@ -8,8 +8,13 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  compileOutboundRoutePlan,
+  compileRecipientRoutePlan,
+  compileReverseAliasHeaderPatchPlan,
   constructSafeHeaderField,
+  decideOutboundRoute,
   ExactRoutePlannerService,
+  normalizeReverseRouteResolution,
   RecipientRoutingService,
   ReverseAliasHeaderPatchPlanner,
   ReverseRoutePlanningService,
@@ -42,6 +47,26 @@ const unitOfWork: UnitOfWork = {
 };
 
 describe("exact provider-neutral route planning", () => {
+  it("keeps exact-domain selection and plan compilation pure", () => {
+    const decision = decideOutboundRoute({ envelope, raw, tenantId });
+    expect(decision.ok).toBe(true);
+    if (!decision.ok) return;
+    const first = compileOutboundRoutePlan(decision.value, bindingSnapshot());
+    const second = compileOutboundRoutePlan(
+      Object.freeze({ ...decision.value }),
+      Object.freeze({ ...bindingSnapshot() }),
+    );
+    expect(first).toEqual(second);
+    expect(
+      decideOutboundRoute({
+        envelope,
+        raw,
+        routeDomainALabel: "child.example.test",
+        tenantId,
+      }).ok,
+    ).toBe(false);
+  });
+
   it("selects only the exact active domain and produces a deterministic digest", async () => {
     const lookups: string[] = [];
     const repository: RouteBindingRepository = {
@@ -111,6 +136,19 @@ describe("exact provider-neutral route planning", () => {
 });
 
 describe("host recipient and reverse routing", () => {
+  it("compiles host destinations deterministically without host I/O", () => {
+    const destinations = [
+      { deliveryMode: "pull", destinationId: "zeta", opaqueToken: "token-zeta" },
+      { deliveryMode: "push", destinationId: "alpha", opaqueToken: "token-alpha" },
+    ];
+    const first = compileRecipientRoutePlan({ envelope, receiptId, tenantId }, destinations);
+    const second = compileRecipientRoutePlan(
+      { envelope, receiptId, tenantId },
+      destinations.toReversed(),
+    );
+    expect(first).toEqual(second);
+  });
+
   it("sorts and fingerprints host destinations deterministically", async () => {
     let reversed = false;
     const destinations = [
@@ -187,6 +225,16 @@ describe("host recipient and reverse routing", () => {
       },
       replyRaw,
     );
+    expect(compiled).toEqual(
+      compileReverseAliasHeaderPatchPlan(
+        {
+          envelope,
+          policyCode: "reply_alias",
+          visibleHeaderFields: ["From: Reply Alias <reply@example.test>"],
+        },
+        replyRaw,
+      ),
+    );
     expect(compiled.ok).toBe(true);
     if (compiled.ok) {
       expect(compiled.value.operations).toEqual([
@@ -238,6 +286,18 @@ describe("host recipient and reverse routing", () => {
       replyRaw,
     );
     expect(firstOrder).toEqual(secondOrder);
+    expect(
+      compileReverseAliasHeaderPatchPlan(
+        { envelope, policyCode: "reply_alias", visibleHeaderFields: [] },
+        replyRaw,
+        {
+          allowThreadHeaderMutation: false,
+          allowedVisibleHeaderNames: [],
+          maxFieldBytes: 0,
+          maxFields: 0,
+        },
+      ).ok,
+    ).toBe(false);
   });
 
   it("validates and canonicalizes resolver output before producing a stable plan", async () => {
@@ -266,5 +326,14 @@ describe("host recipient and reverse routing", () => {
     expect(first.ok).toBe(true);
     expect(second).toEqual(first);
     if (first.ok) expect(first.value.resolution.envelope.mailFrom).toBe("sender@example.test");
+    const normalized = normalizeReverseRouteResolution({
+      envelope: { ...envelope, mailFrom: "sender@EXAMPLE.TEST" },
+      policyCode: "reply_alias",
+      visibleHeaderFields: visibleHeaderFields.toReversed(),
+    });
+    expect(normalized).toMatchObject({
+      ok: true,
+      value: { envelope: { mailFrom: "sender@example.test" } },
+    });
   });
 });

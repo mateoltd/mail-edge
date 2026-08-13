@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 
 import {
-  createContractValidator,
   HeaderPatchPlanV1Schema,
   type HeaderPatchOperationV1,
   type HeaderPatchPlanV1,
   type MailEdgeError,
   type RawMessageStream,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 
 import { mimeLimitFailure, mimeProcessingFailure, mimeValidationFailure } from "./errors.js";
@@ -146,7 +146,7 @@ export class StreamingHeaderPatchApplier {
     sink: HeaderPatchSink,
     signal: AbortSignal,
   ): Promise<Result<HeaderPatchApplication, MailEdgeError>> {
-    const boundary = createContractValidator().validate(HeaderPatchPlanV1Schema, plan);
+    const boundary = validateContract(HeaderPatchPlanV1Schema, plan);
     if (!boundary.ok) {
       return { error: mimeValidationFailure("header_patch_plan_schema"), ok: false };
     }

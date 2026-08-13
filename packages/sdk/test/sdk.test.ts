@@ -18,7 +18,7 @@ import type {
 } from "@mail-edge/core";
 
 import { MailEdgeSdkBuilder } from "../src/mail-edge-sdk-builder.js";
-import type { MailEdgeSdkDependencies } from "../src/mail-edge-sdk.js";
+import type { MailEdgeSdkDependencies } from "../src/mail-edge.service.js";
 
 const error = new MailEdgeError({
   code: "NOT_FOUND",
@@ -113,7 +113,7 @@ describe("MailEdgeSdkBuilder", () => {
       "@mail-edge/contracts",
       "@mail-edge/core",
     ]);
-    const source = ["mail-edge-sdk.ts", "mail-edge-sdk-builder.ts"]
+    const source = ["mail-edge.service.ts", "mail-edge-sdk-builder.ts"]
       .map((file) => readFileSync(resolve(import.meta.dirname, `../src/${file}`), "utf8"))
       .join("\n");
     expect(source).not.toMatch(

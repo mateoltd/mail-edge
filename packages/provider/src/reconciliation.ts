@@ -1,7 +1,7 @@
 import {
-  createContractValidator,
   Rfc3339TimestampSchema,
   type ProviderCapabilityDescriptorV1,
+  validateContract,
 } from "@mail-edge/contracts";
 
 import type { ProviderReconciliationEvidenceV1 } from "./spi.js";
@@ -26,7 +26,7 @@ export const evaluateReconciliationEvidence = (
   evidence: ProviderReconciliationEvidenceV1,
   descriptor: ProviderCapabilityDescriptorV1,
 ): ReconciliationTransition => {
-  const timestamp = createContractValidator().validate(Rfc3339TimestampSchema, evidence.observedAt);
+  const timestamp = validateContract(Rfc3339TimestampSchema, evidence.observedAt);
   const declared = descriptor.outbound.reconciliation;
   const evidenceCodeValid = /^[a-z][a-z0-9_]{0,63}$/u.test(evidence.evidenceCode);
   if (

@@ -1,10 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import {
-  createContractValidator,
   MailEdgeError,
   Rfc3339TimestampSchema,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 
 import { canonicalJson } from "./canonical-json.js";
@@ -46,14 +46,12 @@ const tokenExpression = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
 const nonceExpression = /^[A-Za-z0-9_-]{16,128}$/u;
 const sha256Expression = /^[a-f0-9]{64}$/u;
 const signatureExpression = /^[A-Za-z0-9_-]{43}$/u;
-const signedOperations: ReadonlySet<string> = new Set<HostSignedOperation>([
+const signedOperations = Object.freeze([
   "application_delivery",
   "application_feedback",
   "recipient_route",
   "reverse_route",
-]);
-const contractValidator = createContractValidator();
-
+] as const satisfies readonly HostSignedOperation[]);
 const signatureFailure = (
   code: "AUTHENTICATION_FAILED" | "VALIDATION_FAILED",
   reason: string,
@@ -67,7 +65,7 @@ const signatureFailure = (
   });
 
 const validTimestamp = (value: unknown): value is string =>
-  typeof value === "string" && contractValidator.validate(Rfc3339TimestampSchema, value).ok;
+  typeof value === "string" && validateContract(Rfc3339TimestampSchema, value).ok;
 
 const validClaims = (value: unknown): value is HostSignatureClaimsV1 => {
   if (typeof value !== "object" || value === null) return false;
@@ -86,7 +84,7 @@ const validClaims = (value: unknown): value is HostSignatureClaimsV1 => {
     typeof claims["bodySha256"] === "string" &&
     sha256Expression.test(claims["bodySha256"]) &&
     typeof claims["operation"] === "string" &&
-    signedOperations.has(claims["operation"]) &&
+    signedOperations.some((operation) => operation === claims["operation"]) &&
     validTimestamp(claims["timestamp"])
   );
 };

@@ -9,7 +9,7 @@ import {
   RouteBindingSnapshotV1Schema,
   type VerifiedInboundReceiptV1,
   VerifiedInboundReceiptV1Schema,
-  createContractValidator,
+  validateContract,
 } from "@mail-edge/contracts";
 
 import type {
@@ -19,8 +19,6 @@ import type {
   RawBlob,
   RouteBinding,
 } from "./database.schema.js";
-
-const validator = createContractValidator();
 
 export const bytesToHex = (value: Uint8Array): string => Buffer.from(value).toString("hex");
 
@@ -52,7 +50,7 @@ const validated = (
     | typeof VerifiedInboundReceiptV1Schema,
   value: unknown,
 ): unknown => {
-  const result = validator.validate(schema, value);
+  const result = validateContract(schema, value);
   if (!result.ok) {
     throw new MailEdgeError({
       code: "INTERNAL",

@@ -10,7 +10,7 @@ import {
   type ProviderConformanceReportV1,
 } from "@mail-edge/provider";
 
-import { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "../src/signing.js";
+import { Ed25519EvidenceSigner, Ed25519EvidenceVerifier } from "../src/evidence-signing.adapter.js";
 import { sampleDescriptor } from "./third-party-sample.adapter.js";
 import { sha256CanonicalJson } from "@mail-edge/provider";
 

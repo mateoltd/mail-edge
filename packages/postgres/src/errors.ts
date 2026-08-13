@@ -1,14 +1,14 @@
 import { MailEdgeError } from "@mail-edge/contracts";
 import { DatabaseError } from "pg";
 
-const constraintCodes = new Set(["23502", "23503", "23505", "23514", "23P01"]);
+const constraintCodes = Object.freeze(["23502", "23503", "23505", "23514", "23P01"] as const);
 
 export const postgresError = (cause: unknown, operation: string): MailEdgeError => {
   if (cause instanceof MailEdgeError) {
     return cause;
   }
   const code = cause instanceof DatabaseError ? cause.code : undefined;
-  const conflict = code !== undefined && constraintCodes.has(code);
+  const conflict = code !== undefined && constraintCodes.some((candidate) => candidate === code);
   return new MailEdgeError({
     cause,
     code: conflict ? "WORKFLOW_CONFLICT" : "STORAGE_UNAVAILABLE",

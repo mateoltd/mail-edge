@@ -399,6 +399,13 @@ export interface SignedProviderConformanceRun extends ProviderConformanceRun {
     readonly signedReport: SignedConformanceReportV1;
 }
 
+// @public
+export class SignedProviderConformanceService {
+    constructor(target: ProviderConformanceTarget, signer: EvidenceSigner);
+    // (undocumented)
+    run(observedAt: string, signal: AbortSignal): Promise<Result<SignedProviderConformanceRun, MailEdgeError>>;
+}
+
 export { StrictBoundedBodyCollector }
 
 export { validateProviderFeedbackBatch }

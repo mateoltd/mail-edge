@@ -29,6 +29,8 @@ export interface AbandonedBlobStage {
 export interface AwsKmsEnvelopeKeyConfig {
     // (undocumented)
     readonly keyReference: string;
+    // (undocumented)
+    readonly operationTimeoutMilliseconds?: number;
 }
 
 // @public
@@ -257,6 +259,8 @@ export interface BlobStageCleanupConfig {
     readonly batchSize: number;
     // (undocumented)
     readonly maximumListPages: number;
+    // (undocumented)
+    readonly operationTimeoutMilliseconds?: number;
 }
 
 // @public
@@ -388,6 +392,8 @@ export interface EncryptedS3BlobStoreConfig {
     readonly multipartPartBytes: number;
     // (undocumented)
     readonly multipartQueueSize: number;
+    // (undocumented)
+    readonly operationTimeoutMilliseconds?: number;
     // (undocumented)
     readonly rawRetentionMilliseconds: number;
     // (undocumented)

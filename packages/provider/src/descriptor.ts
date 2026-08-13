@@ -1,9 +1,9 @@
 import {
-  createContractValidator,
   MailEdgeError,
   ProviderCapabilityDescriptorV1Schema,
   type ProviderCapabilityDescriptorV1,
   type Result,
+  validateContract,
 } from "@mail-edge/contracts";
 import { sha256CanonicalJson } from "@mail-edge/core";
 
@@ -60,10 +60,7 @@ export const inspectProviderCapabilityDescriptor = (
   descriptor: ProviderCapabilityDescriptorV1,
 ): CapabilityDescriptorInspection => {
   const issues = new Set<string>();
-  const schema = createContractValidator().validate(
-    ProviderCapabilityDescriptorV1Schema,
-    descriptor,
-  );
+  const schema = validateContract(ProviderCapabilityDescriptorV1Schema, descriptor);
   if (!schema.ok) {
     issues.add("descriptor_schema_invalid");
   }

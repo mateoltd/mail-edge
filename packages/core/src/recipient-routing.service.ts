@@ -19,6 +19,13 @@ export interface RecipientRoutePlan {
 }
 
 /** @public */
+export interface RecipientRoutingInput {
+  readonly envelope: SmtpEnvelopeV1;
+  readonly receiptId: ReceiptId;
+  readonly tenantId: TenantId;
+}
+
+/** @public */
 export interface RecipientRoutingLimits {
   readonly maxDestinations: number;
   readonly maxOpaqueTokenBytes: number;
@@ -59,6 +66,85 @@ const validOpaqueToken = (value: string, maximumBytes: number): boolean => {
 const validDeliveryMode = (value: unknown): value is "pull" | "push" =>
   value === "pull" || value === "push";
 
+/** Pure total compiler for validated, bounded, deterministic recipient routing output. @public */
+export const compileRecipientRoutePlan = (
+  input: RecipientRoutingInput,
+  hostDestinations: unknown,
+  limits: RecipientRoutingLimits = DEFAULT_RECIPIENT_ROUTING_LIMITS,
+): Result<RecipientRoutePlan, MailEdgeError> => {
+  if (
+    !Number.isSafeInteger(limits.maxDestinations) ||
+    limits.maxDestinations < 1 ||
+    !Number.isSafeInteger(limits.maxOpaqueTokenBytes) ||
+    limits.maxOpaqueTokenBytes < 1
+  ) {
+    return { error: routingFailure("VALIDATION_FAILED", "invalid_routing_limits"), ok: false };
+  }
+  const envelope = canonicalizeSmtpEnvelope(input.envelope);
+  if (!envelope.ok) return envelope;
+  if (!Array.isArray(hostDestinations)) {
+    return { error: routingFailure("VALIDATION_FAILED", "destinations_not_array"), ok: false };
+  }
+  if (hostDestinations.length > limits.maxDestinations) {
+    return {
+      error: routingFailure("VALIDATION_FAILED", "destination_limit"),
+      ok: false,
+    };
+  }
+  const seen = new Set<string>();
+  const destinations: ApplicationDestinationV1[] = [];
+  for (const hostDestination of hostDestinations) {
+    if (typeof hostDestination !== "object" || hostDestination === null) {
+      return { error: routingFailure("VALIDATION_FAILED", "invalid_destination"), ok: false };
+    }
+    const candidate = hostDestination as Readonly<Record<string, unknown>>;
+    const destinationId = candidate["destinationId"];
+    const deliveryMode = candidate["deliveryMode"];
+    const opaqueToken = candidate["opaqueToken"];
+    if (
+      typeof destinationId !== "string" ||
+      !destinationIdExpression.test(destinationId) ||
+      !validDeliveryMode(deliveryMode) ||
+      typeof opaqueToken !== "string" ||
+      !validOpaqueToken(opaqueToken, limits.maxOpaqueTokenBytes) ||
+      seen.has(destinationId)
+    ) {
+      return {
+        error: routingFailure("VALIDATION_FAILED", "invalid_or_duplicate_destination"),
+        ok: false,
+      };
+    }
+    seen.add(destinationId);
+    destinations.push(Object.freeze({ deliveryMode, destinationId, opaqueToken }));
+  }
+  destinations.sort((left, right) =>
+    left.destinationId < right.destinationId
+      ? -1
+      : left.destinationId > right.destinationId
+        ? 1
+        : 0,
+  );
+  const frozenDestinations = Object.freeze(destinations);
+  return {
+    ok: true,
+    value: Object.freeze({
+      destinations: frozenDestinations,
+      planDigest: sha256CanonicalJson({
+        destinations: frozenDestinations.map((destination) => ({
+          deliveryMode: destination.deliveryMode,
+          destinationId: destination.destinationId,
+          opaqueToken: destination.opaqueToken,
+        })),
+        envelope: envelope.value.wire,
+        receiptId: input.receiptId,
+        tenantId: input.tenantId,
+      }),
+      receiptId: input.receiptId,
+      tenantId: input.tenantId,
+    }),
+  };
+};
+
 /** Validates and canonicalizes host-owned destinations without storing host identity data. @public */
 export class RecipientRoutingService {
   readonly #limits: RecipientRoutingLimits;
@@ -81,11 +167,7 @@ export class RecipientRoutingService {
   }
 
   async resolve(
-    input: {
-      readonly envelope: SmtpEnvelopeV1;
-      readonly receiptId: ReceiptId;
-      readonly tenantId: TenantId;
-    },
+    input: RecipientRoutingInput,
     signal: AbortSignal,
   ): Promise<Result<RecipientRoutePlan, MailEdgeError>> {
     const envelope = canonicalizeSmtpEnvelope(input.envelope);
@@ -100,67 +182,10 @@ export class RecipientRoutingService {
       return { error: routingFailure("HOST_UNAVAILABLE", "resolver_threw", cause), ok: false };
     }
     if (!resolved.ok) return resolved;
-    const hostDestinations: unknown = resolved.value;
-    if (!Array.isArray(hostDestinations)) {
-      return { error: routingFailure("VALIDATION_FAILED", "destinations_not_array"), ok: false };
-    }
-    if (hostDestinations.length > this.#limits.maxDestinations) {
-      return {
-        error: routingFailure("VALIDATION_FAILED", "destination_limit"),
-        ok: false,
-      };
-    }
-    const seen = new Set<string>();
-    const destinations: ApplicationDestinationV1[] = [];
-    for (const hostDestination of hostDestinations) {
-      if (typeof hostDestination !== "object" || hostDestination === null) {
-        return { error: routingFailure("VALIDATION_FAILED", "invalid_destination"), ok: false };
-      }
-      const candidate = hostDestination as Readonly<Record<string, unknown>>;
-      const destinationId = candidate["destinationId"];
-      const deliveryMode = candidate["deliveryMode"];
-      const opaqueToken = candidate["opaqueToken"];
-      if (
-        typeof destinationId !== "string" ||
-        !destinationIdExpression.test(destinationId) ||
-        !validDeliveryMode(deliveryMode) ||
-        typeof opaqueToken !== "string" ||
-        !validOpaqueToken(opaqueToken, this.#limits.maxOpaqueTokenBytes) ||
-        seen.has(destinationId)
-      ) {
-        return {
-          error: routingFailure("VALIDATION_FAILED", "invalid_or_duplicate_destination"),
-          ok: false,
-        };
-      }
-      seen.add(destinationId);
-      destinations.push(Object.freeze({ deliveryMode, destinationId, opaqueToken }));
-    }
-    destinations.sort((left, right) =>
-      left.destinationId < right.destinationId
-        ? -1
-        : left.destinationId > right.destinationId
-          ? 1
-          : 0,
+    return compileRecipientRoutePlan(
+      { ...input, envelope: envelope.value.wire },
+      resolved.value,
+      this.#limits,
     );
-    const frozenDestinations = Object.freeze(destinations);
-    return {
-      ok: true,
-      value: Object.freeze({
-        destinations: frozenDestinations,
-        planDigest: sha256CanonicalJson({
-          destinations: frozenDestinations.map((destination) => ({
-            deliveryMode: destination.deliveryMode,
-            destinationId: destination.destinationId,
-            opaqueToken: destination.opaqueToken,
-          })),
-          envelope: envelope.value.wire,
-          receiptId: input.receiptId,
-          tenantId: input.tenantId,
-        }),
-        receiptId: input.receiptId,
-        tenantId: input.tenantId,
-      }),
-    };
   }
 }

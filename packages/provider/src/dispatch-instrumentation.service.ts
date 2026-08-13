@@ -281,117 +281,132 @@ const actionFor = (
   return result.error.retryable ? "retry_not_sent" : "fail_not_sent";
 };
 
-/**
- * Executes one outbound adapter call and refuses success/error classifications that contradict
- * strict byte-boundary instrumentation. Unknown is always quarantined and never retryable.
- *
- * @public
- */
-export const executeProviderDispatch = async (
+/** Coordinates one injected outbound adapter under strict byte-boundary evidence. @public */
+export class ProviderDispatchService {
+  readonly #adapter: OutboundProviderAdapter;
+
+  constructor(adapter: OutboundProviderAdapter) {
+    this.#adapter = adapter;
+  }
+
+  async execute(
+    input: OutboundSubmissionV1,
+    context: ProviderDispatchContext,
+    signal: AbortSignal,
+  ): Promise<ProviderDispatchExecution> {
+    const snapshotResult = (
+      result: Result<ProviderAcceptanceV1, ProviderDispatchErrorType>,
+    ): ProviderDispatchExecution =>
+      Object.freeze({ action: actionFor(result), boundary: context.boundary.snapshot(), result });
+
+    const envelope = canonicalizeSmtpEnvelope(input.envelope);
+    if (!envelope.ok) {
+      return snapshotResult({
+        error: new ProviderDispatchError({
+          code: "PROVIDER_NOT_SENT",
+          deliveryCertainty: "not_sent",
+          evidenceCode: "invalid_submission_envelope",
+          message: "Outbound submission envelope is invalid before provider dispatch.",
+          phase: "dns",
+          retryable: false,
+        }),
+        ok: false,
+      });
+    }
+    if (
+      input.routeBinding.providerId !== this.#adapter.descriptor.providerId ||
+      input.routeBinding.adapterVersion !== this.#adapter.descriptor.adapterVersion ||
+      input.routeBinding.providerInstanceId !== context.providerInstanceId
+    ) {
+      return snapshotResult({
+        error: new ProviderDispatchError({
+          code: "PROVIDER_NOT_SENT",
+          deliveryCertainty: "not_sent",
+          evidenceCode: "binding_identity_mismatch",
+          message: "Outbound submission does not match the registered adapter identity.",
+          phase: "dns",
+          retryable: false,
+        }),
+        ok: false,
+      });
+    }
+
+    let returned: Result<ProviderAcceptanceV1, ProviderDispatchErrorType>;
+    try {
+      const adapterResult = await this.#adapter.submitRaw(input, context, signal);
+      if (adapterResult.ok) {
+        const boundary = context.boundary.snapshot();
+        if (boundary.classification.certainty !== "accepted") {
+          returned = {
+            error: normalizedFailure(context.boundary, "acceptance_without_transport_proof"),
+            ok: false,
+          };
+        } else {
+          const acceptance = validateProviderAcceptance(adapterResult.value, envelope.value);
+          returned = acceptance;
+        }
+      } else if (adapterResult.error instanceof ProviderDispatchError) {
+        const observed = context.boundary.snapshot().classification.certainty;
+        if (adapterResult.error.deliveryCertainty === "not_sent" && observed !== "not_sent") {
+          returned = {
+            error: new ProviderDispatchError({
+              cause: adapterResult.error,
+              code: "PROVIDER_UNKNOWN",
+              deliveryCertainty: "unknown",
+              evidenceCode: "not_sent_contradicts_boundary",
+              message: "Adapter not-sent result contradicts dispatch boundary instrumentation.",
+              phase: context.boundary.snapshot().phase,
+              retryable: false,
+            }),
+            ok: false,
+          };
+        } else {
+          returned = adapterResult;
+        }
+      } else {
+        returned = {
+          error: normalizedFailure(context.boundary, "non_dispatch_error", adapterResult.error),
+          ok: false,
+        };
+      }
+    } catch (cause) {
+      returned = {
+        error: normalizedFailure(
+          context.boundary,
+          signal.aborted ? "dispatch_aborted" : "adapter_threw",
+          cause,
+        ),
+        ok: false,
+      };
+    }
+
+    if (
+      !returned.ok &&
+      returned.error.deliveryCertainty === "unknown" &&
+      returned.error.retryable
+    ) {
+      returned = {
+        error: new ProviderDispatchError({
+          cause: returned.error,
+          code: "PROVIDER_UNKNOWN",
+          deliveryCertainty: "unknown",
+          evidenceCode: "unknown_retry_forbidden",
+          message: "Unknown provider delivery cannot be retried automatically.",
+          phase: returned.error.phase,
+          retryable: false,
+        }),
+        ok: false,
+      };
+    }
+    return snapshotResult(returned);
+  }
+}
+
+/** Compatibility entry point. Prefer a long-lived service when the adapter is reused. @public */
+export const executeProviderDispatch = (
   adapter: OutboundProviderAdapter,
   input: OutboundSubmissionV1,
   context: ProviderDispatchContext,
   signal: AbortSignal,
-): Promise<ProviderDispatchExecution> => {
-  const snapshotResult = (
-    result: Result<ProviderAcceptanceV1, ProviderDispatchErrorType>,
-  ): ProviderDispatchExecution =>
-    Object.freeze({ action: actionFor(result), boundary: context.boundary.snapshot(), result });
-
-  const envelope = canonicalizeSmtpEnvelope(input.envelope);
-  if (!envelope.ok) {
-    return snapshotResult({
-      error: new ProviderDispatchError({
-        code: "PROVIDER_NOT_SENT",
-        deliveryCertainty: "not_sent",
-        evidenceCode: "invalid_submission_envelope",
-        message: "Outbound submission envelope is invalid before provider dispatch.",
-        phase: "dns",
-        retryable: false,
-      }),
-      ok: false,
-    });
-  }
-  if (
-    input.routeBinding.providerId !== adapter.descriptor.providerId ||
-    input.routeBinding.adapterVersion !== adapter.descriptor.adapterVersion ||
-    input.routeBinding.providerInstanceId !== context.providerInstanceId
-  ) {
-    return snapshotResult({
-      error: new ProviderDispatchError({
-        code: "PROVIDER_NOT_SENT",
-        deliveryCertainty: "not_sent",
-        evidenceCode: "binding_identity_mismatch",
-        message: "Outbound submission does not match the registered adapter identity.",
-        phase: "dns",
-        retryable: false,
-      }),
-      ok: false,
-    });
-  }
-
-  let returned: Result<ProviderAcceptanceV1, ProviderDispatchErrorType>;
-  try {
-    const adapterResult = await adapter.submitRaw(input, context, signal);
-    if (adapterResult.ok) {
-      const boundary = context.boundary.snapshot();
-      if (boundary.classification.certainty !== "accepted") {
-        returned = {
-          error: normalizedFailure(context.boundary, "acceptance_without_transport_proof"),
-          ok: false,
-        };
-      } else {
-        const acceptance = validateProviderAcceptance(adapterResult.value, envelope.value);
-        returned = acceptance;
-      }
-    } else if (adapterResult.error instanceof ProviderDispatchError) {
-      const observed = context.boundary.snapshot().classification.certainty;
-      if (adapterResult.error.deliveryCertainty === "not_sent" && observed !== "not_sent") {
-        returned = {
-          error: new ProviderDispatchError({
-            cause: adapterResult.error,
-            code: "PROVIDER_UNKNOWN",
-            deliveryCertainty: "unknown",
-            evidenceCode: "not_sent_contradicts_boundary",
-            message: "Adapter not-sent result contradicts dispatch boundary instrumentation.",
-            phase: context.boundary.snapshot().phase,
-            retryable: false,
-          }),
-          ok: false,
-        };
-      } else {
-        returned = adapterResult;
-      }
-    } else {
-      returned = {
-        error: normalizedFailure(context.boundary, "non_dispatch_error", adapterResult.error),
-        ok: false,
-      };
-    }
-  } catch (cause) {
-    returned = {
-      error: normalizedFailure(
-        context.boundary,
-        signal.aborted ? "dispatch_aborted" : "adapter_threw",
-        cause,
-      ),
-      ok: false,
-    };
-  }
-
-  if (!returned.ok && returned.error.deliveryCertainty === "unknown" && returned.error.retryable) {
-    returned = {
-      error: new ProviderDispatchError({
-        cause: returned.error,
-        code: "PROVIDER_UNKNOWN",
-        deliveryCertainty: "unknown",
-        evidenceCode: "unknown_retry_forbidden",
-        message: "Unknown provider delivery cannot be retried automatically.",
-        phase: returned.error.phase,
-        retryable: false,
-      }),
-      ok: false,
-    };
-  }
-  return snapshotResult(returned);
-};
+): Promise<ProviderDispatchExecution> =>
+  new ProviderDispatchService(adapter).execute(input, context, signal);

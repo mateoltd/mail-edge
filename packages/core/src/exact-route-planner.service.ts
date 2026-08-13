@@ -30,6 +30,14 @@ export interface OutboundRoutePlanInput {
   readonly tenantId: TenantId;
 }
 
+/** Immutable exact-domain decision made before repository I/O. @public */
+export interface OutboundRouteDecision {
+  readonly domainALabel: string;
+  readonly envelope: SmtpEnvelopeV1;
+  readonly raw: RawMessageRefV1;
+  readonly tenantId: TenantId;
+}
+
 const routeFailure = (
   code: "BINDING_UNAVAILABLE" | "INTERNAL" | "VALIDATION_FAILED",
   reason: string,
@@ -51,6 +59,81 @@ const canonicalRouteDomain = (value: string): Result<string, MailEdgeError> => {
   return { ok: true, value: mailbox.value.domainALabel };
 };
 
+/** Pure total exact-domain and direction decision with no fallback or suffix matching. @public */
+export const decideOutboundRoute = (
+  input: OutboundRoutePlanInput,
+): Result<OutboundRouteDecision, MailEdgeError> => {
+  const canonicalEnvelope = canonicalizeSmtpEnvelope(input.envelope);
+  if (!canonicalEnvelope.ok) return canonicalEnvelope;
+
+  let domainResult: Result<string, MailEdgeError>;
+  if (input.routeDomainALabel !== undefined) {
+    domainResult = canonicalRouteDomain(input.routeDomainALabel);
+  } else if (canonicalEnvelope.value.mailFrom === null) {
+    domainResult = {
+      error: routeFailure("BINDING_UNAVAILABLE", "null_path_requires_explicit_domain"),
+      ok: false,
+    };
+  } else {
+    domainResult = { ok: true, value: canonicalEnvelope.value.mailFrom.domainALabel };
+  }
+  if (!domainResult.ok) return domainResult;
+  if (
+    canonicalEnvelope.value.mailFrom !== null &&
+    canonicalEnvelope.value.mailFrom.domainALabel !== domainResult.value
+  ) {
+    return {
+      error: routeFailure("VALIDATION_FAILED", "route_domain_sender_mismatch"),
+      ok: false,
+    };
+  }
+  return {
+    ok: true,
+    value: Object.freeze({
+      domainALabel: domainResult.value,
+      envelope: canonicalEnvelope.value.wire,
+      raw: input.raw,
+      tenantId: input.tenantId,
+    }),
+  };
+};
+
+/** Pure total compiler from an exact route decision and repository result. @public */
+export const compileOutboundRoutePlan = (
+  decision: OutboundRouteDecision,
+  binding: RouteBindingSnapshotV1,
+): Result<OutboundRoutePlan, MailEdgeError> => {
+  if (
+    binding.tenantId !== decision.tenantId ||
+    binding.direction !== "outbound" ||
+    binding.domainALabel !== decision.domainALabel ||
+    binding.domainALabel.includes("*")
+  ) {
+    return { error: routeFailure("INTERNAL", "repository_binding_mismatch"), ok: false };
+  }
+  const planDigest = sha256CanonicalJson({
+    bindingId: binding.bindingId,
+    bindingVersion: binding.bindingVersion,
+    capabilityDigest: binding.capabilityDigest,
+    domainALabel: decision.domainALabel,
+    envelope: decision.envelope,
+    rawSha256: decision.raw.sha256,
+    rawSize: decision.raw.size,
+    tenantId: decision.tenantId,
+  });
+  return {
+    ok: true,
+    value: Object.freeze({
+      binding,
+      domainALabel: decision.domainALabel,
+      envelope: decision.envelope,
+      planDigest,
+      raw: decision.raw,
+      tenantId: decision.tenantId,
+    }),
+  };
+};
+
 /** Resolves only one exact active outbound binding; it has no suffix or default path. @public */
 export class ExactRoutePlannerService {
   readonly #bindings: RouteBindingRepository;
@@ -65,36 +148,12 @@ export class ExactRoutePlannerService {
     input: OutboundRoutePlanInput,
     signal: AbortSignal,
   ): Promise<Result<OutboundRoutePlan, MailEdgeError>> {
-    const canonicalEnvelope = canonicalizeSmtpEnvelope(input.envelope);
-    if (!canonicalEnvelope.ok) return Promise.resolve(canonicalEnvelope);
-
-    let domainResult: Result<string, MailEdgeError>;
-    if (input.routeDomainALabel !== undefined) {
-      domainResult = canonicalRouteDomain(input.routeDomainALabel);
-    } else if (canonicalEnvelope.value.mailFrom === null) {
-      domainResult = {
-        error: routeFailure("BINDING_UNAVAILABLE", "null_path_requires_explicit_domain"),
-        ok: false,
-      };
-    } else {
-      domainResult = { ok: true, value: canonicalEnvelope.value.mailFrom.domainALabel };
-    }
-    if (!domainResult.ok) return Promise.resolve(domainResult);
-    if (
-      canonicalEnvelope.value.mailFrom !== null &&
-      canonicalEnvelope.value.mailFrom.domainALabel !== domainResult.value
-    ) {
-      return Promise.resolve({
-        error: routeFailure("VALIDATION_FAILED", "route_domain_sender_mismatch"),
-        ok: false,
-      });
-    }
-
-    const domainALabel = domainResult.value;
+    const decision = decideOutboundRoute(input);
+    if (!decision.ok) return Promise.resolve(decision);
     return this.#unitOfWork.execute(async (context, transactionSignal) => {
       const found = await this.#bindings.findExactActive(
-        input.tenantId,
-        domainALabel,
+        decision.value.tenantId,
+        decision.value.domainALabel,
         "outbound",
         context,
         transactionSignal,
@@ -103,37 +162,7 @@ export class ExactRoutePlannerService {
       if (found.value === null) {
         return { error: routeFailure("BINDING_UNAVAILABLE", "exact_binding_not_found"), ok: false };
       }
-      const binding = found.value;
-      if (
-        binding.tenantId !== input.tenantId ||
-        binding.direction !== "outbound" ||
-        binding.domainALabel !== domainALabel ||
-        binding.domainALabel.includes("*")
-      ) {
-        return { error: routeFailure("INTERNAL", "repository_binding_mismatch"), ok: false };
-      }
-      const envelope = canonicalEnvelope.value.wire;
-      const planDigest = sha256CanonicalJson({
-        bindingId: binding.bindingId,
-        bindingVersion: binding.bindingVersion,
-        capabilityDigest: binding.capabilityDigest,
-        domainALabel,
-        envelope,
-        rawSha256: input.raw.sha256,
-        rawSize: input.raw.size,
-        tenantId: input.tenantId,
-      });
-      return {
-        ok: true,
-        value: Object.freeze({
-          binding,
-          domainALabel,
-          envelope,
-          planDigest,
-          raw: input.raw,
-          tenantId: input.tenantId,
-        }),
-      };
+      return compileOutboundRoutePlan(decision.value, found.value);
     }, signal);
   }
 }

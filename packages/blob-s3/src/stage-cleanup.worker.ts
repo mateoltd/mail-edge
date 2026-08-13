@@ -19,16 +19,20 @@ import type {
 export interface BlobStageCleanupConfig {
   readonly batchSize: number;
   readonly maximumListPages: number;
+  readonly operationTimeoutMilliseconds?: number;
 }
 
 const validateConfig = (config: BlobStageCleanupConfig): void => {
+  const operationTimeoutMilliseconds = config.operationTimeoutMilliseconds ?? 30_000;
   if (
     !Number.isSafeInteger(config.batchSize) ||
     config.batchSize < 1 ||
     config.batchSize > 1000 ||
     !Number.isSafeInteger(config.maximumListPages) ||
     config.maximumListPages < 1 ||
-    config.maximumListPages > 100
+    config.maximumListPages > 100 ||
+    !Number.isSafeInteger(operationTimeoutMilliseconds) ||
+    operationTimeoutMilliseconds < 1
   ) {
     throw new TypeError("Stage cleanup limits must be positive and bounded.");
   }
@@ -55,7 +59,10 @@ export class BlobStageCleanupWorker {
     validateConfig(input.config);
     this.#bucket = input.bucket;
     this.#clock = input.clock;
-    this.#config = Object.freeze({ ...input.config });
+    this.#config = Object.freeze({
+      ...input.config,
+      operationTimeoutMilliseconds: input.config.operationTimeoutMilliseconds ?? 30_000,
+    });
     this.#errors = input.errors;
     this.#metadata = input.metadata;
     this.#s3 = input.s3;
@@ -92,10 +99,11 @@ export class BlobStageCleanupWorker {
   }
 
   async #cleanupStage(stage: AbandonedBlobStage, signal: AbortSignal): Promise<DriverResult<void>> {
+    const operationSignal = this.#operationSignal(signal);
     try {
-      await this.#abortMultipartUploads(stage.objectKey, signal);
+      await this.#abortMultipartUploads(stage.objectKey, operationSignal);
       if (stage.objectVersion === undefined) {
-        await this.#deleteDiscoveredVersions(stage.objectKey, signal);
+        await this.#deleteDiscoveredVersions(stage.objectKey, operationSignal);
       } else {
         await this.#s3.send(
           new DeleteObjectCommand({
@@ -103,10 +111,10 @@ export class BlobStageCleanupWorker {
             Key: stage.objectKey,
             VersionId: stage.objectVersion,
           }),
-          { abortSignal: signal },
+          { abortSignal: operationSignal },
         );
       }
-      return await this.#metadata.completeStageCleanup(stage, this.#clock.now(), signal);
+      return await this.#metadata.completeStageCleanup(stage, this.#clock.now(), operationSignal);
     } catch (cause) {
       return {
         error: this.#errors.create({
@@ -118,6 +126,13 @@ export class BlobStageCleanupWorker {
         ok: false,
       };
     }
+  }
+
+  #operationSignal(signal: AbortSignal): AbortSignal {
+    return AbortSignal.any([
+      signal,
+      AbortSignal.timeout(this.#config.operationTimeoutMilliseconds ?? 30_000),
+    ]);
   }
 
   async #abortMultipartUploads(key: string, signal: AbortSignal): Promise<void> {
@@ -194,4 +209,5 @@ export class BlobStageCleanupWorker {
 export const defaultBlobStageCleanupConfig: Readonly<BlobStageCleanupConfig> = Object.freeze({
   batchSize: 100,
   maximumListPages: 10,
+  operationTimeoutMilliseconds: 30_000,
 });
