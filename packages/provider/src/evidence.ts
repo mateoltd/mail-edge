@@ -18,6 +18,7 @@ import {
 } from "./evidence.schema.js";
 
 const SIGNATURE_DOMAIN = "mail-edge-provider-conformance-v1\0";
+const ED25519_SIGNATURE_BYTES = 64;
 
 /** Bytes and metadata supplied to a detached evidence signer. @public */
 export interface EvidenceSignatureInput {
@@ -150,6 +151,15 @@ export class ConformanceEvidenceSigningService {
     }
     const signed = await this.#signer.sign(conformanceSignaturePayload(report), signal);
     if (!signed.ok) return signed;
+    if (
+      !(signed.value instanceof Uint8Array) ||
+      signed.value.byteLength !== ED25519_SIGNATURE_BYTES
+    ) {
+      return {
+        error: evidenceError("VALIDATION_FAILED", "signature_length"),
+        ok: false,
+      };
+    }
     const envelope: SignedConformanceReportV1 = Object.freeze({
       report,
       reportDigest: conformanceReportDigest(report),
@@ -195,6 +205,12 @@ export class ConformanceEvidenceVerificationService {
       signature = Buffer.from(signed.signature.value, "base64url");
     } catch (cause) {
       return { error: evidenceError("VALIDATION_FAILED", "signature_encoding", cause), ok: false };
+    }
+    if (
+      signature.byteLength !== ED25519_SIGNATURE_BYTES ||
+      Buffer.from(signature).toString("base64url") !== signed.signature.value
+    ) {
+      return { error: evidenceError("VALIDATION_FAILED", "signature_length"), ok: false };
     }
     return this.#verifier.verify(
       {

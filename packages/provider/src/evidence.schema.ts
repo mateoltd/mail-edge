@@ -95,7 +95,7 @@ export const SignedConformanceReportV1Schema = Type.Object(
           minLength: 1,
           pattern: "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$",
         }),
-        value: Type.String({ maxLength: 128, minLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
+        value: Type.String({ maxLength: 86, minLength: 86, pattern: "^[A-Za-z0-9_-]+$" }),
       },
       { additionalProperties: false },
     ),

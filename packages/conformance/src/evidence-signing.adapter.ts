@@ -16,6 +16,7 @@ import {
 
 /** PEM text or DER bytes accepted by evidence signing helpers. @public */
 export type EvidenceKeyInput = string | Uint8Array;
+const ED25519_SIGNATURE_BYTES = 64;
 
 const signingError = (reason: string, cause?: unknown): MailEdgeError =>
   new MailEdgeError({
@@ -64,9 +65,13 @@ export class Ed25519EvidenceSigner implements EvidenceSigner {
       return Promise.resolve({ error: signingError("aborted", signal.reason), ok: false });
     }
     try {
+      const signature = new Uint8Array(cryptoSign(null, payload, this.#privateKey));
+      if (signature.byteLength !== ED25519_SIGNATURE_BYTES) {
+        return Promise.resolve({ error: signingError("signature_length"), ok: false });
+      }
       return Promise.resolve({
         ok: true,
-        value: new Uint8Array(cryptoSign(null, payload, this.#privateKey)),
+        value: signature,
       });
     } catch (cause) {
       return Promise.resolve({ error: signingError("sign_failed", cause), ok: false });
@@ -95,12 +100,21 @@ export class Ed25519EvidenceVerifier implements EvidenceVerifier {
     if (signal.aborted) {
       return Promise.resolve({ error: signingError("aborted", signal.reason), ok: false });
     }
+    const runtimeAlgorithm: unknown = input.algorithm;
+    const runtimeSignature: unknown = input.signature;
+    if (
+      runtimeAlgorithm !== "ed25519" ||
+      !(runtimeSignature instanceof Uint8Array) ||
+      runtimeSignature.byteLength !== ED25519_SIGNATURE_BYTES
+    ) {
+      return Promise.resolve({ ok: true, value: false });
+    }
     const key = this.#keys.get(input.keyId);
     if (key === undefined) return Promise.resolve({ ok: true, value: false });
     try {
       return Promise.resolve({
         ok: true,
-        value: cryptoVerify(null, input.payload, key, input.signature),
+        value: cryptoVerify(null, input.payload, key, runtimeSignature),
       });
     } catch (cause) {
       return Promise.resolve({ error: signingError("verify_failed", cause), ok: false });
