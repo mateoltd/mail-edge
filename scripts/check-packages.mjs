@@ -45,6 +45,10 @@ try {
       `${JSON.stringify(
         {
           dependencies,
+          devDependencies: {
+            "@types/node": "24.13.3",
+            "@types/pg": "8.21.0",
+          },
           name: "mail-edge-packed-consumer",
           packageManager: "pnpm@11.21.0",
           private: true,
@@ -62,6 +66,15 @@ try {
     writeFileSync(
       join(consumerDirectory, "consumer.mjs"),
       `import assert from "node:assert/strict";
+import * as blobS3Root from "@mail-edge/blob-s3";
+import * as conformanceRoot from "@mail-edge/conformance";
+import * as contractsRoot from "@mail-edge/contracts";
+import * as coreRoot from "@mail-edge/core";
+import * as mimeRoot from "@mail-edge/mime";
+import * as postgresRoot from "@mail-edge/postgres";
+import * as providerRoot from "@mail-edge/provider";
+import * as queuePgBossRoot from "@mail-edge/queue-pg-boss";
+import * as sdkRoot from "@mail-edge/sdk";
 import { createContractValidator, parseProviderId, SmtpEnvelopeV1Schema } from "@mail-edge/contracts";
 import { canonicalizeSmtpEnvelope } from "@mail-edge/core";
 import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
@@ -69,6 +82,9 @@ import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import { ProviderConformanceKit } from "@mail-edge/conformance";
 import { conformanceTarget } from "@mail-edge/conformance/examples/third-party-adapter";
 
+for (const root of [blobS3Root, conformanceRoot, contractsRoot, coreRoot, mimeRoot, postgresRoot, providerRoot, queuePgBossRoot, sdkRoot]) {
+  assert.ok(Object.keys(root).length > 0);
+}
 assert.equal(parseProviderId("clean-room-provider").ok, true);
 const envelope = { schemaVersion: "v1", mailFrom: null, rcptTo: [{ address: "recipient@example.test" }], smtpUtf8: false };
 assert.equal(createContractValidator().validate(SmtpEnvelopeV1Schema, envelope).ok, true);
@@ -83,6 +99,7 @@ assert.equal(conformance.value.passed, true);
     writeFileSync(
       join(consumerDirectory, "consumer.ts"),
       `import { parseProviderId, type ProviderId, type SmtpEnvelopeV1 } from "@mail-edge/contracts";
+import type { BlobMetadataStore } from "@mail-edge/blob-s3";
 import {
   canonicalizeSmtpEnvelope,
   type BlobStorePort,
@@ -94,6 +111,41 @@ import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import type { ProviderAdapterRegistration } from "@mail-edge/provider";
 import type { ProviderConformanceTarget } from "@mail-edge/conformance";
+import type { PostgresBlobRepository } from "@mail-edge/postgres";
+import type { PgBossWakeupConfig } from "@mail-edge/queue-pg-boss";
+
+type AssertAssignable<Target, Source extends Target> = true;
+type BlobMetadataOperations = Pick<
+  BlobMetadataStore,
+  | "abandonStage"
+  | "claimExpiredStages"
+  | "claimOrphanPurge"
+  | "claimRetentionPurge"
+  | "commitPromotion"
+  | "completePurge"
+  | "completeStageCleanup"
+  | "getBlob"
+  | "listPendingPromotions"
+  | "listRetentionCandidates"
+  | "markObjectDeleted"
+  | "markUploaded"
+  | "markUploading"
+  | "markVerified"
+  | "observeOrphans"
+  | "preparePromotion"
+  | "reclaimExpiredPurges"
+  | "recordFinalObject"
+  | "reserveStage"
+>;
+type PostgresBlobMetadataOperations = Pick<PostgresBlobRepository, keyof BlobMetadataOperations>;
+type PostgresSatisfiesNeutralBlobMetadata = AssertAssignable<
+  BlobMetadataOperations,
+  PostgresBlobMetadataOperations
+>;
+type NeutralBlobMetadataSatisfiesPostgres = AssertAssignable<
+  PostgresBlobMetadataOperations,
+  BlobMetadataOperations
+>;
 
 const parsed = parseProviderId("clean-room-provider");
 if (!parsed.ok) throw new Error("provider ID did not validate");
@@ -106,6 +158,7 @@ declare const blobStore: BlobStorePort;
 declare const providerRegistry: ProviderRegistryPort;
 declare const registration: ProviderAdapterRegistration;
 declare const tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
+declare const queueConfig: PgBossWakeupConfig;
 builder
   .withBlobStore(blobStore)
   .withProviderRegistry(providerRegistry)
@@ -117,6 +170,11 @@ void providerId;
 void canonical;
 void conformanceTarget;
 void headerPatcher;
+void queueConfig;
+const postgresSatisfiesNeutral: PostgresSatisfiesNeutralBlobMetadata = true;
+const neutralSatisfiesPostgres: NeutralBlobMetadataSatisfiesPostgres = true;
+void postgresSatisfiesNeutral;
+void neutralSatisfiesPostgres;
 `,
     );
     writeFileSync(
@@ -132,7 +190,7 @@ void headerPatcher;
             skipLibCheck: false,
             strict: true,
             target: "ES2024",
-            types: [],
+            types: ["node"],
           },
           include: ["consumer.ts"],
         },

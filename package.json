@@ -28,6 +28,7 @@
     "api:generate": "node ./scripts/check-api.mjs --generate",
     "build": "node ./scripts/clean-typescript-outputs.mjs && turbo run build",
     "changeset": "changeset",
+    "changeset:check": "node ./scripts/check-changesets.mjs origin/main",
     "changeset:status": "changeset status --since=origin/main",
     "commitlint:check": "node ./scripts/check-commitlint.mjs",
     "corpus:check": "node ./test/corpus/check-corpus.mjs",
