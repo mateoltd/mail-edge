@@ -1,8 +1,10 @@
 # Mail Edge
 
 Mail Edge is a provider-neutral foundation for durable mail ingestion and delivery. The repository
-currently contains only its monorepo, quality, governance, and supply-chain foundation. It does not
-yet publish a usable SDK, service, provider integration, or mail-processing implementation.
+contains versioned contracts, invariant-preserving core reducers and ports, an
+infrastructure-neutral SDK facade, a public provider SPI, and an executable provider conformance
+kit. Concrete providers, runtime infrastructure, and the reference service are developed as separate
+dependency layers.
 
 ## Development
 
