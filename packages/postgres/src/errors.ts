@@ -39,6 +39,15 @@ export const staleFenceError = (expectedFence: number): MailEdgeError =>
     safeDetails: { expectedFence },
   });
 
+export const invalidBlobPromotionError = (reason: string): MailEdgeError =>
+  new MailEdgeError({
+    code: "VALIDATION_FAILED",
+    deliveryCertainty: "not_sent",
+    message: "Blob promotion metadata does not match its verified stage.",
+    retryable: false,
+    safeDetails: { reason },
+  });
+
 export const abortedError = (operation: string): MailEdgeError =>
   new MailEdgeError({
     code: "STORAGE_UNAVAILABLE",

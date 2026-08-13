@@ -646,6 +646,50 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     ).rejects.toMatchObject({ code: "23514" });
   });
 
+  test("application-role direct writes cannot forge available blob promotion", async () => {
+    const attemptDirectInsert = async (
+      stageState: "reserved" | "promoted",
+      rawDigestByte: string,
+    ): Promise<void> => {
+      const client = await database.pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+        await client.query(
+          `INSERT INTO blob_ingest_stages
+            (stage_id, tenant_id, purpose, object_key, final_object_key, final_object_version,
+             state, expected_max_bytes, observed_bytes, observed_sha256, encryption_key_ref,
+             wrapped_dek, encryption_metadata, expires_at)
+           VALUES ('018f4f6a-7b2c-7000-8000-000000000123', $1, 'inbound',
+             'scratch/direct-boundary', 'raw/direct-boundary', 'object-version-direct', $2,
+             4, 4, decode(repeat('79', 32), 'hex'), 'kms://direct', decode('79', 'hex'),
+             '{"formatVersion":1,"purpose":"inbound"}', now() + interval '1 day')`,
+          [tenantId, stageState],
+        );
+        await client.query(
+          `INSERT INTO raw_blobs
+            (blob_id, tenant_id, source_stage_id, sha256, size_bytes, media_type,
+             object_key, object_version, encryption_format_version, wrapped_dek, kms_key_ref,
+             encryption_metadata, status, available_at, retain_until)
+           VALUES ('018f4f6a-7b2c-7000-8000-000000000124', $1,
+             '018f4f6a-7b2c-7000-8000-000000000123', decode(repeat($2, 32), 'hex'), 4,
+             'message/rfc822', 'raw/direct-boundary', 'object-version-direct', 1,
+             decode('79', 'hex'), 'kms://direct',
+             '{"formatVersion":1,"purpose":"inbound"}', 'available', now(),
+             now() + interval '30 days')`,
+          [tenantId, rawDigestByte],
+        );
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+      }
+    };
+
+    await expect(attemptDirectInsert("reserved", "79")).rejects.toMatchObject({ code: "23514" });
+    await expect(attemptDirectInsert("promoted", "80")).rejects.toMatchObject({ code: "23514" });
+    await expect(attemptDirectInsert("promoted", "79")).resolves.toBeUndefined();
+  });
+
   test("lets holds win and recovers expired purge leases with a new fence", async () => {
     const stageId = "018f4f6a-7b2c-7000-8000-000000000130";
     const retainedBlobId = "018f4f6a-7b2c-7000-8000-000000000131";
@@ -653,10 +697,10 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     const deletionId = "018f4f6a-7b2c-7000-8000-000000000133";
     await owner.query(
       `INSERT INTO blob_ingest_stages
-        (stage_id, tenant_id, purpose, object_key, final_object_key, state,
+        (stage_id, tenant_id, purpose, object_key, final_object_key, final_object_version, state,
          expected_max_bytes, observed_bytes, observed_sha256, encryption_key_ref,
          wrapped_dek, encryption_metadata, expires_at, created_at, updated_at)
-       VALUES ($1, $2, 'outbound_upload', 'scratch/retained', 'raw/retained', 'promoted',
+       VALUES ($1, $2, 'outbound_upload', 'scratch/retained', 'raw/retained', 'object-version-1', 'promoted',
          1, 1, decode(repeat('91', 32), 'hex'), 'kms://key', decode('11', 'hex'),
          '{"formatVersion":1,"purpose":"outbound_upload"}', '2026-07-02', '2026-07-01', '2026-07-01')`,
       [stageId, tenantId],
@@ -805,10 +849,10 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     const integrityAt = "2026-08-14T18:00:00.000Z";
     await owner.query(
       `INSERT INTO blob_ingest_stages
-        (stage_id, tenant_id, purpose, object_key, final_object_key, state,
+        (stage_id, tenant_id, purpose, object_key, final_object_key, final_object_version, state,
          expected_max_bytes, observed_bytes, observed_sha256, encryption_key_ref,
          wrapped_dek, encryption_metadata, expires_at)
-       VALUES ($1, $2, 'outbound_upload', 'scratch/damaged', 'raw/damaged', 'promoted',
+       VALUES ($1, $2, 'outbound_upload', 'scratch/damaged', 'raw/damaged', 'object-version-2', 'promoted',
          1, 1, decode(repeat('92', 32), 'hex'), 'kms://key', decode('11', 'hex'),
          '{"formatVersion":1,"purpose":"outbound_upload"}', now() + interval '1 day')`,
       [stageId, tenantId],
@@ -842,6 +886,13 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
         `${corrupted.error.code}:${corrupted.error.message}:${String(corrupted.error.cause)}`,
       );
     }
+    expect(
+      await blobs.markCorrupt(
+        { blobId: damagedBlobId, expectedVersion: 0, tenantId },
+        integrityAt,
+        new AbortController().signal,
+      ),
+    ).toEqual({ ok: true, value: undefined });
     const quarantined = await owner.query<{ intent_state: string; blob_status: string }>(
       `SELECT i.state AS intent_state, b.status AS blob_status
        FROM outbound_intents i

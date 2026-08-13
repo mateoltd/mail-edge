@@ -8,7 +8,12 @@ import { sql } from "kysely";
 
 import type { PostgresUnitOfWork } from "./database.service.js";
 import type { BlobIngestStageUpdate, RawBlob } from "./database.schema.js";
-import { notFoundError, postgresError, staleFenceError } from "./errors.js";
+import {
+  invalidBlobPromotionError,
+  notFoundError,
+  postgresError,
+  staleFenceError,
+} from "./errors.js";
 import { bytesToHex, dateToIso, hexToBytes, mapRawReference, safeInteger } from "./mapping.js";
 
 /** @public */
@@ -302,6 +307,24 @@ export class PostgresBlobRepository {
           ) {
             return { error: stageConflict(input.expectedVersion), ok: false };
           }
+          const observedBytes = safeInteger(stage.observedBytes);
+          const expectedMaximumBytes = safeInteger(stage.expectedMaxBytes);
+          const expectedObjectVersion = input.finalObjectVersion ?? null;
+          const metadataVersion = stage.encryptionMetadata["formatVersion"];
+          const metadataPurpose = stage.encryptionMetadata["purpose"];
+          if (
+            observedBytes > expectedMaximumBytes ||
+            stage.finalObjectVersion !== expectedObjectVersion ||
+            typeof metadataVersion !== "number" ||
+            !Number.isSafeInteger(metadataVersion) ||
+            metadataVersion < 1 ||
+            metadataPurpose !== stage.purpose
+          ) {
+            return {
+              error: invalidBlobPromotionError("stage_claim_mismatch"),
+              ok: false,
+            };
+          }
           const existing = await transaction
             .selectFrom("rawBlobs")
             .selectAll()
@@ -310,10 +333,6 @@ export class PostgresBlobRepository {
             .executeTakeFirst();
           if (existing !== undefined) {
             return { ok: true, value: recordFromRow(existing) };
-          }
-          const metadataVersion = stage.encryptionMetadata["formatVersion"];
-          if (typeof metadataVersion !== "number" || !Number.isSafeInteger(metadataVersion)) {
-            throw new TypeError("Blob stage encryption format version is invalid.");
           }
           const inserted = await transaction
             .insertInto("rawBlobs")
@@ -329,7 +348,7 @@ export class PostgresBlobRepository {
               objectVersion: input.finalObjectVersion ?? null,
               retainUntil: input.retainUntil,
               sha256: stage.observedSha256,
-              sizeBytes: stage.observedBytes,
+              sizeBytes: String(observedBytes),
               sourceStageId: input.stageId,
               status: "available",
               tenantId: input.tenantId,
@@ -492,6 +511,9 @@ export class PostgresBlobRepository {
             .where("blobId", "=", claim.blobId)
             .forUpdate()
             .executeTakeFirst();
+          if (blob?.status === "corrupt") {
+            return { ok: true, value: undefined };
+          }
           if (
             blob?.status !== "available" ||
             safeInteger(blob.optimisticVersion) !== claim.expectedVersion
