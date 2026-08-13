@@ -61,4 +61,24 @@ describe("pg-boss partial startup", () => {
     await scheduler.close(new AbortController().signal);
     expect(bossState.stopCalls).toBe(1);
   });
+
+  it("rejects non-finite and unsafe queue numeric configuration", () => {
+    const valid = defaultPgBossWakeupConfig("postgresql://fixture.invalid/mail-edge");
+    expect(
+      () =>
+        new PgBossWakeupScheduler(
+          { ...valid, pollingIntervalSeconds: Number.NaN },
+          executor,
+          errors,
+        ),
+    ).toThrow(TypeError);
+    expect(
+      () =>
+        new PgBossWakeupScheduler(
+          { ...valid, queryTimeoutMilliseconds: Number.POSITIVE_INFINITY },
+          executor,
+          errors,
+        ),
+    ).toThrow(TypeError);
+  });
 });
