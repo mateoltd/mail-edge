@@ -25,12 +25,14 @@ import type {
   RouteBindingRepository,
   UnitOfWorkContext,
 } from "@mail-edge/core";
+import { sql } from "kysely";
 
 import type { PostgresUnitOfWork } from "./database.service.js";
 import { postgresError } from "./errors.js";
 import {
   bytesToHex,
   hexToBytes,
+  immutableClone,
   mapBindingSnapshot,
   mapInboundReceipt,
   mapOutboundAttempt,
@@ -93,14 +95,47 @@ export class PostgresRouteBindingRepository implements RouteBindingRepository {
       return abortedResult("binding_find_exact_active");
     }
     try {
-      const row = await this.#unitOfWork
-        .transaction(context, tenantId)
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
+      const row = await transaction
         .selectFrom("routeBindings")
-        .selectAll()
-        .where("tenantId", "=", tenantId)
-        .where("domainALabel", "=", domainALabel)
-        .where("direction", "=", direction)
-        .where("state", "=", "active")
+        .innerJoin("providerInstances", (join) =>
+          join
+            .onRef("providerInstances.tenantId", "=", "routeBindings.tenantId")
+            .onRef("providerInstances.providerInstanceId", "=", "routeBindings.providerInstanceId"),
+        )
+        .innerJoin("domainClaims", (join) =>
+          join
+            .onRef("domainClaims.tenantId", "=", "routeBindings.tenantId")
+            .on(sql<boolean>`domain_claims.domain_a_label = route_bindings.domain_a_label`),
+        )
+        .selectAll("routeBindings")
+        .where("routeBindings.tenantId", "=", tenantId)
+        .where(sql<boolean>`route_bindings.domain_a_label = ${domainALabel}`)
+        .where("routeBindings.direction", "=", direction)
+        .where("routeBindings.state", "=", "active")
+        .where("providerInstances.state", "=", "enabled")
+        .where("domainClaims.verifiedAt", "is not", null)
+        .where((expression) =>
+          expression.or([
+            expression("domainClaims.expiresAt", "is", null),
+            expression("domainClaims.expiresAt", ">", sql<Date>`clock_timestamp()`),
+          ]),
+        )
+        .where("routeBindings.qualifiedAt", "is not", null)
+        .where((expression) =>
+          expression.exists(
+            expression
+              .selectFrom("routeBindingChecks")
+              .select("routeBindingChecks.checkId")
+              .whereRef("routeBindingChecks.tenantId", "=", "routeBindings.tenantId")
+              .whereRef("routeBindingChecks.bindingId", "=", "routeBindings.bindingId")
+              .whereRef("routeBindingChecks.bindingVersion", "=", "routeBindings.bindingVersion")
+              .where("routeBindingChecks.outcome", "=", "pass")
+              .where("routeBindingChecks.evidenceAt", "<=", sql<Date>`clock_timestamp()`)
+              .where("routeBindingChecks.expiresAt", ">", sql<Date>`clock_timestamp()`)
+              .whereRef("routeBindingChecks.evidenceAt", ">=", "routeBindings.qualifiedAt"),
+          ),
+        )
         .executeTakeFirst();
       return { ok: true, value: row === undefined ? null : mapBindingSnapshot(row) };
     } catch (cause) {
@@ -129,7 +164,7 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
       return abortedResult("intent_find");
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, tenantId);
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
       const row = await transaction
         .selectFrom("outboundIntents")
         .selectAll()
@@ -184,7 +219,6 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
       };
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, intent.tenantId);
       const keyDigest = hexToBytes(idempotency.keyDigest);
       const protectedDigest = await this.#cipher.protect(
         intent.tenantId,
@@ -192,6 +226,7 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
         keyDigest,
         signal,
       );
+      const transaction = await this.#unitOfWork.transaction(context, intent.tenantId);
       const inserted = await transaction
         .insertInto("outboundIntents")
         .values({
@@ -215,7 +250,7 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
         .returning("intentId")
         .executeTakeFirst();
       if (inserted !== undefined) {
-        return { ok: true, value: intent };
+        return { ok: true, value: immutableClone(intent) };
       }
       const existing = await transaction
         .selectFrom("outboundIntents")
@@ -280,8 +315,8 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
       };
     }
     try {
-      const updated = await this.#unitOfWork
-        .transaction(context, intent.tenantId)
+      const transaction = await this.#unitOfWork.transaction(context, intent.tenantId);
+      const updated = await transaction
         .updateTable("outboundIntents")
         .set({
           optimisticVersion: String(intent.version),
@@ -304,7 +339,7 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
             }),
             ok: false,
           }
-        : { ok: true, value: intent };
+        : { ok: true, value: immutableClone(intent) };
     } catch (cause) {
       return { error: postgresError(cause, "intent_update"), ok: false };
     }
@@ -329,7 +364,7 @@ export class PostgresOutboundAttemptRepository implements OutboundAttemptReposit
       return abortedResult("attempt_find");
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, tenantId);
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
       const row = await transaction
         .selectFrom("outboundAttempts")
         .selectAll()
@@ -339,22 +374,13 @@ export class PostgresOutboundAttemptRepository implements OutboundAttemptReposit
       if (row === undefined) {
         return { ok: true, value: null };
       }
-      const [binding, transmissionRaw] = await Promise.all([
-        transaction
-          .selectFrom("routeBindings")
-          .selectAll()
-          .where("tenantId", "=", tenantId)
-          .where("bindingId", "=", row.bindingId)
-          .where("bindingVersion", "=", row.bindingVersion)
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("rawBlobs")
-          .selectAll()
-          .where("tenantId", "=", tenantId)
-          .where("blobId", "=", row.transmissionBlobId)
-          .executeTakeFirstOrThrow(),
-      ]);
-      return { ok: true, value: mapOutboundAttempt(row, binding, transmissionRaw) };
+      const transmissionRaw = await transaction
+        .selectFrom("rawBlobs")
+        .selectAll()
+        .where("tenantId", "=", tenantId)
+        .where("blobId", "=", row.transmissionBlobId)
+        .executeTakeFirstOrThrow();
+      return { ok: true, value: mapOutboundAttempt(row, transmissionRaw) };
     } catch (cause) {
       return { error: postgresError(cause, "attempt_find"), ok: false };
     }
@@ -368,14 +394,25 @@ export class PostgresOutboundAttemptRepository implements OutboundAttemptReposit
     if (signal.aborted) {
       return abortedResult("attempt_insert");
     }
+    if (attempt.state === "dispatching") {
+      return {
+        error: new MailEdgeError({
+          code: "VALIDATION_FAILED",
+          deliveryCertainty: "not_sent",
+          message: "Dispatching attempts must be inserted through the fenced lease claim.",
+          retryable: false,
+        }),
+        ok: false,
+      };
+    }
     try {
       const recipientGroup = Object.freeze({
         recipientIndexes: attempt.recipientIndexes,
         schemaVersion: "v1",
       });
       const groupDigest = createHash("sha256").update(JSON.stringify(recipientGroup)).digest();
-      await this.#unitOfWork
-        .transaction(context, attempt.tenantId)
+      const transaction = await this.#unitOfWork.transaction(context, attempt.tenantId);
+      await transaction
         .insertInto("outboundAttempts")
         .values({
           attemptId: attempt.attemptId,
@@ -396,13 +433,14 @@ export class PostgresOutboundAttemptRepository implements OutboundAttemptReposit
           providerMessageIdHash: null,
           recipientGroup,
           recipientGroupDigest: groupDigest,
+          routeSnapshot: jsonObject(attempt.routeBinding),
           responseEvidence: attempt.lastEvidence ?? null,
           state: attempt.state,
           tenantId: attempt.tenantId,
           transmissionBlobId: attempt.transmissionRaw.blobId,
         })
         .executeTakeFirstOrThrow();
-      return { ok: true, value: attempt };
+      return { ok: true, value: immutableClone(attempt) };
     } catch (cause) {
       return { error: postgresError(cause, "attempt_insert"), ok: false };
     }
@@ -429,44 +467,65 @@ export class PostgresInboundReceiptRepository implements InboundReceiptRepositor
       return abortedResult("receipt_find");
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, tenantId);
-      const row = await transaction
-        .selectFrom("inboundReceipts")
-        .selectAll()
-        .where("tenantId", "=", tenantId)
-        .where("receiptId", "=", receiptId)
-        .executeTakeFirst();
-      if (row === undefined) {
+      const durable = await this.#unitOfWork.readTransaction(
+        context,
+        tenantId,
+        async (transaction) => {
+          const row = await transaction
+            .selectFrom("inboundReceipts")
+            .selectAll()
+            .where("tenantId", "=", tenantId)
+            .where("receiptId", "=", receiptId)
+            .executeTakeFirst();
+          if (
+            row?.rawBlobId === undefined ||
+            row.rawBlobId === null ||
+            row.envelope === null ||
+            row.verificationDigest === null
+          ) {
+            return null;
+          }
+          const [binding, raw] = await Promise.all([
+            transaction
+              .selectFrom("routeBindings")
+              .selectAll()
+              .where("tenantId", "=", tenantId)
+              .where("bindingId", "=", row.bindingId)
+              .where("bindingVersion", "=", row.bindingVersion)
+              .executeTakeFirstOrThrow(),
+            transaction
+              .selectFrom("rawBlobs")
+              .selectAll()
+              .where("tenantId", "=", tenantId)
+              .where("blobId", "=", row.rawBlobId)
+              .executeTakeFirstOrThrow(),
+          ]);
+          return immutableClone({ binding, raw, row });
+        },
+        signal,
+      );
+      if (durable === null) {
         return { ok: true, value: null };
       }
-      if (row.rawBlobId === null || row.envelope === null || row.verificationDigest === null) {
-        return { ok: true, value: null };
+      const receiptKeyBytes = await this.#cipher.unprotect(
+        tenantId,
+        "provider_receipt_key",
+        durable.row.providerReceiptKeyCiphertext,
+        signal,
+      );
+      try {
+        return {
+          ok: true,
+          value: mapInboundReceipt(
+            durable.row,
+            Buffer.from(receiptKeyBytes).toString("utf8"),
+            durable.binding,
+            durable.raw,
+          ),
+        };
+      } finally {
+        receiptKeyBytes.fill(0);
       }
-      const [binding, raw, receiptKeyBytes] = await Promise.all([
-        transaction
-          .selectFrom("routeBindings")
-          .selectAll()
-          .where("tenantId", "=", tenantId)
-          .where("bindingId", "=", row.bindingId)
-          .where("bindingVersion", "=", row.bindingVersion)
-          .executeTakeFirstOrThrow(),
-        transaction
-          .selectFrom("rawBlobs")
-          .selectAll()
-          .where("tenantId", "=", tenantId)
-          .where("blobId", "=", row.rawBlobId)
-          .executeTakeFirstOrThrow(),
-        this.#cipher.unprotect(
-          tenantId,
-          "provider_receipt_key",
-          row.providerReceiptKeyCiphertext,
-          signal,
-        ),
-      ]);
-      return {
-        ok: true,
-        value: mapInboundReceipt(row, Buffer.from(receiptKeyBytes).toString("utf8"), binding, raw),
-      };
     } catch (cause) {
       return { error: postgresError(cause, "receipt_find"), ok: false };
     }
@@ -484,13 +543,13 @@ export class PostgresInboundReceiptRepository implements InboundReceiptRepositor
       return abortedResult("receipt_commit_stored");
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, receipt.tenantId);
       const keyCiphertext = await this.#cipher.protect(
         receipt.tenantId,
         "provider_receipt_key",
         Buffer.from(receipt.providerReceiptKey, "utf8"),
         signal,
       );
+      const transaction = await this.#unitOfWork.transaction(context, receipt.tenantId);
       await transaction
         .insertInto("inboundReceipts")
         .values({
@@ -532,7 +591,10 @@ export class PostgresInboundReceiptRepository implements InboundReceiptRepositor
         .returning("receiptId")
         .executeTakeFirst();
       if (dedupe !== undefined) {
-        return { ok: true, value: { duplicate: false, receiptId: receipt.receiptId } };
+        return {
+          ok: true,
+          value: Object.freeze({ duplicate: false, receiptId: receipt.receiptId }),
+        };
       }
       await transaction
         .deleteFrom("inboundReceipts")
@@ -548,7 +610,7 @@ export class PostgresInboundReceiptRepository implements InboundReceiptRepositor
         .executeTakeFirstOrThrow();
       return {
         ok: true,
-        value: { duplicate: true, receiptId: existing.receiptId as ReceiptId },
+        value: Object.freeze({ duplicate: true, receiptId: existing.receiptId as ReceiptId }),
       };
     } catch (cause) {
       return { error: postgresError(cause, "receipt_commit_stored"), ok: false };
@@ -574,8 +636,8 @@ export class PostgresIdempotencyRepository implements IdempotencyRepository {
       return abortedResult("idempotency_find");
     }
     try {
-      const row = await this.#unitOfWork
-        .transaction(context, tenantId)
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
+      const row = await transaction
         .selectFrom("outboundIntents")
         .select(["createdAt", "intentId", "requestFingerprint"])
         .where("tenantId", "=", tenantId)
@@ -586,14 +648,14 @@ export class PostgresIdempotencyRepository implements IdempotencyRepository {
         value:
           row === undefined
             ? null
-            : {
+            : Object.freeze({
                 createdAt: new Date(row.createdAt).toISOString(),
                 intentId: row.intentId as IntentId,
                 keyDigest,
                 requestFingerprint: bytesToHex(row.requestFingerprint),
                 schemaVersion: "v1",
                 tenantId,
-              },
+              }),
       };
     } catch (cause) {
       return { error: postgresError(cause, "idempotency_find"), ok: false };
@@ -618,7 +680,18 @@ export class PostgresAuditRepository implements AuditPort {
       return abortedResult("audit_append");
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, event.tenantId);
+      if (event.tenantId === undefined) {
+        return {
+          error: new MailEdgeError({
+            code: "VALIDATION_FAILED",
+            deliveryCertainty: "not_sent",
+            message: "Audit events must carry an explicit tenant identity.",
+            retryable: false,
+          }),
+          ok: false,
+        };
+      }
+      const transaction = await this.#unitOfWork.transaction(context, event.tenantId);
       await transaction
         .insertInto("auditEvents")
         .values({
@@ -633,7 +706,7 @@ export class PostgresAuditRepository implements AuditPort {
           reasonCode: event.reasonCode ?? null,
           targetId: event.targetId ?? null,
           targetType: event.targetType,
-          tenantId: event.tenantId ?? null,
+          tenantId: event.tenantId,
         })
         .executeTakeFirstOrThrow();
       return { ok: true, value: undefined };

@@ -25,6 +25,7 @@ export interface MigrationResult {
 const migrationNamePattern = /^\d{4}_[a-z][a-z0-9_]*\.sql$/u;
 const advisoryLockKey = 1_299_704_476_190_857_521n;
 const DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS = 30_000;
+const DEFAULT_MIGRATION_LOCK_TIMEOUT_MILLISECONDS = 5_000;
 const MAXIMUM_MIGRATION_COUNT = 1024;
 
 const defaultMigrationsDirectory = resolve(
@@ -33,6 +34,24 @@ const defaultMigrationsDirectory = resolve(
 );
 
 const digest = (contents: string): string => createHash("sha256").update(contents).digest("hex");
+
+const waitForLockRetry = (signal: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const cancel = (): void => {
+      clearTimeout(timer);
+      const reason: unknown = signal.reason;
+      reject(
+        reason instanceof Error
+          ? reason
+          : new DOMException("Migration lock acquisition canceled.", "AbortError"),
+      );
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, 25);
+    signal.addEventListener("abort", cancel, { once: true });
+  });
 
 const loadManifest = async (directory: string, signal: AbortSignal): Promise<ChecksumManifest> => {
   const value: unknown = JSON.parse(
@@ -102,17 +121,50 @@ export const loadVerifiedMigrations = async (
 /** Serialized, checksum-enforcing, forward-only PostgreSQL migration runner. @public */
 export class PostgresMigrationRunner {
   readonly #clientConfig: Readonly<ClientConfig>;
+  readonly #lockTimeoutMilliseconds: number;
   readonly #migrationsDirectory: string;
 
-  constructor(clientConfig: ClientConfig, migrationsDirectory = defaultMigrationsDirectory) {
+  constructor(
+    clientConfig: ClientConfig,
+    migrationsDirectory = defaultMigrationsDirectory,
+    lockTimeoutMilliseconds = DEFAULT_MIGRATION_LOCK_TIMEOUT_MILLISECONDS,
+  ) {
+    const connectionTimeoutMillis =
+      clientConfig.connectionTimeoutMillis ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS;
+    const queryTimeoutValue =
+      clientConfig.query_timeout ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS;
+    const statementTimeoutValue =
+      clientConfig.statement_timeout ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS;
+    if (
+      typeof clientConfig.connectionString !== "string" ||
+      clientConfig.connectionString.length < 1 ||
+      clientConfig.connectionString.length > 8192 ||
+      !Number.isSafeInteger(connectionTimeoutMillis) ||
+      connectionTimeoutMillis < 1 ||
+      connectionTimeoutMillis > 86_400_000 ||
+      typeof queryTimeoutValue !== "number" ||
+      !Number.isSafeInteger(queryTimeoutValue) ||
+      queryTimeoutValue < 1 ||
+      queryTimeoutValue > 86_400_000 ||
+      typeof statementTimeoutValue !== "number" ||
+      !Number.isSafeInteger(statementTimeoutValue) ||
+      statementTimeoutValue < 1 ||
+      statementTimeoutValue > 86_400_000 ||
+      !Number.isSafeInteger(lockTimeoutMilliseconds) ||
+      lockTimeoutMilliseconds < 1 ||
+      lockTimeoutMilliseconds > 60_000
+    ) {
+      throw new TypeError("Migration database and lock timeouts must be finite safe integers.");
+    }
+    const queryTimeout = queryTimeoutValue;
+    const statementTimeout = statementTimeoutValue;
     this.#clientConfig = Object.freeze({
       ...clientConfig,
-      connectionTimeoutMillis:
-        clientConfig.connectionTimeoutMillis ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS,
-      query_timeout: clientConfig.query_timeout ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS,
-      statement_timeout:
-        clientConfig.statement_timeout ?? DEFAULT_MIGRATION_IO_TIMEOUT_MILLISECONDS,
+      connectionTimeoutMillis,
+      query_timeout: queryTimeout,
+      statement_timeout: statementTimeout,
     });
+    this.#lockTimeoutMilliseconds = lockTimeoutMilliseconds;
     this.#migrationsDirectory = migrationsDirectory;
   }
 
@@ -121,9 +173,59 @@ export class PostgresMigrationRunner {
     const migrations = await loadVerifiedMigrations(this.#migrationsDirectory, signal);
     const client = new Client(this.#clientConfig);
     await client.connect();
-    const applied: MigrationIdentity[] = [];
+    const cancellationClient = new Client(this.#clientConfig);
+    let backendProcessId: number;
     try {
-      await client.query("SELECT pg_advisory_lock($1::bigint)", [advisoryLockKey.toString()]);
+      await cancellationClient.connect();
+      const backend = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      const candidate = backend.rows[0]?.pid;
+      if (!Number.isSafeInteger(candidate) || candidate === undefined) {
+        throw new TypeError("PostgreSQL did not return a valid migration backend process ID.");
+      }
+      backendProcessId = candidate;
+    } catch (cause) {
+      await Promise.allSettled([client.end(), cancellationClient.end()]);
+      throw cause;
+    }
+    let backendTransactionId: string | undefined;
+    let cancellation: Promise<void> | undefined;
+    const cancel = (): void => {
+      const transactionId = backendTransactionId;
+      if (transactionId === undefined) return;
+      cancellation = cancellationClient
+        .query(
+          `SELECT pg_cancel_backend($1)
+           WHERE EXISTS (
+             SELECT 1
+             FROM pg_stat_activity
+             WHERE pid = $1 AND backend_xid::text = $2 AND state = 'active'
+           )`,
+          [backendProcessId, transactionId],
+        )
+        .then(
+          () => undefined,
+          () => undefined,
+        );
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    const applied: MigrationIdentity[] = [];
+    let locked = false;
+    try {
+      const lockSignal = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(this.#lockTimeoutMilliseconds),
+      ]);
+      while (!locked) {
+        lockSignal.throwIfAborted();
+        const lock = await client.query<{ locked: boolean }>(
+          "SELECT pg_try_advisory_lock($1::bigint) AS locked",
+          [advisoryLockKey.toString()],
+        );
+        locked = lock.rows[0]?.locked === true;
+        if (!locked) {
+          await waitForLockRetry(lockSignal);
+        }
+      }
       await client.query(`
         CREATE TABLE IF NOT EXISTS mail_edge_migrations (
           migration_name text PRIMARY KEY,
@@ -151,14 +253,26 @@ export class PostgresMigrationRunner {
         signal.throwIfAborted();
         await client.query("BEGIN");
         try {
+          const transaction = await client.query<{ transaction_id: string }>(
+            "SELECT pg_current_xact_id()::text AS transaction_id",
+          );
+          backendTransactionId = transaction.rows[0]?.transaction_id;
+          if (backendTransactionId === undefined) {
+            throw new TypeError("PostgreSQL did not return a migration transaction ID.");
+          }
+          signal.throwIfAborted();
           await client.query(migration.sql);
           await client.query(
             "INSERT INTO mail_edge_migrations (migration_name, sha256) VALUES ($1, $2)",
             [migration.name, migration.sha256],
           );
+          signal.throwIfAborted();
           await client.query("COMMIT");
+          backendTransactionId = undefined;
           applied.push(Object.freeze({ name: migration.name, sha256: migration.sha256 }));
         } catch (cause) {
+          backendTransactionId = undefined;
+          await cancellation;
           await client.query("ROLLBACK");
           throw cause;
         }
@@ -170,10 +284,13 @@ export class PostgresMigrationRunner {
         ),
       });
     } finally {
+      signal.removeEventListener("abort", cancel);
       try {
-        await client.query("SELECT pg_advisory_unlock($1::bigint)", [advisoryLockKey.toString()]);
+        if (locked) {
+          await client.query("SELECT pg_advisory_unlock($1::bigint)", [advisoryLockKey.toString()]);
+        }
       } finally {
-        await client.end();
+        await Promise.all([client.end(), cancellationClient.end()]);
       }
     }
   }

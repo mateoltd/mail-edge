@@ -45,6 +45,43 @@ export interface RouteBindingTable {
 }
 
 /** @public */
+export interface DomainClaimTable {
+  readonly tenantId: string;
+  readonly domainALabel: string;
+  readonly verificationMethod: string;
+  readonly verificationDigest: Uint8Array;
+  readonly verifiedAt: Timestamp | null;
+  readonly expiresAt: Timestamp | null;
+}
+
+/** @public */
+export interface ProviderInstanceTable {
+  readonly providerInstanceId: string;
+  readonly tenantId: string;
+  readonly providerId: string;
+  readonly region: string | null;
+  readonly secretRef: string;
+  readonly configRef: string;
+  readonly state: "enabled" | "disabled";
+  readonly createdAt: GeneratedTimestamp;
+}
+
+/** @public */
+export interface RouteBindingCheckTable {
+  readonly checkId: string;
+  readonly tenantId: string;
+  readonly bindingId: string;
+  readonly bindingVersion: string;
+  readonly checkKind: "capability" | "dns" | "control_plane" | "live_conformance" | "drift";
+  readonly outcome: "pass" | "fail" | "expired";
+  readonly report: JsonObject;
+  readonly reportDigest: Uint8Array;
+  readonly evidenceAt: Timestamp;
+  readonly expiresAt: Timestamp;
+  readonly createdAt: GeneratedTimestamp;
+}
+
+/** @public */
 export interface BlobIngestStageTable {
   readonly stageId: string;
   readonly tenantId: string;
@@ -87,6 +124,16 @@ export interface RawBlobTable {
   readonly kmsKeyRef: string;
   readonly encryptionMetadata: JsonObject;
   readonly status: "available" | "purge_pending" | "deleted" | "corrupt";
+  readonly corruptionDetectedAt: ColumnType<
+    Date | null,
+    Date | string | null | undefined,
+    Date | string | null
+  >;
+  readonly integrityVerifiedAt: ColumnType<
+    Date | null,
+    Date | string | null | undefined,
+    Date | string | null
+  >;
   readonly availableAt: Timestamp;
   readonly retainUntil: Timestamp;
   readonly deletedAt: Timestamp | null;
@@ -129,6 +176,7 @@ export interface OutboundAttemptTable {
   readonly ordinal: number;
   readonly bindingId: string;
   readonly bindingVersion: string;
+  readonly routeSnapshot: JsonObject;
   readonly recipientGroup: JsonObject;
   readonly recipientGroupDigest: Uint8Array;
   readonly transmissionBlobId: string;
@@ -253,7 +301,7 @@ export interface RawBlobReferenceSummaryTable {
 /** @public */
 export interface AuditEventTable {
   readonly auditId: string;
-  readonly tenantId: string | null;
+  readonly tenantId: string;
   readonly actorType: "system" | "operator" | "application";
   readonly actorIdHash: Uint8Array;
   readonly action: string;
@@ -305,7 +353,10 @@ export interface WorkflowWakeupWatermarkTable {
 /** @public */
 export interface MailEdgeDatabase {
   readonly tenants: TenantTable;
+  readonly domainClaims: DomainClaimTable;
+  readonly providerInstances: ProviderInstanceTable;
   readonly routeBindings: RouteBindingTable;
+  readonly routeBindingChecks: RouteBindingCheckTable;
   readonly blobIngestStages: BlobIngestStageTable;
   readonly rawBlobs: RawBlobTable;
   readonly outboundIntents: OutboundIntentTable;

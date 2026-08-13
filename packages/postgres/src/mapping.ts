@@ -24,6 +24,27 @@ export const bytesToHex = (value: Uint8Array): string => Buffer.from(value).toSt
 
 export const hexToBytes = (value: string): Uint8Array => Buffer.from(value, "hex");
 
+export const cloneBytes = (value: Uint8Array): Uint8Array => Uint8Array.from(value);
+
+export const immutableClone = <Value>(value: Value): Value => {
+  if (value instanceof Uint8Array) {
+    return Uint8Array.from(value) as Value;
+  }
+  if (value instanceof Date) {
+    return Object.freeze(new Date(value)) as Value;
+  }
+  if (Array.isArray(value)) {
+    const entries: readonly unknown[] = value;
+    return Object.freeze(entries.map((entry) => immutableClone(entry))) as Value;
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.freeze(
+      Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, immutableClone(entry)])),
+    ) as Value;
+  }
+  return value;
+};
+
 export const dateToIso = (value: Date | string): string =>
   (typeof value === "string" ? new Date(value) : value).toISOString();
 
@@ -60,16 +81,17 @@ const validated = (
       safeDetails: { resourceType: "durable_record" },
     });
   }
-  return result.value;
+  return immutableClone(result.value);
 };
 
-export const mapRawReference = (row: RawBlob): RawMessageRefV1 => ({
-  blobId: row.blobId as RawMessageRefV1["blobId"],
-  mediaType: "message/rfc822",
-  schemaVersion: "v1",
-  sha256: bytesToHex(row.sha256),
-  size: safeInteger(row.sizeBytes),
-});
+export const mapRawReference = (row: RawBlob): RawMessageRefV1 =>
+  Object.freeze({
+    blobId: row.blobId as RawMessageRefV1["blobId"],
+    mediaType: "message/rfc822",
+    schemaVersion: "v1",
+    sha256: bytesToHex(row.sha256),
+    size: safeInteger(row.sizeBytes),
+  });
 
 export const mapBindingSnapshot = (row: RouteBinding): RouteBindingSnapshotV1 =>
   validated(RouteBindingSnapshotV1Schema, {
@@ -112,10 +134,13 @@ export const mapOutboundIntent = (
 
 export const mapOutboundAttempt = (
   row: OutboundAttemptRow,
-  binding: RouteBinding,
   transmissionRaw: RawBlob,
 ): OutboundAttemptV1 => {
   const group = jsonObject(row.recipientGroup);
+  const routeBinding = validated(
+    RouteBindingSnapshotV1Schema,
+    jsonObject(row.routeSnapshot),
+  ) as RouteBindingSnapshotV1;
   return validated(OutboundAttemptV1Schema, {
     ...(row.completedAt === null ? {} : { completedAt: dateToIso(row.completedAt) }),
     ...(row.responseEvidence === null ? {} : { lastEvidence: row.responseEvidence }),
@@ -127,7 +152,7 @@ export const mapOutboundAttempt = (
     intentId: row.intentId,
     ordinal: row.ordinal,
     recipientIndexes: group["recipientIndexes"],
-    routeBinding: mapBindingSnapshot(binding),
+    routeBinding,
     schemaVersion: "v1",
     state: row.state,
     tenantId: row.tenantId,

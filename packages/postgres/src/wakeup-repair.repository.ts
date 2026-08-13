@@ -25,7 +25,7 @@ export class PostgresWakeupRepairRepository {
       tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
           const [receipts, intents, deliveries, feedback] = await Promise.all([
             transaction
               .selectFrom("inboundReceipts")

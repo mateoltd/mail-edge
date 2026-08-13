@@ -9,7 +9,15 @@ import { sql } from "kysely";
 import type { PostgresUnitOfWork } from "./database.service.js";
 import type { BlobIngestStageUpdate, RawBlob } from "./database.schema.js";
 import { notFoundError, postgresError, staleFenceError } from "./errors.js";
-import { bytesToHex, dateToIso, hexToBytes, mapRawReference, safeInteger } from "./mapping.js";
+import {
+  bytesToHex,
+  cloneBytes,
+  dateToIso,
+  hexToBytes,
+  immutableClone,
+  mapRawReference,
+  safeInteger,
+} from "./mapping.js";
 
 /** @public */
 export interface BlobStageCreation {
@@ -67,6 +75,7 @@ export interface BlobFinalObject {
 export interface StoredBlobRecord {
   readonly raw: RawMessageRefV1;
   readonly tenantId: TenantId;
+  readonly sourceStageId: string;
   readonly purpose: "inbound" | "outbound_upload" | "derived";
   readonly objectKey: string;
   readonly objectVersion?: string;
@@ -97,6 +106,15 @@ export interface PendingBlobPromotion {
   readonly expectedVersion: number;
   readonly finalObjectKey: string;
   readonly finalObjectVersion?: string;
+  readonly scratchObjectKey: string;
+  readonly scratchObjectVersion?: string;
+  readonly expectedSize: number;
+  readonly expectedSha256: string;
+  readonly kmsKeyRef: string;
+  readonly wrappedDek: Uint8Array;
+  readonly encryptionFormatVersion: number;
+  readonly encryptionMetadata: Readonly<Record<string, unknown>>;
+  readonly purpose: "inbound" | "outbound_upload" | "derived";
 }
 
 /** @public */
@@ -106,6 +124,7 @@ export interface AbandonedBlobStage {
   readonly expectedVersion: number;
   readonly objectKey: string;
   readonly objectVersion?: string;
+  readonly state: "abandoned" | "promoted";
 }
 
 /** @public */
@@ -125,8 +144,19 @@ export interface RawBlobIntegrityClaim {
   readonly expectedVersion: number;
 }
 
+/** Fresh physical proof required to restore one exact corrupt object. @public */
+export interface RawBlobRestorationProof extends RawBlobIntegrityClaim {
+  readonly objectKey: string;
+  readonly objectVersion?: string;
+  readonly size: number;
+  readonly sha256: string;
+  readonly encryptionFormatVersion: number;
+  readonly encryptionHeaderSha256: string;
+  readonly verifiedAt: string;
+}
+
 const recordFromRow = (row: RawBlob): StoredBlobRecord => {
-  const metadata = row.encryptionMetadata;
+  const metadata = immutableClone(row.encryptionMetadata);
   const purpose = metadata["purpose"];
   if (purpose !== "inbound" && purpose !== "outbound_upload" && purpose !== "derived") {
     throw new TypeError("Stored blob encryption metadata has an invalid purpose.");
@@ -141,8 +171,9 @@ const recordFromRow = (row: RawBlob): StoredBlobRecord => {
     purpose,
     raw: mapRawReference(row),
     status: row.status,
+    sourceStageId: row.sourceStageId,
     tenantId: row.tenantId as TenantId,
-    wrappedDek: row.wrappedDek,
+    wrappedDek: cloneBytes(row.wrappedDek),
   });
 };
 
@@ -171,12 +202,12 @@ export class PostgresBlobRepository {
       input.tenantId,
       async (context) => {
         try {
-          await this.#unitOfWork
-            .transaction(context, input.tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, input.tenantId);
+          await transaction
             .insertInto("blobIngestStages")
             .values({
               encryptionKeyRef: input.kmsKeyRef,
-              encryptionMetadata: input.encryptionMetadata,
+              encryptionMetadata: immutableClone(input.encryptionMetadata),
               expectedMaxBytes: String(input.expectedMaximumBytes),
               expiresAt: input.expiresAt,
               finalObjectKey: null,
@@ -189,7 +220,7 @@ export class PostgresBlobRepository {
               stageId: input.stageId,
               state: "reserved",
               tenantId: input.tenantId,
-              wrappedDek: input.wrappedDek,
+              wrappedDek: cloneBytes(input.wrappedDek),
             })
             .executeTakeFirstOrThrow();
           return { ok: true, value: Object.freeze({ optimisticVersion: 0 }) };
@@ -285,7 +316,7 @@ export class PostgresBlobRepository {
       input.tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, input.tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, input.tenantId);
           const stage = await transaction
             .selectFrom("blobIngestStages")
             .selectAll()
@@ -297,6 +328,7 @@ export class PostgresBlobRepository {
             stage?.state !== "promoting" ||
             safeInteger(stage.optimisticVersion) !== input.expectedVersion ||
             stage.finalObjectKey !== input.finalObjectKey ||
+            (stage.finalObjectVersion ?? undefined) !== input.finalObjectVersion ||
             stage.observedBytes === null ||
             stage.observedSha256 === null
           ) {
@@ -371,7 +403,7 @@ export class PostgresBlobRepository {
       input.tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, input.tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, input.tenantId);
           const optimisticVersion = input.expectedVersion + 1;
           const updated = await transaction
             .updateTable("blobIngestStages")
@@ -412,6 +444,58 @@ export class PostgresBlobRepository {
     );
   }
 
+  async replaceMissingFinalObject(
+    input: BlobFinalObject & { readonly missingFinalObjectVersion?: string },
+    occurredAt: string,
+    signal: AbortSignal,
+  ): Promise<Result<{ readonly optimisticVersion: number }, MailEdgeError>> {
+    return this.#unitOfWork.executeForTenant(
+      input.tenantId,
+      async (context) => {
+        try {
+          const transaction = await this.#unitOfWork.transaction(context, input.tenantId);
+          const optimisticVersion = input.expectedVersion + 1;
+          let update = transaction
+            .updateTable("blobIngestStages")
+            .set({
+              finalObjectVersion: input.finalObjectVersion,
+              optimisticVersion: String(optimisticVersion),
+              updatedAt: occurredAt,
+            })
+            .where("tenantId", "=", input.tenantId)
+            .where("stageId", "=", input.stageId)
+            .where("state", "=", "promoting")
+            .where("optimisticVersion", "=", String(input.expectedVersion))
+            .where("finalObjectKey", "=", input.finalObjectKey);
+          update =
+            input.missingFinalObjectVersion === undefined
+              ? update.where("finalObjectVersion", "is", null)
+              : update.where("finalObjectVersion", "=", input.missingFinalObjectVersion);
+          const updated = await update.returning("stageId").executeTakeFirst();
+          if (updated !== undefined) {
+            return { ok: true, value: Object.freeze({ optimisticVersion }) };
+          }
+          const existing = await transaction
+            .selectFrom("blobIngestStages")
+            .select("stageId")
+            .where("tenantId", "=", input.tenantId)
+            .where("stageId", "=", input.stageId)
+            .where("state", "=", "promoting")
+            .where("optimisticVersion", "=", String(optimisticVersion))
+            .where("finalObjectKey", "=", input.finalObjectKey)
+            .where("finalObjectVersion", "=", input.finalObjectVersion)
+            .executeTakeFirst();
+          return existing === undefined
+            ? { error: stageConflict(input.expectedVersion), ok: false }
+            : { ok: true, value: Object.freeze({ optimisticVersion }) };
+        } catch (cause) {
+          return { error: postgresError(cause, "blob_final_object_replace"), ok: false };
+        }
+      },
+      signal,
+    );
+  }
+
   async abandonStage(
     tenantId: TenantId,
     stageId: string,
@@ -423,8 +507,8 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const updated = await this.#unitOfWork
-            .transaction(context, tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
+          const updated = await transaction
             .updateTable("blobIngestStages")
             .set({
               optimisticVersion: String(expectedVersion + 1),
@@ -457,8 +541,8 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const row = await this.#unitOfWork
-            .transaction(context, tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
+          const row = await transaction
             .selectFrom("rawBlobs")
             .selectAll()
             .where("tenantId", "=", tenantId)
@@ -484,7 +568,7 @@ export class PostgresBlobRepository {
       claim.tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, claim.tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, claim.tenantId);
           const blob = await transaction
             .selectFrom("rawBlobs")
             .select(["status", "optimisticVersion"])
@@ -543,7 +627,7 @@ export class PostgresBlobRepository {
             })
             .where("tenantId", "=", claim.tenantId)
             .where("transmissionBlobId", "=", claim.blobId)
-            .where("state", "=", "retry_wait")
+            .where("state", "in", ["dispatching", "retry_wait"])
             .execute();
           await transaction
             .updateTable("outboundIntents")
@@ -560,11 +644,16 @@ export class PostgresBlobRepository {
                 expression("transmissionBlobId", "=", claim.blobId),
               ]),
             )
-            .where("state", "in", ["accepted", "ready", "retry_wait"])
+            .where("state", "in", ["accepted", "ready", "dispatching", "retry_wait"])
             .execute();
           const updated = await transaction
             .updateTable("rawBlobs")
-            .set({ optimisticVersion: String(claim.expectedVersion + 1), status: "corrupt" })
+            .set({
+              corruptionDetectedAt: occurredAt,
+              integrityVerifiedAt: null,
+              optimisticVersion: String(claim.expectedVersion + 1),
+              status: "corrupt",
+            })
             .where("tenantId", "=", claim.tenantId)
             .where("blobId", "=", claim.blobId)
             .where("status", "=", "available")
@@ -583,30 +672,79 @@ export class PostgresBlobRepository {
   }
 
   async restoreCorrupt(
-    claim: RawBlobIntegrityClaim,
+    proof: RawBlobRestorationProof,
+    restoredAt: string,
     retainUntil: string,
     signal: AbortSignal,
   ): Promise<Result<StoredBlobRecord, MailEdgeError>> {
+    const restoredAtMilliseconds = new Date(restoredAt).getTime();
+    const verifiedAtMilliseconds = new Date(proof.verifiedAt).getTime();
+    if (
+      !Number.isFinite(restoredAtMilliseconds) ||
+      !Number.isFinite(verifiedAtMilliseconds) ||
+      verifiedAtMilliseconds > restoredAtMilliseconds ||
+      restoredAtMilliseconds - verifiedAtMilliseconds > 5 * 60 * 1000 ||
+      !Number.isSafeInteger(proof.size) ||
+      proof.size < 0 ||
+      !Number.isSafeInteger(proof.encryptionFormatVersion) ||
+      proof.encryptionFormatVersion < 1 ||
+      !/^[a-f0-9]{64}$/u.test(proof.sha256) ||
+      !/^[a-f0-9]{64}$/u.test(proof.encryptionHeaderSha256)
+    ) {
+      return {
+        error: new MailEdgeError({
+          code: "VALIDATION_FAILED",
+          deliveryCertainty: "not_sent",
+          message: "Corrupt-blob restoration proof is malformed or stale.",
+          retryable: false,
+        }),
+        ok: false,
+      };
+    }
     return this.#unitOfWork.executeForTenant(
-      claim.tenantId,
+      proof.tenantId,
       async (context) => {
         try {
-          const restored = await this.#unitOfWork
-            .transaction(context, claim.tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, proof.tenantId);
+          const current = await transaction
+            .selectFrom("rawBlobs")
+            .selectAll()
+            .where("tenantId", "=", proof.tenantId)
+            .where("blobId", "=", proof.blobId)
+            .forUpdate()
+            .executeTakeFirst();
+          const expectedHeader = current?.encryptionMetadata["headerSha256"];
+          if (
+            current?.status !== "corrupt" ||
+            safeInteger(current.optimisticVersion) !== proof.expectedVersion ||
+            current.objectKey !== proof.objectKey ||
+            (current.objectVersion ?? undefined) !== proof.objectVersion ||
+            safeInteger(current.sizeBytes) !== proof.size ||
+            bytesToHex(current.sha256) !== proof.sha256 ||
+            current.encryptionFormatVersion !== proof.encryptionFormatVersion ||
+            expectedHeader !== proof.encryptionHeaderSha256 ||
+            current.corruptionDetectedAt === null ||
+            verifiedAtMilliseconds < current.corruptionDetectedAt.getTime()
+          ) {
+            return { error: staleFenceError(proof.expectedVersion), ok: false };
+          }
+          const restored = await transaction
             .updateTable("rawBlobs")
             .set({
-              optimisticVersion: String(claim.expectedVersion + 1),
+              corruptionDetectedAt: null,
+              integrityVerifiedAt: proof.verifiedAt,
+              optimisticVersion: String(proof.expectedVersion + 1),
               retainUntil,
               status: "available",
             })
-            .where("tenantId", "=", claim.tenantId)
-            .where("blobId", "=", claim.blobId)
+            .where("tenantId", "=", proof.tenantId)
+            .where("blobId", "=", proof.blobId)
             .where("status", "=", "corrupt")
-            .where("optimisticVersion", "=", String(claim.expectedVersion))
+            .where("optimisticVersion", "=", String(proof.expectedVersion))
             .returningAll()
             .executeTakeFirst();
           return restored === undefined
-            ? { error: staleFenceError(claim.expectedVersion), ok: false }
+            ? { error: staleFenceError(proof.expectedVersion), ok: false }
             : { ok: true, value: recordFromRow(restored) };
         } catch (cause) {
           return { error: postgresError(cause, "blob_restore_corrupt"), ok: false };
@@ -628,10 +766,23 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const rows = await this.#unitOfWork
-            .transaction(context, tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
+          const rows = await transaction
             .selectFrom("blobIngestStages")
-            .select(["stageId", "finalObjectKey", "finalObjectVersion", "optimisticVersion"])
+            .select([
+              "stageId",
+              "purpose",
+              "objectKey",
+              "objectVersion",
+              "finalObjectKey",
+              "finalObjectVersion",
+              "observedBytes",
+              "observedSha256",
+              "encryptionKeyRef",
+              "wrappedDek",
+              "encryptionMetadata",
+              "optimisticVersion",
+            ])
             .where("tenantId", "=", tenantId)
             .where("state", "=", "promoting")
             .where("finalObjectKey", "is not", null)
@@ -642,18 +793,36 @@ export class PostgresBlobRepository {
             ok: true,
             value: Object.freeze(
               rows.map((row) => {
-                if (row.finalObjectKey === null) {
-                  throw new TypeError("Promoting stage is missing its final object key.");
+                const formatVersion = row.encryptionMetadata["formatVersion"];
+                if (
+                  row.finalObjectKey === null ||
+                  row.observedBytes === null ||
+                  row.observedSha256 === null ||
+                  typeof formatVersion !== "number" ||
+                  !Number.isSafeInteger(formatVersion)
+                ) {
+                  throw new TypeError("Promoting stage is missing immutable integrity evidence.");
                 }
                 return Object.freeze({
                   blobId: row.stageId,
+                  encryptionFormatVersion: formatVersion,
+                  encryptionMetadata: immutableClone(row.encryptionMetadata),
                   expectedVersion: safeInteger(row.optimisticVersion),
+                  expectedSha256: bytesToHex(row.observedSha256),
+                  expectedSize: safeInteger(row.observedBytes),
                   finalObjectKey: row.finalObjectKey,
                   ...(row.finalObjectVersion === null
                     ? {}
                     : { finalObjectVersion: row.finalObjectVersion }),
                   stageId: row.stageId,
+                  scratchObjectKey: row.objectKey,
+                  ...(row.objectVersion === null
+                    ? {}
+                    : { scratchObjectVersion: row.objectVersion }),
                   tenantId,
+                  kmsKeyRef: row.encryptionKeyRef,
+                  purpose: row.purpose,
+                  wrappedDek: cloneBytes(row.wrappedDek),
                 });
               }),
             ),
@@ -679,14 +848,27 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
           const rows = await transaction
             .selectFrom("blobIngestStages")
             .select(["stageId", "state", "objectKey", "objectVersion", "optimisticVersion"])
             .where("tenantId", "=", tenantId)
-            .where("expiresAt", "<=", new Date(expiredAt))
             .where("cleanupCompletedAt", "is", null)
-            .where("state", "in", ["reserved", "uploading", "uploaded", "verified", "abandoned"])
+            .where((expression) =>
+              expression.or([
+                expression("state", "=", "promoted"),
+                expression.and([
+                  expression("expiresAt", "<=", new Date(expiredAt)),
+                  expression("state", "in", [
+                    "reserved",
+                    "uploading",
+                    "uploaded",
+                    "verified",
+                    "abandoned",
+                  ]),
+                ]),
+              ]),
+            )
             .orderBy("expiresAt")
             .orderBy("stageId")
             .limit(limit)
@@ -696,7 +878,7 @@ export class PostgresBlobRepository {
           const claimed: AbandonedBlobStage[] = [];
           for (const row of rows) {
             let expectedVersion = safeInteger(row.optimisticVersion);
-            if (row.state !== "abandoned") {
+            if (row.state !== "abandoned" && row.state !== "promoted") {
               const nextVersion = expectedVersion + 1;
               const updated = await transaction
                 .updateTable("blobIngestStages")
@@ -720,6 +902,7 @@ export class PostgresBlobRepository {
                 objectKey: row.objectKey,
                 ...(row.objectVersion === null ? {} : { objectVersion: row.objectVersion }),
                 stageId: row.stageId,
+                state: row.state === "promoted" ? "promoted" : "abandoned",
                 tenantId,
               }),
             );
@@ -742,28 +925,37 @@ export class PostgresBlobRepository {
       stage.tenantId,
       async (context) => {
         try {
-          const updated = await this.#unitOfWork
-            .transaction(context, stage.tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, stage.tenantId);
+          let update = transaction
             .updateTable("blobIngestStages")
             .set({ cleanupCompletedAt: occurredAt, updatedAt: occurredAt })
             .where("tenantId", "=", stage.tenantId)
             .where("stageId", "=", stage.stageId)
-            .where("state", "=", "abandoned")
+            .where("state", "=", stage.state)
             .where("optimisticVersion", "=", String(stage.expectedVersion))
+            .where("objectKey", "=", stage.objectKey)
             .where("cleanupCompletedAt", "is", null)
-            .returning("stageId")
-            .executeTakeFirst();
+            .returning("stageId");
+          update =
+            stage.objectVersion === undefined
+              ? update.where("objectVersion", "is", null)
+              : update.where("objectVersion", "=", stage.objectVersion);
+          const updated = await update.executeTakeFirst();
           if (updated !== undefined) return { ok: true, value: undefined };
-          const completed = await this.#unitOfWork
-            .transaction(context, stage.tenantId)
+          let completedQuery = transaction
             .selectFrom("blobIngestStages")
             .select("stageId")
             .where("tenantId", "=", stage.tenantId)
             .where("stageId", "=", stage.stageId)
-            .where("state", "=", "abandoned")
+            .where("state", "=", stage.state)
             .where("optimisticVersion", "=", String(stage.expectedVersion))
-            .where("cleanupCompletedAt", "is not", null)
-            .executeTakeFirst();
+            .where("objectKey", "=", stage.objectKey)
+            .where("cleanupCompletedAt", "is not", null);
+          completedQuery =
+            stage.objectVersion === undefined
+              ? completedQuery.where("objectVersion", "is", null)
+              : completedQuery.where("objectVersion", "=", stage.objectVersion);
+          const completed = await completedQuery.executeTakeFirst();
           return completed === undefined
             ? { error: staleFenceError(stage.expectedVersion), ok: false }
             : { ok: true, value: undefined };
@@ -796,7 +988,7 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
           const candidates = await transaction
             .selectFrom("rawBlobs")
             .leftJoin("blobOrphanObservations", (join) =>
@@ -882,8 +1074,8 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const rows = await this.#unitOfWork
-            .transaction(context, tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
+          const rows = await transaction
             .selectFrom("rawBlobs")
             .select("blobId")
             .where("tenantId", "=", tenantId)
@@ -929,7 +1121,7 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
           const row = await transaction
             .selectFrom("rawBlobs")
             .select(["objectKey", "objectVersion", "optimisticVersion", "status", "retainUntil"])
@@ -1033,7 +1225,7 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
           const rows = await transaction
             .selectFrom("blobDeletions")
             .innerJoin("rawBlobs", (join) =>
@@ -1130,7 +1322,7 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
           const row = await transaction
             .selectFrom("rawBlobs")
             .innerJoin("blobOrphanObservations", (join) =>
@@ -1233,8 +1425,8 @@ export class PostgresBlobRepository {
       claim.tenantId,
       async (context) => {
         try {
-          const updated = await this.#unitOfWork
-            .transaction(context, claim.tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, claim.tenantId);
+          const updated = await transaction
             .updateTable("blobDeletions")
             .set({ claimedUntil: null, state: "object_deleted", updatedAt: occurredAt })
             .where("tenantId", "=", claim.tenantId)
@@ -1245,8 +1437,7 @@ export class PostgresBlobRepository {
             .returning("deletionId")
             .executeTakeFirst();
           if (updated !== undefined) return { ok: true, value: undefined };
-          const alreadyDeleted = await this.#unitOfWork
-            .transaction(context, claim.tenantId)
+          const alreadyDeleted = await transaction
             .selectFrom("blobDeletions")
             .select("deletionId")
             .where("tenantId", "=", claim.tenantId)
@@ -1266,6 +1457,65 @@ export class PostgresBlobRepository {
     );
   }
 
+  async revalidatePurgeClaim(
+    claim: BlobPurgeClaim,
+    now: string,
+    signal: AbortSignal,
+  ): Promise<Result<void, MailEdgeError>> {
+    return this.#unitOfWork.executeForTenant(
+      claim.tenantId,
+      async (context) => {
+        try {
+          const transaction = await this.#unitOfWork.transaction(context, claim.tenantId);
+          const deletion = await transaction
+            .selectFrom("blobDeletions")
+            .innerJoin("rawBlobs", (join) =>
+              join
+                .onRef("rawBlobs.tenantId", "=", "blobDeletions.tenantId")
+                .onRef("rawBlobs.blobId", "=", "blobDeletions.blobId"),
+            )
+            .select([
+              "blobDeletions.state as deletionState",
+              "blobDeletions.claimedUntil",
+              "blobDeletions.fence",
+              "rawBlobs.status as blobStatus",
+              "rawBlobs.optimisticVersion",
+              "rawBlobs.objectKey",
+              "rawBlobs.objectVersion",
+            ])
+            .where("blobDeletions.tenantId", "=", claim.tenantId)
+            .where("blobDeletions.deletionId", "=", claim.deletionId)
+            .where("blobDeletions.blobId", "=", claim.blobId)
+            .forUpdate(["blobDeletions", "rawBlobs"])
+            .executeTakeFirst();
+          const reference = await transaction
+            .selectFrom("rawBlobReferenceSummary")
+            .select("blobId")
+            .where("tenantId", "=", claim.tenantId)
+            .where("blobId", "=", claim.blobId)
+            .executeTakeFirst();
+          if (
+            deletion?.deletionState !== "claimed" ||
+            deletion.claimedUntil === null ||
+            deletion.claimedUntil.getTime() <= new Date(now).getTime() ||
+            safeInteger(deletion.fence) !== claim.fence ||
+            deletion.blobStatus !== "purge_pending" ||
+            safeInteger(deletion.optimisticVersion) !== claim.fence ||
+            deletion.objectKey !== claim.objectKey ||
+            (deletion.objectVersion ?? undefined) !== claim.objectVersion ||
+            reference !== undefined
+          ) {
+            return { error: staleFenceError(claim.fence), ok: false };
+          }
+          return { ok: true, value: undefined };
+        } catch (cause) {
+          return { error: postgresError(cause, "blob_purge_revalidate"), ok: false };
+        }
+      },
+      signal,
+    );
+  }
+
   async completePurge(
     claim: BlobPurgeClaim,
     occurredAt: string,
@@ -1275,7 +1525,7 @@ export class PostgresBlobRepository {
       claim.tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, claim.tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, claim.tenantId);
           const deletion = await transaction
             .updateTable("blobDeletions")
             .set({ state: "completed", updatedAt: occurredAt })
@@ -1335,7 +1585,7 @@ export class PostgresBlobRepository {
       input.tenantId,
       async (context) => {
         try {
-          const transaction = this.#unitOfWork.transaction(context, input.tenantId);
+          const transaction = await this.#unitOfWork.transaction(context, input.tenantId);
           const blob = await transaction
             .selectFrom("rawBlobs")
             .select("status")
@@ -1390,8 +1640,8 @@ export class PostgresBlobRepository {
       tenantId,
       async (context) => {
         try {
-          const updated = await this.#unitOfWork
-            .transaction(context, tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
+          const updated = await transaction
             .updateTable("legalHolds")
             .set({ releasedAt: occurredAt, releasedBy: actor })
             .where("tenantId", "=", tenantId)
@@ -1425,8 +1675,8 @@ export class PostgresBlobRepository {
       async (context) => {
         try {
           const optimisticVersion = expectedVersion + 1;
-          const updated = await this.#unitOfWork
-            .transaction(context, tenantId)
+          const transaction = await this.#unitOfWork.transaction(context, tenantId);
+          const updated = await transaction
             .updateTable("blobIngestStages")
             .set({
               ...values,
