@@ -58,7 +58,7 @@
     "@types/node": "24.13.3",
     "dependency-cruiser": "18.2.0",
     "eslint": "9.39.5",
-    "eslint-import-resolver-typescript": "3.8.7",
+    "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-boundaries": "7.2.0",
     "globals": "17.9.0",
     "knip": "6.32.2",
