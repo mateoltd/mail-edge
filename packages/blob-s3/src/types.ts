@@ -123,6 +123,13 @@ export interface BlobFinalObject {
 }
 
 /** @public */
+export interface RawBlobIntegrityClaim {
+  readonly tenantId: BlobTenantId;
+  readonly blobId: string;
+  readonly expectedVersion: number;
+}
+
+/** @public */
 export interface StoredBlobRecord {
   readonly raw: ResultValue<Awaited<ReturnType<BlobStorePort["getAvailableReference"]>>>;
   readonly tenantId: BlobTenantId;
@@ -218,6 +225,11 @@ export interface BlobMetadataStore {
     blobId: string,
     signal: AbortSignal,
   ): Promise<DriverResult<StoredBlobRecord>>;
+  markCorrupt(
+    claim: RawBlobIntegrityClaim,
+    occurredAt: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<void>>;
   listPendingPromotions(
     tenantId: BlobTenantId,
     limit: number,

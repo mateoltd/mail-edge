@@ -24,6 +24,7 @@ import {
   type DriverResult,
   type EnvelopeKeyService,
   type PendingBlobPromotion,
+  type RawBlobIntegrityClaim,
   type StoredBlobRecord,
 } from "../../src/index.js";
 
@@ -181,6 +182,24 @@ class MemoryBlobMetadata implements BlobMetadataStore {
   async getBlob(_tenantId: BlobTenantId, blobId: string): Promise<DriverResult<StoredBlobRecord>> {
     const record = this.blobs.get(blobId);
     return record === undefined ? failure("blob not found") : { ok: true, value: record };
+  }
+
+  async markCorrupt(claim: RawBlobIntegrityClaim): Promise<DriverResult<void>> {
+    const record = this.blobs.get(claim.blobId);
+    if (record === undefined) return failure("blob not found");
+    if (record.status === "corrupt") return { ok: true, value: undefined };
+    if (record.status !== "available" || record.optimisticVersion !== claim.expectedVersion) {
+      return failure("blob version mismatch");
+    }
+    this.blobs.set(
+      claim.blobId,
+      Object.freeze({
+        ...record,
+        optimisticVersion: record.optimisticVersion + 1,
+        status: "corrupt",
+      }),
+    );
+    return { ok: true, value: undefined };
   }
 
   async listPendingPromotions(

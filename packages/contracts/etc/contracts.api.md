@@ -1567,6 +1567,33 @@ issuedAt: TUnsafe<string>;
 expiresAt: TUnsafe<string>;
 }>;
 
+// @public
+export class RawMessageIntegrityError extends Error {
+    constructor(options: RawMessageIntegrityErrorOptions);
+    // (undocumented)
+    readonly cause?: unknown;
+    // (undocumented)
+    readonly reason: RawMessageIntegrityReason;
+    // (undocumented)
+    readonly verifiedPrefixBytes: number;
+}
+
+// @public (undocumented)
+export interface RawMessageIntegrityErrorOptions {
+    // (undocumented)
+    readonly cause?: unknown;
+    // (undocumented)
+    readonly reason: RawMessageIntegrityReason;
+    // (undocumented)
+    readonly verifiedPrefixBytes: number;
+}
+
+// @public (undocumented)
+export type RawMessageIntegrityReason = (typeof rawMessageIntegrityReasons)[number];
+
+// @public
+export const rawMessageIntegrityReasons: readonly ["invalid_encryption_input", "noncanonical_encryption_header", "noncanonical_frame_shape", "frame_authentication_failed", "encrypted_stream_truncated", "encrypted_stream_trailing_data", "plaintext_size_exceeded", "plaintext_metadata_mismatch"];
+
 // @public (undocumented)
 export type RawMessageRefV1 = DeepReadonly<Static<typeof RawMessageRefV1Schema>>;
 

@@ -1,6 +1,8 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { describe, expect, test } from "vitest";
+
+import { RawMessageIntegrityError } from "@mail-edge/core";
 
 import {
   createEncryptionHeader,
@@ -79,5 +81,134 @@ describe("streaming envelope format", () => {
         ),
       ),
     ).rejects.toThrow();
+  });
+
+  test("yields authenticated prefixes but types a later-frame integrity failure", async () => {
+    const key = randomBytes(32);
+    const header = createEncryptionHeader(randomBytes(32), 4096);
+    const identity: EncryptionIdentity = {
+      blobId: "018f4f6a-7b2c-7000-8000-000000000311",
+      purpose: "outbound_upload",
+      tenantId: "018f4f6a-7b2c-7000-8000-000000000312",
+    };
+    const firstPlaintext = Buffer.alloc(4096, 0x61);
+    const tail = Buffer.from("authentic tail");
+    const first = encryptFrame(firstPlaintext, false, 0n, Buffer.alloc(16), key, header, identity);
+    const final = encryptFrame(tail, true, 1n, first.tag, key, header, identity);
+    const encrypted = Buffer.concat([header.bytes, first.bytes, final.bytes]);
+    const corruptOffset = header.bytes.length + first.bytes.length + 13;
+    encrypted[corruptOffset] = (encrypted[corruptOffset] ?? 0) ^ 1;
+    const digest = createHash("sha256").update(firstPlaintext).update(tail).digest("hex");
+    const iterator = decryptFrames(
+      source(encrypted, 127),
+      Uint8Array.from(key),
+      identity,
+      digest,
+      firstPlaintext.byteLength + tail.byteLength,
+    )[Symbol.asyncIterator]();
+
+    expect(await iterator.next()).toEqual({ done: false, value: firstPlaintext });
+    await expect(iterator.next()).rejects.toMatchObject({
+      reason: "frame_authentication_failed",
+      verifiedPrefixBytes: 4096,
+    });
+  });
+
+  test("checks cumulative plaintext size before every yield", async () => {
+    const key = randomBytes(32);
+    const header = createEncryptionHeader(randomBytes(32), 4096);
+    const identity: EncryptionIdentity = {
+      blobId: "018f4f6a-7b2c-7000-8000-000000000321",
+      purpose: "derived",
+      tenantId: "018f4f6a-7b2c-7000-8000-000000000322",
+    };
+    const plaintext = Buffer.alloc(4096, 0x62);
+    const first = encryptFrame(plaintext, false, 0n, Buffer.alloc(16), key, header, identity);
+    const final = encryptFrame(Buffer.from("x"), true, 1n, first.tag, key, header, identity);
+    const iterator = decryptFrames(
+      source(Buffer.concat([header.bytes, first.bytes, final.bytes])),
+      Uint8Array.from(key),
+      identity,
+      "0".repeat(64),
+      plaintext.byteLength - 1,
+    )[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      reason: "plaintext_size_exceeded",
+      verifiedPrefixBytes: 0,
+    });
+  });
+
+  test("rejects noncanonical frame and header shapes independently of authentication", async () => {
+    const identity: EncryptionIdentity = {
+      blobId: "018f4f6a-7b2c-7000-8000-000000000331",
+      purpose: "inbound",
+      tenantId: "018f4f6a-7b2c-7000-8000-000000000332",
+    };
+    const key = randomBytes(32);
+    const header = createEncryptionHeader(randomBytes(32), 4096);
+    const shortNonFinal = encryptFrame(
+      Buffer.from("short"),
+      false,
+      0n,
+      Buffer.alloc(16),
+      key,
+      header,
+      identity,
+    );
+    const final = encryptFrame(
+      Buffer.from("tail"),
+      true,
+      1n,
+      shortNonFinal.tag,
+      key,
+      header,
+      identity,
+    );
+    await expect(
+      collect(
+        decryptFrames(
+          source(Buffer.concat([header.bytes, shortNonFinal.bytes, final.bytes])),
+          Uint8Array.from(key),
+          identity,
+          createHash("sha256").update("shorttail").digest("hex"),
+          9,
+        ),
+      ),
+    ).rejects.toMatchObject({ reason: "noncanonical_frame_shape", verifiedPrefixBytes: 0 });
+
+    const canonicalFinal = encryptFrame(
+      Buffer.from("tail"),
+      true,
+      0n,
+      Buffer.alloc(16),
+      key,
+      header,
+      identity,
+    );
+    const malformedHeader = Buffer.from(header.bytes);
+    malformedHeader[47] = 1;
+    await expect(
+      collect(
+        decryptFrames(
+          source(Buffer.concat([malformedHeader, canonicalFinal.bytes])),
+          Uint8Array.from(key),
+          identity,
+          createHash("sha256").update("tail").digest("hex"),
+          4,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(RawMessageIntegrityError);
+    await expect(
+      collect(
+        decryptFrames(
+          source(Buffer.concat([header.bytes, canonicalFinal.bytes, Buffer.of(0)])),
+          Uint8Array.from(key),
+          identity,
+          createHash("sha256").update("tail").digest("hex"),
+          4,
+        ),
+      ),
+    ).rejects.toMatchObject({ reason: "encrypted_stream_trailing_data" });
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   MailEdgeError,
   ProviderDispatchError,
+  RawMessageIntegrityError,
   type ProviderAcceptanceV1,
   type Result,
 } from "@mail-edge/contracts";
@@ -41,12 +42,15 @@ const secrets: ProviderDispatchContext["secrets"] = {
     }),
 };
 
-const context = (boundary: DispatchBoundaryRecorder): ProviderDispatchContext => ({
+const context = (
+  boundary: DispatchBoundaryRecorder,
+  source: ProviderDispatchContext["rawSource"] = rawSource,
+): ProviderDispatchContext => ({
   boundary,
   clock: { now: () => "2026-08-13T08:00:00Z" },
   mode: "smtp",
   providerInstanceId,
-  rawSource,
+  rawSource: source,
   secrets,
 });
 
@@ -204,6 +208,115 @@ describe("strict provider dispatch boundary", () => {
         retryable: false,
       },
       ok: false,
+    });
+  });
+
+  it("quarantines a swallowed later-frame integrity failure despite claimed acceptance", async () => {
+    const boundary = new DispatchBoundaryRecorder({ mode: "smtp", providerId, transport: "smtp" });
+    const corruptSource: ProviderDispatchContext["rawSource"] = {
+      open: async () => ({
+        ok: true,
+        value: {
+          body: (async function* () {
+            yield Uint8Array.of(1, 2, 3);
+            throw new RawMessageIntegrityError({
+              reason: "frame_authentication_failed",
+              verifiedPrefixBytes: 3,
+            });
+          })(),
+          contentLength: 4,
+          mediaType: "message/rfc822",
+        },
+      }),
+    };
+    const result = await executeProviderDispatch(
+      adapter(async (_input, dispatch) => {
+        const opened = await dispatch.rawSource.open(
+          submission.transmissionRaw,
+          new AbortController().signal,
+        );
+        if (!opened.ok) throw opened.error;
+        try {
+          for await (const chunk of opened.value.body) {
+            dispatch.boundary.recordSmtpRawBytesWritten(chunk.byteLength);
+          }
+        } catch {
+          // A hostile adapter may swallow a source failure and claim acceptance.
+        }
+        dispatch.boundary.markAuthenticatedAcceptance();
+        return { ok: true, value: acceptance() };
+      }),
+      submission,
+      context(boundary, corruptSource),
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      action: "quarantine_unknown",
+      result: {
+        error: {
+          deliveryCertainty: "unknown",
+          evidenceCode: "raw_integrity_failure",
+          retryable: false,
+        },
+        ok: false,
+      },
+    });
+  });
+
+  it("never auto-retries a swallowed integrity failure before provider bytes", async () => {
+    const boundary = new DispatchBoundaryRecorder({ mode: "http", providerId, transport: "http" });
+    const corruptSource: ProviderDispatchContext["rawSource"] = {
+      open: async () => ({
+        ok: true,
+        value: {
+          body: (async function* () {
+            throw new RawMessageIntegrityError({
+              reason: "noncanonical_encryption_header",
+              verifiedPrefixBytes: 0,
+            });
+          })(),
+          contentLength: 1,
+          mediaType: "message/rfc822",
+        },
+      }),
+    };
+    const result = await executeProviderDispatch(
+      adapter(async (_input, dispatch) => {
+        const opened = await dispatch.rawSource.open(
+          submission.transmissionRaw,
+          new AbortController().signal,
+        );
+        if (!opened.ok) throw opened.error;
+        try {
+          for await (const _chunk of opened.value.body) {
+            // No body bytes can be confirmed before this source fails.
+            void _chunk;
+          }
+        } catch {
+          // Simulate an adapter translating the failure into an ordinary retry.
+        }
+        return {
+          error: new ProviderDispatchError({
+            code: "PROVIDER_NOT_SENT",
+            deliveryCertainty: "not_sent",
+            evidenceCode: "source_failed",
+            message: "Source failed before request bytes.",
+            phase: "headers",
+            retryable: true,
+          }),
+          ok: false,
+        };
+      }),
+      submission,
+      context(boundary, corruptSource),
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      action: "quarantine_unknown",
+      result: {
+        error: { evidenceCode: "raw_integrity_failure", retryable: false },
+        ok: false,
+      },
     });
   });
 });
