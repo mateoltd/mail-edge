@@ -5,7 +5,8 @@ and signatures as reviewable release inputs.
 
 ## Required gates
 
-- GitHub Actions are pinned to full commit SHAs and checked by `pnpm actions:check`.
+- GitHub Actions are pinned to full commit SHAs and checked by `pnpm actions:check`; actionlint
+  validates workflow syntax from a checksum-pinned binary.
 - Installs use the exact Node and pnpm pins with a frozen lockfile. Dependency lifecycle scripts
   fail unless the package is explicitly approved.
 - Dependency review blocks newly introduced moderate-or-higher vulnerabilities and unapproved
