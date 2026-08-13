@@ -4,6 +4,9 @@
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/core" },
+    { "path": "packages/postgres" },
+    { "path": "packages/blob-s3" },
+    { "path": "packages/queue-pg-boss" },
     { "path": "packages/sdk" }
   ]
 }
