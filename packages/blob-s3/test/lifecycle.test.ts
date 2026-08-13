@@ -158,9 +158,13 @@ describe("encrypted stage lifecycle", () => {
   });
 });
 
-const availableRecord = (sha256: string, size: number): StoredBlobRecord => ({
+const availableRecord = (
+  sha256: string,
+  size: number,
+  headerSha256 = "00".repeat(32),
+): StoredBlobRecord => ({
   encryptionFormatVersion: 1,
-  encryptionMetadata: {},
+  encryptionMetadata: { headerSha256 },
   kmsKeyRef: "test-key",
   objectKey: "mail-edge/raw/message.meb",
   optimisticVersion: 0,
@@ -173,6 +177,7 @@ const availableRecord = (sha256: string, size: number): StoredBlobRecord => ({
     size,
   },
   status: "available",
+  sourceStageId: stageId,
   tenantId,
   wrappedDek: Uint8Array.of(1),
 });
@@ -278,7 +283,7 @@ describe("lazy encrypted reads", () => {
       const body = await openBody(
         openStore({
           key,
-          record: availableRecord(digest, plaintext.byteLength),
+          record: availableRecord(digest, plaintext.byteLength, header.digest.toString("hex")),
           send: async () => ({ Body: responseBody }),
           unwrapCalls: { value: 0 },
         }),

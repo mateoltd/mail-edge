@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   ListObjectsV2Command,
   PutBucketVersioningCommand,
   PutObjectCommand,
@@ -58,6 +59,7 @@ class MemoryBlobMetadata implements BlobMetadataStore {
   readonly blobs = new Map<string, StoredBlobRecord>();
   readonly stages = new Map<string, StageState>();
   failNextRecord = false;
+  failNextCommit = false;
 
   async reserveStage(
     input: BlobStageCreation,
@@ -116,6 +118,10 @@ class MemoryBlobMetadata implements BlobMetadataStore {
     ) {
       return failure("stage mismatch");
     }
+    if (this.failNextCommit) {
+      this.failNextCommit = false;
+      return failure("injected promotion commit failure");
+    }
     stage.state = "promoted";
     stage.version += 1;
     const raw = Object.freeze({
@@ -136,6 +142,7 @@ class MemoryBlobMetadata implements BlobMetadataStore {
       optimisticVersion: 0,
       purpose: stage.purpose,
       raw,
+      sourceStageId: stage.stageId,
       status: "available",
       tenantId: stage.tenantId,
       wrappedDek: stage.wrappedDek,
@@ -164,6 +171,12 @@ class MemoryBlobMetadata implements BlobMetadataStore {
     return { ok: true, value: { optimisticVersion: stage.version } };
   }
 
+  async replaceMissingFinalObject(
+    input: BlobFinalObject,
+  ): Promise<DriverResult<{ optimisticVersion: number }>> {
+    return this.recordFinalObject(input);
+  }
+
   async abandonStage(
     _tenantId: BlobTenantId,
     stageId: string,
@@ -183,6 +196,10 @@ class MemoryBlobMetadata implements BlobMetadataStore {
     return record === undefined ? failure("blob not found") : { ok: true, value: record };
   }
 
+  async restoreCorrupt(): Promise<DriverResult<StoredBlobRecord>> {
+    return failure("no corrupt blob");
+  }
+
   async listPendingPromotions(
     tenantId: BlobTenantId,
     limit: number,
@@ -199,13 +216,24 @@ class MemoryBlobMetadata implements BlobMetadataStore {
         .slice(0, limit)
         .map((stage) => ({
           blobId: stage.stageId,
+          encryptionFormatVersion: Number(stage.encryptionMetadata["formatVersion"]),
+          encryptionMetadata: stage.encryptionMetadata,
           expectedVersion: stage.version,
+          expectedSha256: stage.observedSha256 ?? "",
+          expectedSize: stage.observedBytes ?? 0,
           finalObjectKey: stage.finalObjectKey ?? "",
           ...(stage.finalObjectVersion === undefined
             ? {}
             : { finalObjectVersion: stage.finalObjectVersion }),
           stageId: stage.stageId,
+          scratchObjectKey: stage.objectKey,
+          ...(stage.objectVersion === undefined
+            ? {}
+            : { scratchObjectVersion: stage.objectVersion }),
           tenantId: stage.tenantId,
+          kmsKeyRef: stage.kmsKeyRef,
+          purpose: stage.purpose,
+          wrappedDek: stage.wrappedDek,
         })),
     };
   }
@@ -239,6 +267,10 @@ class MemoryBlobMetadata implements BlobMetadataStore {
   }
 
   async markObjectDeleted(): Promise<DriverResult<void>> {
+    return { ok: true, value: undefined };
+  }
+
+  async revalidatePurgeClaim(): Promise<DriverResult<void>> {
     return { ok: true, value: undefined };
   }
 
@@ -425,5 +457,50 @@ describe("encrypted S3 blob runtime", { concurrent: false }, () => {
     const chunks: Buffer[] = [];
     for await (const chunk of opened.value.body) chunks.push(Buffer.from(chunk));
     expect(Buffer.concat(chunks).toString("utf8")).toBe("repair me");
+  });
+
+  test("recreates a missing recorded final object from the exact scratch version", async () => {
+    const stageId = "018f4f6a-7b2c-7000-8000-000000000204";
+    metadata.failNextCommit = true;
+    const reserved = await blobs.stages.reserve(
+      { maximumBytes: 1024, purpose: "outbound_upload", stageId, tenantId },
+      new AbortController().signal,
+    );
+    if (!reserved.ok) throw new TypeError("stage reservation failed");
+    expect(
+      await reserved.value.write(
+        Buffer.from("recover exact scratch"),
+        new AbortController().signal,
+      ),
+    ).toMatchObject({ ok: true });
+    expect(await reserved.value.complete(new AbortController().signal)).toMatchObject({
+      ok: false,
+    });
+    const pending = metadata.stages.get(stageId);
+    if (pending?.finalObjectVersion === undefined || pending.finalObjectKey === undefined) {
+      throw new TypeError("Recorded final object fixture is missing.");
+    }
+    const missingVersion = pending.finalObjectVersion;
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: "mail-edge-test",
+        Key: pending.finalObjectKey,
+        VersionId: missingVersion,
+      }),
+    );
+
+    const repaired = await new BlobPromotionRepairWorker(metadata, blobs, 10).runTenant(
+      tenantId,
+      new AbortController().signal,
+    );
+    expect(repaired).toMatchObject({ ok: true, value: [{ raw: { blobId: stageId } }] });
+    const repairedVersion = metadata.stages.get(stageId)?.finalObjectVersion;
+    expect(repairedVersion).toBeDefined();
+    expect(repairedVersion).not.toBe(missingVersion);
+    const opened = await blobs.openRaw(tenantId, stageId as never, new AbortController().signal);
+    if (!opened.ok) throw new TypeError("recreated blob should open");
+    const chunks: Buffer[] = [];
+    for await (const chunk of opened.value.body) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks).toString("utf8")).toBe("recover exact scratch");
   });
 });

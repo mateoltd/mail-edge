@@ -22,6 +22,8 @@ export interface AbandonedBlobStage {
     // (undocumented)
     readonly stageId: string;
     // (undocumented)
+    readonly state: "abandoned" | "promoted";
+    // (undocumented)
     readonly tenantId: BlobTenantId;
 }
 
@@ -137,9 +139,19 @@ export interface BlobMetadataStore {
         readonly optimisticVersion: number;
     }>>;
     // (undocumented)
+    replaceMissingFinalObject(input: BlobFinalObject & {
+        readonly missingFinalObjectVersion?: string;
+    }, occurredAt: string, signal: AbortSignal): Promise<DriverResult<{
+        readonly optimisticVersion: number;
+    }>>;
+    // (undocumented)
     reserveStage(input: BlobStageCreation, signal: AbortSignal): Promise<DriverResult<{
         readonly optimisticVersion: number;
     }>>;
+    // (undocumented)
+    restoreCorrupt(proof: RawBlobRestorationProof, restoredAt: string, retainUntil: string, signal: AbortSignal): Promise<DriverResult<StoredBlobRecord>>;
+    // (undocumented)
+    revalidatePurgeClaim(claim: BlobPurgeClaim, now: string, signal: AbortSignal): Promise<DriverResult<void>>;
 }
 
 // @public
@@ -375,6 +387,8 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     // (undocumented)
     repairPromotion(pending: PendingBlobPromotion, signal: AbortSignal): Promise<DriverResult<StoredBlobRecord>>;
     // (undocumented)
+    restoreCorrupt(tenantId: BlobTenantId, blobId: BlobId, expectedVersion: number, retainUntil: string, signal: AbortSignal): Promise<DriverResult<StoredBlobRecord>>;
+    // (undocumented)
     readonly stages: EncryptedS3BlobStagePort;
 }
 
@@ -442,15 +456,33 @@ export interface PendingBlobPromotion {
     // (undocumented)
     readonly blobId: string;
     // (undocumented)
+    readonly encryptionFormatVersion: number;
+    // (undocumented)
+    readonly encryptionMetadata: Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly expectedSha256: string;
+    // (undocumented)
+    readonly expectedSize: number;
+    // (undocumented)
     readonly expectedVersion: number;
     // (undocumented)
     readonly finalObjectKey: string;
     // (undocumented)
     readonly finalObjectVersion?: string;
     // (undocumented)
+    readonly kmsKeyRef: string;
+    // (undocumented)
+    readonly purpose: BlobReservation["purpose"];
+    // (undocumented)
+    readonly scratchObjectKey: string;
+    // (undocumented)
+    readonly scratchObjectVersion?: string;
+    // (undocumented)
     readonly stageId: string;
     // (undocumented)
     readonly tenantId: BlobTenantId;
+    // (undocumented)
+    readonly wrappedDek: Uint8Array;
 }
 
 // @public (undocumented)
@@ -469,6 +501,30 @@ interface PurgingBlobStore extends BlobStorePort {
 interface PurgingBlobStore_2 extends BlobStorePort {
     // (undocumented)
     purge(claim: BlobPurgeClaim, occurredAt: string, signal: AbortSignal): Promise<DriverResult<void>>;
+}
+
+// @public
+export interface RawBlobRestorationProof {
+    // (undocumented)
+    readonly blobId: string;
+    // (undocumented)
+    readonly encryptionFormatVersion: number;
+    // (undocumented)
+    readonly encryptionHeaderSha256: string;
+    // (undocumented)
+    readonly expectedVersion: number;
+    // (undocumented)
+    readonly objectKey: string;
+    // (undocumented)
+    readonly objectVersion?: string;
+    // (undocumented)
+    readonly sha256: string;
+    // (undocumented)
+    readonly size: number;
+    // (undocumented)
+    readonly tenantId: BlobTenantId;
+    // (undocumented)
+    readonly verifiedAt: string;
 }
 
 // @public (undocumented)
@@ -503,6 +559,8 @@ export interface StoredBlobRecord {
     //
     // (undocumented)
     readonly raw: ResultValue<Awaited<ReturnType<BlobStorePort["getAvailableReference"]>>>;
+    // (undocumented)
+    readonly sourceStageId: string;
     // (undocumented)
     readonly status: "available" | "purge_pending" | "deleted" | "corrupt";
     // (undocumented)

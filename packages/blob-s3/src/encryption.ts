@@ -180,6 +180,7 @@ export async function* decryptFrames(
   identity: EncryptionIdentity,
   expectedSha256: string,
   expectedBytes: number,
+  expectedHeaderSha256?: string,
 ): AsyncIterable<Uint8Array> {
   const reader = new ByteReader(source);
   const plaintextDigest = createHash("sha256");
@@ -188,6 +189,14 @@ export async function* decryptFrames(
   let previousTag = Buffer.alloc(authenticationTagBytes);
   try {
     const header = parseEncryptionHeader(await reader.readExact(headerBytes));
+    if (expectedHeaderSha256 !== undefined) {
+      if (!/^[a-f0-9]{64}$/u.test(expectedHeaderSha256)) {
+        throw new TypeError("Persisted encrypted-blob header digest is malformed.");
+      }
+      if (!timingSafeEqual(header.digest, Buffer.from(expectedHeaderSha256, "hex"))) {
+        throw new TypeError("Encrypted blob header does not match PostgreSQL.");
+      }
+    }
     let finalFrame = false;
     while (!finalFrame) {
       const prefix = await reader.readExact(framePrefixBytes);

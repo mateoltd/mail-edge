@@ -40,5 +40,6 @@ export type {
   EnvelopeKey,
   EnvelopeKeyService,
   PendingBlobPromotion,
+  RawBlobRestorationProof,
   StoredBlobRecord,
 } from "./types.js";
