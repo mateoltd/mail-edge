@@ -1,3 +1,5 @@
+import { isUint8Array } from "node:util/types";
+
 import {
   DEFAULT_MAX_RAW_MESSAGE_BYTES,
   MailEdgeError,
@@ -16,6 +18,7 @@ import {
 } from "@mail-edge/contracts";
 import type {
   ApplicationDeliverySink,
+  BlobStageWriter,
   BlobStorePort,
   Clock,
   IdGenerator,
@@ -27,13 +30,13 @@ import type {
   ReverseRouteResolutionV1,
   ReverseRouteResolver,
   Telemetry,
-  UnitOfWork,
+  TenantUnitOfWorkFactory,
   WakeupScheduler,
 } from "@mail-edge/core";
 
 /** @public */
 export interface MailEdgeSdkDependencies {
-  readonly unitOfWork: UnitOfWork;
+  readonly tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
   readonly repositories: MailEdgeRepositories;
   readonly blobStore: BlobStorePort;
   readonly wakeupScheduler: WakeupScheduler;
@@ -45,6 +48,7 @@ export interface MailEdgeSdkDependencies {
   readonly clock: Clock;
   readonly idGenerator: IdGenerator;
   readonly telemetry: Telemetry;
+  readonly stageCleanupTimeoutMilliseconds: number;
 }
 
 /** @public */
@@ -69,11 +73,34 @@ const sdkError = (
     safeDetails,
   });
 
+const isCanceled = (signal: AbortSignal): boolean => signal.aborted;
+
+const awaitOwnedCleanup = async (operation: Promise<void>, signal: AbortSignal): Promise<void> => {
+  if (signal.aborted) return;
+  let resolveCanceled: (() => void) | undefined;
+  const canceled = new Promise<void>((resolve) => {
+    resolveCanceled = resolve;
+  });
+  const cancel = (): void => resolveCanceled?.();
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    await Promise.race([operation, canceled]);
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+};
+
 /** Infrastructure-neutral embedded facade. It owns no ambient configuration or concrete driver. @public */
 export class MailEdgeSdk {
   readonly #dependencies: MailEdgeSdkDependencies;
 
   constructor(dependencies: MailEdgeSdkDependencies) {
+    if (
+      !Number.isSafeInteger(dependencies.stageCleanupTimeoutMilliseconds) ||
+      dependencies.stageCleanupTimeoutMilliseconds < 1
+    ) {
+      throw new TypeError("SDK stage cleanup timeout must be a positive safe integer.");
+    }
     this.#dependencies = Object.freeze({ ...dependencies });
   }
 
@@ -118,20 +145,34 @@ export class MailEdgeSdk {
       signal,
     );
     if (!stage.ok) return stage;
+    if (signal.aborted) {
+      await this.#abortStage(stage.value, "aborted");
+      return {
+        error: sdkError("INTERNAL", "Raw-message stream was canceled."),
+        ok: false,
+      };
+    }
 
     let observed = 0;
     try {
       for await (const chunk of input.body) {
-        if (signal.aborted) {
-          await stage.value.abort("aborted", signal);
+        if (isCanceled(signal)) {
+          await this.#abortStage(stage.value, "aborted");
           return {
             error: sdkError("INTERNAL", "Raw-message stream was canceled."),
             ok: false,
           };
         }
+        if (!isUint8Array(chunk)) {
+          await this.#abortStage(stage.value, "invalid_chunk");
+          return {
+            error: sdkError("VALIDATION_FAILED", "Raw-message stream yielded a non-byte chunk."),
+            ok: false,
+          };
+        }
         observed += chunk.byteLength;
         if (observed > input.maximumBytes) {
-          await stage.value.abort("streamed_size_exceeded", signal);
+          await this.#abortStage(stage.value, "streamed_size_exceeded");
           return {
             error: sdkError(
               "INGRESS_LIMIT_EXCEEDED",
@@ -146,12 +187,12 @@ export class MailEdgeSdk {
         }
         const written = await stage.value.write(chunk, signal);
         if (!written.ok) {
-          await stage.value.abort("write_failed", signal);
+          await this.#abortStage(stage.value, "write_failed");
           return written;
         }
       }
     } catch (cause) {
-      await stage.value.abort("source_failed", signal);
+      await this.#abortStage(stage.value, "source_failed");
       return {
         error: new MailEdgeError({
           cause,
@@ -164,7 +205,7 @@ export class MailEdgeSdk {
       };
     }
     if (input.contentLength !== null && input.contentLength !== observed) {
-      await stage.value.abort("content_length_mismatch", signal);
+      await this.#abortStage(stage.value, "content_length_mismatch");
       return {
         error: sdkError(
           "VALIDATION_FAILED",
@@ -177,7 +218,10 @@ export class MailEdgeSdk {
       };
     }
     const completed = await stage.value.complete(signal);
-    if (!completed.ok) return completed;
+    if (!completed.ok) {
+      await this.#abortStage(stage.value, "completion_failed");
+      return completed;
+    }
     const validated = validateContract(RawMessageRefV1Schema, completed.value);
     if (!validated.ok || completed.value.size !== observed) {
       return {
@@ -205,23 +249,25 @@ export class MailEdgeSdk {
     intentId: IntentId,
     signal: AbortSignal,
   ): Promise<Result<OutboundIntentV1, MailEdgeError>> {
-    return this.#dependencies.unitOfWork.execute(async (context, transactionSignal) => {
-      const found = await this.#dependencies.repositories.outboundIntents.findById(
-        tenantId,
-        intentId,
-        context,
-        transactionSignal,
-      );
-      if (!found.ok) return found;
-      return found.value === null
-        ? {
-            error: sdkError("NOT_FOUND", "Outbound intent was not found.", {
-              resourceType: "outbound_intent",
-            }),
-            ok: false,
-          }
-        : { ok: true, value: found.value };
-    }, signal);
+    return this.#dependencies.tenantUnitOfWorkFactory
+      .forTenant(tenantId)
+      .execute(async (context, transactionSignal) => {
+        const found = await this.#dependencies.repositories.outboundIntents.findById(
+          tenantId,
+          intentId,
+          context,
+          transactionSignal,
+        );
+        if (!found.ok) return found;
+        return found.value === null
+          ? {
+              error: sdkError("NOT_FOUND", "Outbound intent was not found.", {
+                resourceType: "outbound_intent",
+              }),
+              ok: false,
+            }
+          : { ok: true, value: found.value };
+      }, signal);
   }
 
   getInboundReceipt(
@@ -229,23 +275,25 @@ export class MailEdgeSdk {
     receiptId: ReceiptId,
     signal: AbortSignal,
   ): Promise<Result<VerifiedInboundReceiptV1, MailEdgeError>> {
-    return this.#dependencies.unitOfWork.execute(async (context, transactionSignal) => {
-      const found = await this.#dependencies.repositories.inboundReceipts.findById(
-        tenantId,
-        receiptId,
-        context,
-        transactionSignal,
-      );
-      if (!found.ok) return found;
-      return found.value === null
-        ? {
-            error: sdkError("NOT_FOUND", "Inbound receipt was not found.", {
-              resourceType: "inbound_receipt",
-            }),
-            ok: false,
-          }
-        : { ok: true, value: found.value };
-    }, signal);
+    return this.#dependencies.tenantUnitOfWorkFactory
+      .forTenant(tenantId)
+      .execute(async (context, transactionSignal) => {
+        const found = await this.#dependencies.repositories.inboundReceipts.findById(
+          tenantId,
+          receiptId,
+          context,
+          transactionSignal,
+        );
+        if (!found.ok) return found;
+        return found.value === null
+          ? {
+              error: sdkError("NOT_FOUND", "Inbound receipt was not found.", {
+                resourceType: "inbound_receipt",
+              }),
+              ok: false,
+            }
+          : { ok: true, value: found.value };
+      }, signal);
   }
 
   resolveReverseRoute(
@@ -258,8 +306,9 @@ export class MailEdgeSdk {
   getProviderDescriptor(
     providerId: Parameters<ProviderRegistryPort["get"]>[0],
     adapterVersion: string,
+    mode: string,
   ): Result<ProviderCapabilityDescriptorV1, MailEdgeError> {
-    const provider = this.#dependencies.providerRegistry.get(providerId, adapterVersion);
+    const provider = this.#dependencies.providerRegistry.get(providerId, adapterVersion, mode);
     return provider === undefined
       ? {
           error: sdkError("NOT_FOUND", "Provider abstraction is not registered.", {
@@ -272,5 +321,18 @@ export class MailEdgeSdk {
 
   now(): string {
     return this.#dependencies.clock.now();
+  }
+
+  async #abortStage(writer: BlobStageWriter, reason: string): Promise<void> {
+    const cleanupSignal = AbortSignal.timeout(this.#dependencies.stageCleanupTimeoutMilliseconds);
+    try {
+      const ownedCleanup = writer.abort(reason, cleanupSignal).then(
+        () => undefined,
+        () => undefined,
+      );
+      await awaitOwnedCleanup(ownedCleanup, cleanupSignal);
+    } catch {
+      // The original ingestion failure remains authoritative; cleanup implementations are bounded.
+    }
   }
 }

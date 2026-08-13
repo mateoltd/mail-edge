@@ -83,7 +83,13 @@ assert.equal(conformance.value.passed, true);
     writeFileSync(
       join(consumerDirectory, "consumer.ts"),
       `import { parseProviderId, type ProviderId, type SmtpEnvelopeV1 } from "@mail-edge/contracts";
-import { canonicalizeSmtpEnvelope, type BlobStorePort, type HeaderPatchApplierPort } from "@mail-edge/core";
+import {
+  canonicalizeSmtpEnvelope,
+  type BlobStorePort,
+  type HeaderPatchApplierPort,
+  type ProviderRegistryPort,
+  type TenantUnitOfWorkFactory,
+} from "@mail-edge/core";
 import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import type { ProviderAdapterRegistration } from "@mail-edge/provider";
@@ -97,8 +103,15 @@ const canonical = canonicalizeSmtpEnvelope(envelope);
 const headerPatcher: HeaderPatchApplierPort = new StreamingHeaderPatchApplier();
 const builder = new MailEdgeSdkBuilder();
 declare const blobStore: BlobStorePort;
+declare const providerRegistry: ProviderRegistryPort;
 declare const registration: ProviderAdapterRegistration;
-builder.withBlobStore(blobStore);
+declare const tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
+builder
+  .withBlobStore(blobStore)
+  .withProviderRegistry(providerRegistry)
+  .withStageCleanupTimeoutMilliseconds(30_000)
+  .withTenantUnitOfWorkFactory(tenantUnitOfWorkFactory);
+void providerRegistry.get(providerId, "1.0.0", "smtp");
 const conformanceTarget: ProviderConformanceTarget = { registration, driver: {}, region: "test-region", environment: {} };
 void providerId;
 void canonical;

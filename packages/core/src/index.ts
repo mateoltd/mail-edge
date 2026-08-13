@@ -90,6 +90,7 @@ export type {
   TelemetryFields,
   TelemetrySizeBucket,
   TelemetryState,
+  TenantUnitOfWorkFactory,
   UnitOfWork,
   UnitOfWorkContext,
   Wakeup,

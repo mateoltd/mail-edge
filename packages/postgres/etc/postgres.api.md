@@ -32,6 +32,7 @@ import type { RouteBindingRepository } from '@mail-edge/core';
 import { RouteBindingSnapshotV1 } from '@mail-edge/contracts';
 import type { Selectable } from 'kysely';
 import { TenantId } from '@mail-edge/contracts';
+import type { TenantUnitOfWorkFactory } from '@mail-edge/core';
 import { Transaction } from 'kysely';
 import type { UnitOfWork } from '@mail-edge/core';
 import type { UnitOfWorkContext } from '@mail-edge/core';
@@ -855,7 +856,7 @@ export class PostgresTenantUnitOfWork implements UnitOfWork {
 }
 
 // @public
-export class PostgresUnitOfWork implements UnitOfWork {
+export class PostgresUnitOfWork implements TenantUnitOfWorkFactory {
     constructor(database: Kysely<MailEdgeDatabase>, statementTimeoutMilliseconds: number);
     // (undocumented)
     execute<T>(operation: (context: UnitOfWorkContext, signal: AbortSignal) => Promise<Result<T, MailEdgeError>>, signal: AbortSignal): Promise<Result<T, MailEdgeError>>;

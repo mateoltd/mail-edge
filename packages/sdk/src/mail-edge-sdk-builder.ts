@@ -9,7 +9,7 @@ import type {
   RecipientRouter,
   ReverseRouteResolver,
   Telemetry,
-  UnitOfWork,
+  TenantUnitOfWorkFactory,
   WakeupScheduler,
 } from "@mail-edge/core";
 
@@ -17,7 +17,7 @@ import { MailEdgeSdk, type MailEdgeSdkDependencies } from "./mail-edge.service.j
 
 /** Builder with no infrastructure, provider, environment, or composition defaults. @public */
 export class MailEdgeSdkBuilder {
-  #unitOfWork?: UnitOfWork;
+  #tenantUnitOfWorkFactory?: TenantUnitOfWorkFactory;
   #repositories?: MailEdgeRepositories;
   #blobStore?: BlobStorePort;
   #wakeupScheduler?: WakeupScheduler;
@@ -29,9 +29,10 @@ export class MailEdgeSdkBuilder {
   #clock?: Clock;
   #idGenerator?: IdGenerator;
   #telemetry?: Telemetry;
+  #stageCleanupTimeoutMilliseconds?: number;
 
-  withUnitOfWork(value: UnitOfWork): this {
-    this.#unitOfWork = value;
+  withTenantUnitOfWorkFactory(value: TenantUnitOfWorkFactory): this {
+    this.#tenantUnitOfWorkFactory = value;
     return this;
   }
   withRepositories(value: MailEdgeRepositories): this {
@@ -78,6 +79,10 @@ export class MailEdgeSdkBuilder {
     this.#telemetry = value;
     return this;
   }
+  withStageCleanupTimeoutMilliseconds(value: number): this {
+    this.#stageCleanupTimeoutMilliseconds = value;
+    return this;
+  }
 
   build(): MailEdgeSdk {
     const values = {
@@ -90,8 +95,9 @@ export class MailEdgeSdkBuilder {
       recipientRouter: this.#recipientRouter,
       repositories: this.#repositories,
       reverseRouteResolver: this.#reverseRouteResolver,
+      stageCleanupTimeoutMilliseconds: this.#stageCleanupTimeoutMilliseconds,
       telemetry: this.#telemetry,
-      unitOfWork: this.#unitOfWork,
+      tenantUnitOfWorkFactory: this.#tenantUnitOfWorkFactory,
       wakeupScheduler: this.#wakeupScheduler,
     };
     const missing = Object.entries(values)

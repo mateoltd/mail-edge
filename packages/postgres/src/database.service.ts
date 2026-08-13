@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { MailEdgeError, type Result, type TenantId } from "@mail-edge/contracts";
-import type { UnitOfWork, UnitOfWorkContext } from "@mail-edge/core";
+import type { TenantUnitOfWorkFactory, UnitOfWork, UnitOfWorkContext } from "@mail-edge/core";
 import {
   CamelCasePlugin,
   CompiledQuery,
@@ -140,7 +140,7 @@ export class PostgresDatabase {
 }
 
 /** Transaction owner with request-local RLS tenant context and finite statement deadlines. @public */
-export class PostgresUnitOfWork implements UnitOfWork {
+export class PostgresUnitOfWork implements TenantUnitOfWorkFactory {
   readonly #database: Kysely<MailEdgeDatabase>;
   readonly #sessions = new WeakMap<UnitOfWorkContext, TransactionSession>();
   readonly #statementTimeoutMilliseconds: number;

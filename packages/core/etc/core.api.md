@@ -708,7 +708,7 @@ export const projectRecipientFeedback: (input: FeedbackProjectionInput) => Recip
 // @public (undocumented)
 export interface ProviderRegistryPort {
     // (undocumented)
-    get(providerId: ProviderId, adapterVersion: string): RegisteredProviderAbstraction | undefined;
+    get(providerId: ProviderId, adapterVersion: string, mode: string): RegisteredProviderAbstraction | undefined;
 }
 
 // @public
@@ -931,6 +931,12 @@ export type TelemetrySizeBucket = "empty" | "up_to_64_kib" | "up_to_1_mib" | "up
 
 // @public (undocumented)
 export type TelemetryState = BindingState | InboundReceiptState | OutboundIntentState | OutboundAttemptState | ApplicationDeliveryState | RecipientTransportState;
+
+// @public
+export interface TenantUnitOfWorkFactory {
+    // (undocumented)
+    forTenant(tenantId: TenantId): UnitOfWork;
+}
 
 // @public (undocumented)
 export interface UnitOfWork {

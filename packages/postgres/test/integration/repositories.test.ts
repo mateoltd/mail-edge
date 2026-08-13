@@ -8,12 +8,14 @@ import {
   parseIntentId,
   parseProviderId,
   parseProviderInstanceId,
+  parseReceiptId,
   parseTenantId,
   type IdempotencyRecordV1,
   type OutboundAttemptV1,
   type OutboundIntentV1,
   type RawMessageRefV1,
   type RouteBindingSnapshotV1,
+  type VerifiedInboundReceiptV1,
 } from "@mail-edge/contracts";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -24,6 +26,7 @@ import {
   PostgresDatabase,
   PostgresLeaseRepository,
   PostgresMigrationRunner,
+  PostgresInboundReceiptRepository,
   PostgresOutboundIntentRepository,
   PostgresUnitOfWork,
   PostgresWakeupRepairRepository,
@@ -47,6 +50,10 @@ const firstClaimAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-0000000
 const secondClaimAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000109"));
 const expiredLeaseIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000110"));
 const expiredLeaseAttemptId = must(parseAttemptId("018f4f6a-7b2c-7000-8000-000000000111"));
+const otherTenantId = must(parseTenantId("018f4f6a-7b2c-7000-8000-000000000113"));
+const inboundBindingId = must(parseBindingId("018f4f6a-7b2c-7000-8000-000000000114"));
+const crossTenantIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000115"));
+const crossTenantReceiptId = must(parseReceiptId("018f4f6a-7b2c-7000-8000-000000000116"));
 const idempotencyKey = must(parseIdempotencyKey("runtime-test-key"));
 void idempotencyKey;
 
@@ -75,6 +82,12 @@ const binding: RouteBindingSnapshotV1 = Object.freeze({
   providerResourceIds: Object.freeze({ route: "opaque-resource" }),
   schemaVersion: "v1",
   tenantId,
+});
+
+const inboundBinding: RouteBindingSnapshotV1 = Object.freeze({
+  ...binding,
+  bindingId: inboundBindingId,
+  direction: "inbound",
 });
 
 const intent = (intentId: OutboundIntentV1["intentId"]): OutboundIntentV1 =>
@@ -138,6 +151,7 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
   let intents: PostgresOutboundIntentRepository;
   let leases: PostgresLeaseRepository;
   let blobs: PostgresBlobRepository;
+  let inboundReceipts: PostgresInboundReceiptRepository;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17.6-alpine3.22")
@@ -149,7 +163,15 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       new AbortController().signal,
     );
     owner = new Pool({ connectionString: container.getConnectionUri() });
-    await owner.query(`INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active')`, [tenantId]);
+    await owner.query(`CREATE ROLE mail_edge_app LOGIN PASSWORD 'app-password'`);
+    await owner.query(`GRANT USAGE ON SCHEMA public TO mail_edge_app`);
+    await owner.query(
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO mail_edge_app`,
+    );
+    await owner.query(
+      `INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active'), ($2, 'active')`,
+      [tenantId, otherTenantId],
+    );
     await owner.query(
       `INSERT INTO domain_claims
         (tenant_id, domain_a_label, verification_method, verification_digest, verified_at)
@@ -174,6 +196,17 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       [bindingId, tenantId, providerInstanceId, occurredAt],
     );
     await owner.query(
+      `INSERT INTO route_bindings
+        (binding_id, binding_version, tenant_id, domain_a_label, direction,
+         provider_instance_id, provider_id, adapter_version, secret_ref, config_ref,
+         config_revision, capability_snapshot, capability_digest, provider_resource_ids,
+         state, created_at, updated_at)
+       VALUES ($1, 1, $2, 'example.test', 'inbound', $3, 'mailgun', '1.0.0',
+         'secret://a', 'config://a', 'config-a', '{"schemaVersion":"v1"}',
+         decode(repeat('22', 32), 'hex'), '{"route":"opaque-inbound-resource"}', 'active', $4, $4)`,
+      [inboundBindingId, tenantId, providerInstanceId, occurredAt],
+    );
+    await owner.query(
       `INSERT INTO blob_ingest_stages
         (stage_id, tenant_id, purpose, object_key, final_object_key, state,
          expected_max_bytes, observed_bytes, observed_sha256, encryption_key_ref,
@@ -196,7 +229,9 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     );
     database = new PostgresDatabase({
       applicationName: "repository-tests",
-      connectionString: container.getConnectionUri(),
+      connectionString: container
+        .getConnectionUri()
+        .replace("mail_edge_owner:owner-password", "mail_edge_app:app-password"),
       connectionTimeoutMilliseconds: 5_000,
       idleTimeoutMilliseconds: 10_000,
       maximumPoolSize: 8,
@@ -210,6 +245,10 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       resolveKey: async () => Uint8Array.from(Buffer.from("55".repeat(32), "hex")),
     };
     intents = new PostgresOutboundIntentRepository(
+      unitOfWork,
+      new AesGcmSensitiveValueCipher(keys),
+    );
+    inboundReceipts = new PostgresInboundReceiptRepository(
       unitOfWork,
       new AesGcmSensitiveValueCipher(keys),
     );
@@ -264,6 +303,108 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       [tenantId, firstIdempotencyCandidateId, secondIdempotencyCandidateId],
     );
     expect(durable.rows).toEqual([{ intent_id: winningIntentId }]);
+  });
+
+  test("tenant-bound reads hide outbound intents and inbound receipts across real RLS sessions", async () => {
+    const signal = new AbortController().signal;
+    const crossIntent = intent(crossTenantIntentId);
+    const crossReceipt: VerifiedInboundReceiptV1 = Object.freeze({
+      binding: inboundBinding,
+      envelope: Object.freeze({
+        mailFrom: "sender@example.test",
+        rcptTo: Object.freeze([Object.freeze({ address: "recipient@example.test" })]),
+        schemaVersion: "v1",
+        smtpUtf8: false,
+      }),
+      providerId,
+      providerInstanceId,
+      providerReceiptKey: "provider-receipt-cross-tenant",
+      raw,
+      receiptId: crossTenantReceiptId,
+      receivedAt: occurredAt,
+      schemaVersion: "v1",
+      state: "stored",
+      tenantId,
+      verificationEvidenceDigest: "88".repeat(32),
+      version: 0,
+    });
+    expect(
+      await unitOfWork
+        .forTenant(tenantId)
+        .execute(
+          (context) =>
+            intents.insert(
+              crossIntent,
+              idempotency(crossTenantIntentId, "cc".repeat(32)),
+              context,
+              signal,
+            ),
+          signal,
+        ),
+    ).toMatchObject({ ok: true });
+    expect(
+      await unitOfWork
+        .forTenant(tenantId)
+        .execute(
+          (context) => inboundReceipts.commitStored(crossReceipt, "dd".repeat(32), context, signal),
+          signal,
+        ),
+    ).toMatchObject({ ok: true });
+
+    const visibleIntent = await unitOfWork
+      .forTenant(tenantId)
+      .execute(
+        (context, transactionSignal) =>
+          intents.findById(tenantId, crossTenantIntentId, context, transactionSignal),
+        signal,
+      );
+    const visibleReceipt = await unitOfWork
+      .forTenant(tenantId)
+      .execute(
+        (context, transactionSignal) =>
+          inboundReceipts.findById(tenantId, crossTenantReceiptId, context, transactionSignal),
+        signal,
+      );
+    expect(visibleIntent).toMatchObject({ ok: true, value: { intentId: crossTenantIntentId } });
+    expect(visibleReceipt).toMatchObject({ ok: true, value: { receiptId: crossTenantReceiptId } });
+
+    const hiddenIntent = await unitOfWork
+      .forTenant(otherTenantId)
+      .execute(
+        (context, transactionSignal) =>
+          intents.findById(otherTenantId, crossTenantIntentId, context, transactionSignal),
+        signal,
+      );
+    const hiddenReceipt = await unitOfWork
+      .forTenant(otherTenantId)
+      .execute(
+        (context, transactionSignal) =>
+          inboundReceipts.findById(otherTenantId, crossTenantReceiptId, context, transactionSignal),
+        signal,
+      );
+    expect(hiddenIntent).toEqual({ ok: true, value: null });
+    expect(hiddenReceipt).toEqual({ ok: true, value: null });
+
+    const rawRlsCounts = await unitOfWork
+      .forTenant(otherTenantId)
+      .execute(async (context, transactionSignal) => {
+        const result = await unitOfWork.executeSql<{
+          readonly intentCount: string;
+          readonly receiptCount: string;
+        }>(
+          context,
+          `SELECT
+             (SELECT count(*)::text FROM outbound_intents WHERE intent_id = $1) AS intent_count,
+             (SELECT count(*)::text FROM inbound_receipts WHERE receipt_id = $2) AS receipt_count`,
+          [crossTenantIntentId, crossTenantReceiptId],
+          transactionSignal,
+        );
+        return { ok: true, value: result.rows[0] };
+      }, signal);
+    expect(rawRlsCounts).toEqual({
+      ok: true,
+      value: { intentCount: "0", receiptCount: "0" },
+    });
   });
 
   test("rolls back all repository writes when a unit of work returns failure", async () => {

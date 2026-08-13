@@ -51,6 +51,11 @@ export interface UnitOfWork {
   ): Promise<Result<T, MailEdgeError>>;
 }
 
+/** Creates request-scoped transaction owners with an explicit tenant identity. @public */
+export interface TenantUnitOfWorkFactory {
+  forTenant(tenantId: TenantId): UnitOfWork;
+}
+
 /** @public */
 export interface AuditPort {
   append(
@@ -239,7 +244,11 @@ export interface RegisteredProviderAbstraction {
 
 /** @public */
 export interface ProviderRegistryPort {
-  get(providerId: ProviderId, adapterVersion: string): RegisteredProviderAbstraction | undefined;
+  get(
+    providerId: ProviderId,
+    adapterVersion: string,
+    mode: string,
+  ): RegisteredProviderAbstraction | undefined;
 }
 
 /** @public */
