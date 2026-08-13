@@ -55,7 +55,7 @@
     "@cyclonedx/cdxgen": "12.8.3",
     "@eslint/js": "9.39.5",
     "@microsoft/api-extractor": "7.58.12",
-    "@types/node": "24.13.3",
+    "@types/node": "26.2.0",
     "dependency-cruiser": "18.2.0",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "3.8.7",
