@@ -14,6 +14,7 @@ import {
   Sha256Schema,
 } from "./common.schema.js";
 import { DsnNotifySchema, SmtpEnvelopeV1Schema, SmtpRecipientV1Schema } from "./envelope.schema.js";
+import { HeaderPatchOperationV1Schema, HeaderPatchPlanV1Schema } from "./header-patch.schema.js";
 import {
   AuditIdSchema,
   AttemptIdSchema,
@@ -66,6 +67,8 @@ export const contractSchemas = Object.freeze(
     DomainALabelSchema,
     DsnNotifySchema,
     FeedbackEventIdSchema,
+    HeaderPatchOperationV1Schema,
+    HeaderPatchPlanV1Schema,
     IdempotencyKeySchema,
     IdempotencyRecordV1Schema,
     IntentIdSchema,

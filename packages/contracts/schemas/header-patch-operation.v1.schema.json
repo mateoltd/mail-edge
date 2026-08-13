@@ -1,0 +1,83 @@
+{
+  "$id": "urn:mail-edge:schema:v1:header-patch-operation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "insertBeforeBody",
+          "type": "string"
+        },
+        "rawField": {
+          "maxLength": 4096,
+          "minLength": 2,
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "rawField"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 78,
+          "minLength": 1,
+          "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$",
+          "type": "string"
+        },
+        "occurrence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "const": "replaceOccurrence",
+          "type": "string"
+        },
+        "rawField": {
+          "maxLength": 4096,
+          "minLength": 2,
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "occurrence",
+        "rawField"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 78,
+          "minLength": 1,
+          "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$",
+          "type": "string"
+        },
+        "occurrence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "op": {
+          "const": "removeOccurrence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "name",
+        "occurrence"
+      ],
+      "type": "object"
+    }
+  ]
+}

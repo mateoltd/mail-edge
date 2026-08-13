@@ -460,6 +460,131 @@
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
         "type": "string"
       },
+      "HeaderPatchOperation": {
+        "$id": "urn:mail-edge:schema:v1:header-patch-operation",
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "op": {
+                "const": "insertBeforeBody",
+                "type": "string"
+              },
+              "rawField": {
+                "maxLength": 4096,
+                "minLength": 2,
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "rawField"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 78,
+                "minLength": 1,
+                "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$",
+                "type": "string"
+              },
+              "occurrence": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "op": {
+                "const": "replaceOccurrence",
+                "type": "string"
+              },
+              "rawField": {
+                "maxLength": 4096,
+                "minLength": 2,
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "name",
+              "occurrence",
+              "rawField"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 78,
+                "minLength": 1,
+                "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$",
+                "type": "string"
+              },
+              "occurrence": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "op": {
+                "const": "removeOccurrence",
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "name",
+              "occurrence"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "HeaderPatchPlan": {
+        "$id": "urn:mail-edge:schema:v1:header-patch-plan",
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/HeaderPatchOperation"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "const": "reverse_alias",
+                "type": "string"
+              },
+              {
+                "const": "provider_compatibility",
+                "type": "string"
+              },
+              {
+                "const": "host_policy",
+                "type": "string"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "sourceSha256": {
+            "$ref": "#/components/schemas/Sha256"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "sourceSha256",
+          "operations",
+          "reason"
+        ],
+        "type": "object"
+      },
       "IdempotencyKey": {
         "$id": "urn:mail-edge:schema:v1:idempotency-key",
         "maxLength": 200,

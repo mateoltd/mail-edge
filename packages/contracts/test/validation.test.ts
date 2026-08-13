@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   contractSchemas,
   createContractValidator,
+  HeaderPatchPlanV1Schema,
   MailEdgeProblemV1Schema,
   RawMessageRefV1Schema,
   Rfc3339TimestampSchema,
@@ -21,7 +22,7 @@ const validEnvelope = {
 describe("strict runtime schemas", () => {
   it("registers every schema in strict Ajv without warnings or missing references", () => {
     const validator = createContractValidator();
-    expect(contractSchemas).toHaveLength(45);
+    expect(contractSchemas).toHaveLength(47);
     expect(validator.validate(SmtpEnvelopeV1Schema, validEnvelope).ok).toBe(true);
   });
 
@@ -119,5 +120,36 @@ describe("strict runtime schemas", () => {
       type: "https://mail-edge.dev/problems/internal",
     };
     expect(createContractValidator().validate(MailEdgeProblemV1Schema, problem).ok).toBe(false);
+  });
+
+  it("accepts bounded header patch plans and rejects malformed selectors", () => {
+    const validator = createContractValidator();
+    const validPlan = {
+      operations: [
+        {
+          name: "from",
+          occurrence: 0,
+          op: "replaceOccurrence",
+          rawField: "From: Alias <alias@example.test>",
+        },
+      ],
+      reason: "reverse_alias",
+      schemaVersion: "v1",
+      sourceSha256: "a".repeat(64),
+    };
+
+    expect(validator.validate(HeaderPatchPlanV1Schema, validPlan).ok).toBe(true);
+    expect(
+      validator.validate(HeaderPatchPlanV1Schema, {
+        ...validPlan,
+        operations: [{ ...validPlan.operations[0], name: "From" }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validator.validate(HeaderPatchPlanV1Schema, {
+        ...validPlan,
+        operations: [{ ...validPlan.operations[0], occurrence: -1 }],
+      }).ok,
+    ).toBe(false);
   });
 });

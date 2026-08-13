@@ -1,0 +1,44 @@
+{
+  "$id": "urn:mail-edge:schema:v1:header-patch-plan",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "operations": {
+      "items": {
+        "$ref": "urn:mail-edge:schema:v1:header-patch-operation"
+      },
+      "maxItems": 64,
+      "type": "array"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "const": "reverse_alias",
+          "type": "string"
+        },
+        {
+          "const": "provider_compatibility",
+          "type": "string"
+        },
+        {
+          "const": "host_policy",
+          "type": "string"
+        }
+      ]
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "sourceSha256": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "sourceSha256",
+    "operations",
+    "reason"
+  ],
+  "type": "object"
+}
