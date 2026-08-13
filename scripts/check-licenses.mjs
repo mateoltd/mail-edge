@@ -23,7 +23,7 @@ const allowedLicenses = new Set([
   "Zlib",
 ]);
 
-const output = execFileSync("pnpm", ["licenses", "list", "--json"], {
+const output = execFileSync("corepack", ["pnpm", "licenses", "list", "--json"], {
   cwd: repositoryRoot,
   encoding: "utf8",
 });

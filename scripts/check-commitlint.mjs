@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 
 import { repositoryRoot } from "./workspace.mjs";
 
-const result = spawnSync("pnpm", ["exec", "commitlint"], {
+const result = spawnSync("corepack", ["pnpm", "exec", "commitlint"], {
   cwd: repositoryRoot,
   encoding: "utf8",
   input: "chore: validate commit policy\n",

@@ -6,6 +6,7 @@ import { Extractor, ExtractorConfig } from "@microsoft/api-extractor";
 import { publishableWorkspaceUnits } from "./workspace.mjs";
 
 const packages = publishableWorkspaceUnits();
+const generating = process.argv.includes("--generate");
 let failed = false;
 
 for (const unit of packages) {
@@ -18,7 +19,7 @@ for (const unit of packages) {
 
   const config = ExtractorConfig.loadFileAndPrepare(configPath);
   const result = Extractor.invoke(config, {
-    localBuild: true,
+    localBuild: generating,
     showVerboseMessages: false,
   });
   failed ||= !result.succeeded;

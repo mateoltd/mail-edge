@@ -24,11 +24,11 @@ try {
     cwd: repositoryRoot,
   });
   execFileSync("tar", ["-xf", archivePath, "-C", sourcePath]);
-  execFileSync("pnpm", ["install", "--frozen-lockfile"], {
+  execFileSync("corepack", ["pnpm", "install", "--frozen-lockfile"], {
     cwd: sourcePath,
     stdio: "inherit",
   });
-  execFileSync("pnpm", ["verify"], {
+  execFileSync("corepack", ["pnpm", "verify"], {
     cwd: sourcePath,
     stdio: "inherit",
   });
