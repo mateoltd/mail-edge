@@ -30,6 +30,7 @@ import type { InboundIngressCommit, ProviderReplayIdentityV1 } from "@mail-edge/
 import { decideRetry, type RetryPolicy } from "@mail-edge/runtime";
 
 import { hostError } from "./errors.js";
+import { resendAcquisitionLeaseIsActiveAt } from "./resend-acquisition-lease.js";
 
 interface ResendInboundMetadataCommitInput {
   readonly schemaVersion: "v1";
@@ -431,8 +432,10 @@ export class PostgresResendInboundMetadataRepository implements ResendInboundMet
             new Date(row.nextActionAt).getTime() <= Date.parse(now);
           const expiredClaim =
             row?.state === "acquiring" &&
-            row.claimedUntil !== null &&
-            new Date(row.claimedUntil).getTime() <= Date.parse(now);
+            !resendAcquisitionLeaseIsActiveAt(
+              row.claimedUntil === null ? null : dateToIso(row.claimedUntil),
+              now,
+            );
           if (row === undefined || (row.state !== "received" && !dueRetry && !expiredClaim)) {
             return { error: conflict("resend_receipt_not_claimable"), ok: false };
           }
@@ -546,6 +549,7 @@ export class PostgresResendInboundMetadataRepository implements ResendInboundMet
       .execute(async (context, transactionSignal) => {
         try {
           const transaction = await this.#unitOfWork.transaction(context, this.#tenantId);
+          const now = this.#clock.now();
           const [receipt, blob] = await Promise.all([
             transaction
               .selectFrom("inboundReceipts")
@@ -567,8 +571,10 @@ export class PostgresResendInboundMetadataRepository implements ResendInboundMet
           if (
             receipt?.state !== "acquiring" ||
             Number(receipt.fence) !== input.fence ||
-            receipt.claimedUntil === null ||
-            new Date(receipt.claimedUntil).getTime() < Date.parse(this.#clock.now()) ||
+            !resendAcquisitionLeaseIsActiveAt(
+              receipt.claimedUntil === null ? null : dateToIso(receipt.claimedUntil),
+              now,
+            ) ||
             blob === undefined ||
             hex(blob.sha256) !== input.raw.sha256 ||
             Number(blob.sizeBytes) !== input.raw.size
@@ -586,11 +592,11 @@ export class PostgresResendInboundMetadataRepository implements ResendInboundMet
             .set({
               claimedUntil: null,
               envelope: input.envelope,
-              nextActionAt: this.#clock.now(),
+              nextActionAt: now,
               optimisticVersion: String(Number(receipt.optimisticVersion) + 1),
               rawBlobId: input.raw.blobId,
               state: "stored",
-              updatedAt: this.#clock.now(),
+              updatedAt: now,
               verificationDigest: Buffer.from(verificationDigest, "hex"),
             })
             .where("tenantId", "=", this.#tenantId)

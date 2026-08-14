@@ -8,6 +8,7 @@ import type {
 import type { Clock, IdGenerator } from "@mail-edge/core";
 import type { InboundRawAcquirer } from "@mail-edge/provider";
 
+import { resendAcquisitionLeaseIsActiveAt } from "./resend-acquisition-lease.js";
 import type { ResendInboundReceiptState } from "./resend-inbound.repository.js";
 
 interface InboundWakeupHandler {
@@ -66,8 +67,7 @@ export class ProductionInboundWorker {
         inspected.value.nextActionAt !== null &&
         Date.parse(inspected.value.nextActionAt) <= Date.parse(this.#clock.now())) ||
       (inspected.value.state === "acquiring" &&
-        inspected.value.claimedUntil !== null &&
-        Date.parse(inspected.value.claimedUntil) <= Date.parse(this.#clock.now()));
+        !resendAcquisitionLeaseIsActiveAt(inspected.value.claimedUntil, this.#clock.now()));
     if (!due) {
       if (inspected.value.state === "stored") await this.#delegate.handle(wakeup, signal);
       return;
