@@ -10,3 +10,6 @@ temp/
 *.tgz
 *.tsbuildinfo
 sbom.cdx.json
+apps/reference-service/local/composition.mjs
+apps/reference-service/local/config.json
+apps/reference-service/local/secrets/

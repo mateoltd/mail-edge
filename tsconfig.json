@@ -12,6 +12,7 @@
     { "path": "packages/conformance" },
     { "path": "packages/provider-mailgun" },
     { "path": "packages/mime" },
-    { "path": "packages/sdk" }
+    { "path": "packages/sdk" },
+    { "path": "apps/reference-service" }
   ]
 }
