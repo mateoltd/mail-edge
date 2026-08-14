@@ -1,0 +1,54 @@
+{
+  "name": "@mail-edge/reference-service",
+  "version": "0.0.0",
+  "description": "Deployable provider-neutral Mail Edge HTTP runtime",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "container:verify": "node ./scripts/verify-container.mjs",
+    "lint": "eslint src test scripts --max-warnings 0",
+    "start": "node --enable-source-maps ./dist/main.js",
+    "test": "vitest run --exclude test/integration/** --exclude test/e2e/**",
+    "test:e2e": "vitest run test/e2e",
+    "test:integration": "vitest run test/integration",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1109.0",
+    "@fastify/type-provider-typebox": "6.1.0",
+    "@mail-edge/blob-s3": "workspace:^",
+    "@mail-edge/contracts": "workspace:^",
+    "@mail-edge/core": "workspace:^",
+    "@mail-edge/mime": "workspace:^",
+    "@mail-edge/postgres": "workspace:^",
+    "@mail-edge/provider": "workspace:^",
+    "@mail-edge/queue-pg-boss": "workspace:^",
+    "@mail-edge/sdk": "workspace:^",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.221.0",
+    "@opentelemetry/resources": "2.10.0",
+    "@opentelemetry/sdk-node": "0.221.0",
+    "@opentelemetry/semantic-conventions": "1.43.0",
+    "@sinclair/typebox": "0.34.41",
+    "ajv": "8.20.0",
+    "fastify": "5.12.0",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@testcontainers/minio": "12.1.0",
+    "@testcontainers/postgresql": "12.1.0",
+    "@types/pg": "8.21.0",
+    "vitest": "4.1.10"
+  }
+}

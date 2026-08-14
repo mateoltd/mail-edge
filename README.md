@@ -3,8 +3,9 @@
 Mail Edge is a provider-neutral foundation for durable mail ingestion and delivery. The repository
 contains versioned contracts, invariant-preserving core reducers and ports, an
 infrastructure-neutral SDK facade, a public provider SPI, and an executable provider conformance
-kit. Concrete providers, runtime infrastructure, and the reference service are developed as separate
-dependency layers.
+kit. The deployable [provider-neutral reference service](apps/reference-service/README.md) composes
+the SDK with PostgreSQL, encrypted S3 storage, pg-boss, and explicit downstream workflow/provider
+ports. Concrete providers remain separate dependency layers.
 
 ## Development
 

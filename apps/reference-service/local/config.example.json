@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "v1",
+  "environment": "development",
+  "compositionModule": "/srv/reference-service/composition.mjs",
+  "secretDirectory": "/run/mail-edge/secrets",
+  "http": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "maximumIngressBytes": 26214400,
+    "maximumJsonBytes": 1048576,
+    "requestTimeoutMilliseconds": 30000,
+    "controlPlaneTimeoutMilliseconds": 60000,
+    "shutdownTimeoutMilliseconds": 30000,
+    "keepAliveTimeoutMilliseconds": 5000,
+    "headersTimeoutMilliseconds": 6000,
+    "maximumConcurrentRequests": 128,
+    "maximumPendingRequests": 128
+  },
+  "postgres": {
+    "runtimeConnectionSecret": "secret://postgres-runtime",
+    "migrationConnectionSecret": "secret://postgres-migration",
+    "migrationPolicy": "apply",
+    "applicationName": "mail-edge-reference",
+    "maximumPoolSize": 16,
+    "connectionTimeoutMilliseconds": 5000,
+    "idleTimeoutMilliseconds": 30000,
+    "statementTimeoutMilliseconds": 30000,
+    "migrationLockTimeoutMilliseconds": 30000,
+    "minimumSchemaEpoch": 1,
+    "maximumSchemaEpoch": 1,
+    "tls": "disable"
+  },
+  "s3": {
+    "endpoint": "http://minio:9000",
+    "region": "us-east-1",
+    "bucket": "mail-edge-reference",
+    "keyPrefix": "mail-edge",
+    "accessKeyIdSecret": "secret://s3-access-key",
+    "secretAccessKeySecret": "secret://s3-secret-key",
+    "forcePathStyle": true,
+    "encryptionFrameBytes": 65536,
+    "multipartPartBytes": 5242880,
+    "multipartQueueSize": 2,
+    "scratchLifetimeMilliseconds": 86400000,
+    "rawRetentionMilliseconds": 2592000000,
+    "cleanupTimeoutMilliseconds": 30000,
+    "operationTimeoutMilliseconds": 30000,
+    "requireObjectVersion": true,
+    "serverSideEncryption": "none"
+  },
+  "queue": {
+    "schema": "pgboss",
+    "applicationName": "mail-edge-reference-queue",
+    "maximumPoolSize": 8,
+    "connectionTimeoutMilliseconds": 5000,
+    "queryTimeoutMilliseconds": 30000,
+    "pollingIntervalSeconds": 2,
+    "notifyPollingIntervalSeconds": 2,
+    "workerConcurrency": 8,
+    "workerBatchSize": 8,
+    "gracefulStopMilliseconds": 30000,
+    "jobRetentionSeconds": 86400
+  },
+  "authentication": {
+    "operatorTokenSecrets": ["secret://operator-token"],
+    "tenants": [
+      {
+        "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
+        "tokenSecrets": ["secret://tenant-token"]
+      }
+    ]
+  },
+  "providerInstances": [
+    {
+      "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
+      "providerInstanceId": "018f4f6a-7b2c-7000-8000-000000000002",
+      "providerId": "replace-with-provider",
+      "adapterVersion": "1.0.0",
+      "mode": "http"
+    }
+  ],
+  "telemetry": {
+    "enabled": false,
+    "serviceName": "mail-edge-reference",
+    "exportTimeoutMilliseconds": 5000
+  }
+}

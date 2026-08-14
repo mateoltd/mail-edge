@@ -1,0 +1,86 @@
+name: mail-edge-reference
+
+services:
+  postgres:
+    image: postgres:17.6-alpine3.22
+    environment:
+      POSTGRES_DB: mail_edge
+      POSTGRES_PASSWORD: local-owner-password
+      POSTGRES_USER: mail_edge_owner
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mail_edge_owner -d mail_edge"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - reference-postgres:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_PASSWORD: local-minio-password
+      MINIO_ROOT_USER: local-minio
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - reference-minio:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - >-
+        mc alias set local http://minio:9000 local-minio local-minio-password; mc mb
+        --ignore-existing local/mail-edge-reference; mc version enable local/mail-edge-reference; mc
+        version info local/mail-edge-reference
+    restart: "no"
+
+  reference-service:
+    profiles: ["runtime"]
+    build:
+      context: ../..
+      dockerfile: apps/reference-service/Dockerfile
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      MAIL_EDGE_REFERENCE_CONFIG: /run/mail-edge/config.json
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - type: bind
+        source: ${MAIL_EDGE_REFERENCE_CONFIG_FILE:-./local/config.json}
+        target: /run/mail-edge/config.json
+        read_only: true
+      - type: bind
+        source: ${MAIL_EDGE_REFERENCE_COMPOSITION_FILE:-./local/composition.mjs}
+        target: /srv/reference-service/composition.mjs
+        read_only: true
+      - type: bind
+        source: ${MAIL_EDGE_REFERENCE_SECRET_DIRECTORY:-./local/secrets}
+        target: /run/mail-edge/secrets
+        read_only: true
+
+volumes:
+  reference-minio:
+  reference-postgres:

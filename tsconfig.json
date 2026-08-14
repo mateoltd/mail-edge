@@ -10,6 +10,7 @@
     { "path": "packages/provider" },
     { "path": "packages/conformance" },
     { "path": "packages/mime" },
-    { "path": "packages/sdk" }
+    { "path": "packages/sdk" },
+    { "path": "apps/reference-service" }
   ]
 }

@@ -1,0 +1,742 @@
+openapi: 3.1.0
+info:
+  title: Mail Edge reference service
+  version: 1.0.0
+  description: Provider-neutral runtime, tenant data plane, and operator control plane.
+servers:
+  - url: http://127.0.0.1:8080
+tags:
+  - name: Health
+  - name: Provider ingress
+  - name: Tenant
+  - name: Operator
+paths:
+  /livez:
+    get:
+      tags: [Health]
+      operationId: getLiveness
+      responses:
+        "200":
+          description: HTTP process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /readyz:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      responses:
+        "200":
+          description: Every required runtime component is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: At least one required runtime component is not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound:
+    post:
+      tags: [Provider ingress]
+      operationId: ingestProviderMessage
+      description: The exact provider adapter authenticates and consumes the one-shot byte stream.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+        - $ref: "#/components/parameters/AdapterVersion"
+        - $ref: "#/components/parameters/Mode"
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Adapter-defined safe success response.
+        "202":
+          description: Verified ingress was durably accepted or recognized as a replay.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/feedback:
+    post:
+      tags: [Provider ingress]
+      operationId: ingestProviderFeedback
+      description: The exact provider adapter authenticates, parses, and hands off feedback durably.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+        - $ref: "#/components/parameters/AdapterVersion"
+        - $ref: "#/components/parameters/Mode"
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "202":
+          description: Feedback was durably handed off.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/raw-messages:
+    post:
+      tags: [Tenant]
+      operationId: storeRawMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          message/rfc822:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Encrypted raw message was stored durably.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RawMessageRef"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/outbound-intents:
+    post:
+      tags: [Tenant]
+      operationId: createOutboundIntent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OutboundIntentRequest"
+      responses:
+        "200":
+          description: Existing idempotent intent snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "202":
+          description: New outbound intent accepted durably.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/outbound-intents/{intentId}:
+    get:
+      tags: [Tenant]
+      operationId: getOutboundIntent
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/IntentId"
+      responses:
+        "200":
+          description: Durable outbound intent snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/inbound-receipts/{receiptId}:
+    get:
+      tags: [Tenant]
+      operationId: getInboundReceipt
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/ReceiptId"
+      responses:
+        "200":
+          description: Durable verified inbound receipt snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/providers:
+    get:
+      tags: [Operator]
+      operationId: listProviders
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Exact registered adapter identities and descriptors.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    maxItems: 10000
+                    items:
+                      type: object
+                      required: [identity, descriptor]
+                      properties:
+                        identity:
+                          $ref: "#/components/schemas/AdapterIdentity"
+                        descriptor:
+                          $ref: "#/components/schemas/ContractSnapshot"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/provider-instances/{providerInstanceId}/bindings/plan:
+    post:
+      tags: [Operator]
+      operationId: planProviderBinding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesiredBinding"
+      responses:
+        "200":
+          description: Validated provider-neutral binding plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingPlan"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/provider-instances/{providerInstanceId}/plans/apply:
+    post:
+      tags: [Operator]
+      operationId: applyProviderBindingPlan
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operation, plan]
+              properties:
+                operation:
+                  $ref: "#/components/schemas/ControlOperation"
+                plan:
+                  $ref: "#/components/schemas/BindingPlan"
+      responses:
+        "200":
+          description: Validated applied provider resources.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/provider-instances/{providerInstanceId}/bindings/discover:
+    post:
+      tags: [Operator]
+      operationId: discoverProviderBinding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [binding]
+              properties:
+                binding:
+                  $ref: "#/components/schemas/RouteBinding"
+      responses:
+        "200":
+          description: Validated discovered provider resources and drift.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/provider-instances/{providerInstanceId}/bindings/delete:
+    post:
+      tags: [Operator]
+      operationId: deleteProviderBinding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [binding, operation]
+              properties:
+                binding:
+                  $ref: "#/components/schemas/RouteBinding"
+                operation:
+                  $ref: "#/components/schemas/ControlOperation"
+      responses:
+        "200":
+          description: Validated provider deletion evidence.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSnapshot"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    ProviderId:
+      name: providerId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ProviderId"
+    AdapterVersion:
+      name: adapterVersion
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    Mode:
+      name: mode
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9_-]{0,63}$"
+    ProviderInstanceId:
+      name: providerInstanceId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UuidV7"
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UuidV7"
+    IntentId:
+      name: intentId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UuidV7"
+    ReceiptId:
+      name: receiptId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UuidV7"
+  responses:
+    Problem:
+      description: Versioned privacy-safe Mail Edge problem.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    UuidV7:
+      type: string
+      minLength: 36
+      maxLength: 36
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    Sha256:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: "^[0-9a-f]{64}$"
+    ProviderId:
+      type: string
+      minLength: 1
+      maxLength: 63
+      pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [live, ready, not_ready]
+    RawMessageRef:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, blobId, sha256, size, mediaType]
+      properties:
+        schemaVersion:
+          const: v1
+        blobId:
+          $ref: "#/components/schemas/UuidV7"
+        sha256:
+          $ref: "#/components/schemas/Sha256"
+        size:
+          type: integer
+          minimum: 0
+          maximum: 26214400
+        mediaType:
+          const: message/rfc822
+    SmtpEnvelope:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, mailFrom, rcptTo, smtpUtf8]
+      properties:
+        schemaVersion:
+          const: v1
+        mailFrom:
+          type: [string, "null"]
+          maxLength: 512
+        rcptTo:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: object
+            additionalProperties: false
+            required: [address]
+            properties:
+              address:
+                type: string
+                minLength: 3
+                maxLength: 512
+              dsn:
+                type: object
+                maxProperties: 2
+        smtpUtf8:
+          type: boolean
+        body:
+          type: string
+          enum: [7bit, 8bitmime, binarymime]
+        requireTls:
+          type: boolean
+        dsn:
+          type: object
+          maxProperties: 2
+    OutboundIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [envelope, raw]
+      properties:
+        envelope:
+          $ref: "#/components/schemas/SmtpEnvelope"
+        raw:
+          $ref: "#/components/schemas/RawMessageRef"
+    AdapterIdentity:
+      type: object
+      additionalProperties: false
+      required: [providerId, adapterVersion, mode]
+      properties:
+        providerId:
+          $ref: "#/components/schemas/ProviderId"
+        adapterVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        mode:
+          type: string
+          pattern: "^[a-z][a-z0-9_-]{0,63}$"
+    DesiredBinding:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - tenantId
+        - domainALabel
+        - direction
+        - providerInstanceId
+        - configRevision
+        - requirementsDigest
+      properties:
+        schemaVersion:
+          const: v1
+        tenantId:
+          $ref: "#/components/schemas/UuidV7"
+        domainALabel:
+          type: string
+          minLength: 1
+          maxLength: 253
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        providerInstanceId:
+          $ref: "#/components/schemas/UuidV7"
+        configRevision:
+          type: string
+          minLength: 1
+          maxLength: 128
+        requirementsDigest:
+          $ref: "#/components/schemas/Sha256"
+    BindingPlan:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, identity, desiredDigest, createdAt, expiresAt, operations]
+      properties:
+        schemaVersion:
+          const: v1
+        identity:
+          $ref: "#/components/schemas/AdapterIdentity"
+        desiredDigest:
+          $ref: "#/components/schemas/Sha256"
+        createdAt:
+          type: string
+          minLength: 20
+          maxLength: 35
+        expiresAt:
+          type: string
+          minLength: 20
+          maxLength: 35
+        operations:
+          type: array
+          maxItems: 1024
+          items:
+            type: object
+            additionalProperties: false
+            required: [operationId, kind, resourceType, parameters]
+            properties:
+              operationId:
+                type: string
+                pattern: "^[a-z][a-z0-9_-]*$"
+              kind:
+                type: string
+                enum: [create, update, verify]
+              resourceType:
+                type: string
+                pattern: "^[a-z][a-z0-9_-]*$"
+              parameters:
+                type: object
+                maxProperties: 64
+    RouteBinding:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - bindingId
+        - bindingVersion
+        - tenantId
+        - domainALabel
+        - direction
+        - providerId
+        - adapterVersion
+        - providerInstanceId
+        - providerResourceIds
+        - capabilityDigest
+        - configRevision
+        - createdAt
+      properties:
+        schemaVersion:
+          const: v1
+        bindingId:
+          $ref: "#/components/schemas/UuidV7"
+        bindingVersion:
+          type: integer
+          minimum: 1
+        tenantId:
+          $ref: "#/components/schemas/UuidV7"
+        domainALabel:
+          type: string
+          minLength: 1
+          maxLength: 253
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        providerId:
+          $ref: "#/components/schemas/ProviderId"
+        adapterVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        providerInstanceId:
+          $ref: "#/components/schemas/UuidV7"
+        providerResourceIds:
+          type: object
+          maxProperties: 64
+          additionalProperties:
+            type: string
+            maxLength: 512
+        capabilityDigest:
+          $ref: "#/components/schemas/Sha256"
+        configRevision:
+          type: string
+          minLength: 1
+          maxLength: 128
+        createdAt:
+          type: string
+          minLength: 20
+          maxLength: 35
+    ControlOperation:
+      type: object
+      additionalProperties: false
+      required: [operationId, reasonCode]
+      properties:
+        operationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^[a-z][a-z0-9_-]*$"
+        reasonCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^[a-z][a-z0-9_-]*$"
+    ContractSnapshot:
+      type: object
+      description: Versioned schema-validated Mail Edge contract from the runtime package.
+      required: [schemaVersion]
+      properties:
+        schemaVersion:
+          const: v1
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - type
+        - title
+        - status
+        - detail
+        - code
+        - retryable
+        - deliveryCertainty
+      properties:
+        schemaVersion:
+          const: v1
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        code:
+          type: string
+        retryable:
+          type: boolean
+        deliveryCertainty:
+          type: string
+          enum: [not_sent, sent, unknown]
+        instance:
+          type: string
+          maxLength: 256
+        traceId:
+          type: string
+          maxLength: 64
+        occurredAt:
+          type: string
+        safeDetails:
+          type: object
+          maxProperties: 16

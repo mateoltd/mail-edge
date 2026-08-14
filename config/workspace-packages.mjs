@@ -48,15 +48,13 @@ export const workspaceUnits = Object.freeze([
   ),
   applicationUnit("reference-service", "@mail-edge/reference-service", "apps/reference-service", [
     "blob-s3",
+    "contracts",
+    "core",
     "mime",
-    "observability",
     "postgres",
-    "provider-cloudflare",
-    "provider-mailgun",
-    "provider-resend",
+    "provider",
     "queue-pg-boss",
     "sdk",
-    "smtp-bridge",
   ]),
   applicationUnit(
     "cloudflare-ingress-worker",
