@@ -1,8 +1,8 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
 import type { TenantId } from "@mail-edge/contracts";
 
-import type { SensitiveValueCipher } from "./workflow.repository.js";
+import type { SensitiveValueCipher, SensitiveValueDigester } from "./workflow.repository.js";
 
 /** @public */
 export interface SensitiveValueKeyProvider {
@@ -83,6 +83,50 @@ export class AesGcmSensitiveValueCipher implements SensitiveValueCipher {
     } finally {
       key.fill(0);
       ciphertextCopy.fill(0);
+    }
+  }
+}
+
+/** HMAC-SHA-256 tenant-scoped lookup digests with explicit purpose separation. @public */
+export class HmacSensitiveValueDigester implements SensitiveValueDigester {
+  readonly #keys: SensitiveValueKeyProvider;
+
+  constructor(keys: SensitiveValueKeyProvider) {
+    this.#keys = keys;
+  }
+
+  async digest(
+    tenantId: TenantId,
+    purpose: Parameters<SensitiveValueDigester["digest"]>[1],
+    plaintext: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<Uint8Array> {
+    const value = Uint8Array.from(plaintext);
+    const resolvedKey = await this.#keys.resolveKey(tenantId, signal);
+    const key = Uint8Array.from(resolvedKey);
+    resolvedKey.fill(0);
+    if (key.byteLength < 32) {
+      key.fill(0);
+      value.fill(0);
+      throw new TypeError("Sensitive value digest key must contain at least 32 bytes.");
+    }
+    const digestKey = createHmac("sha256", key)
+      .update("mail-edge-lookup-key-v1\0", "utf8")
+      .update(tenantId, "utf8")
+      .digest();
+    try {
+      return Uint8Array.from(
+        createHmac("sha256", digestKey)
+          .update("mail-edge-lookup-value-v1\0", "utf8")
+          .update(purpose, "utf8")
+          .update("\0", "utf8")
+          .update(value)
+          .digest(),
+      );
+    } finally {
+      digestKey.fill(0);
+      key.fill(0);
+      value.fill(0);
     }
   }
 }

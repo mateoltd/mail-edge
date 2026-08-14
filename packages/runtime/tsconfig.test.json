@@ -8,10 +8,5 @@
     "rootDir": "."
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "references": [
-    { "path": "../contracts" },
-    { "path": "../core" },
-    { "path": "../provider" },
-    { "path": "../runtime" }
-  ]
+  "references": [{ "path": "../contracts" }, { "path": "../core" }, { "path": "../provider" }]
 }

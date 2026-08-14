@@ -96,12 +96,14 @@ export const mapRawReference = (row: RawBlob): RawMessageRefV1 =>
 export const mapBindingSnapshot = (row: RouteBinding): RouteBindingSnapshotV1 =>
   validated(RouteBindingSnapshotV1Schema, {
     adapterVersion: row.adapterVersion,
+    adapterMode: row.adapterMode,
     bindingId: row.bindingId,
     bindingVersion: safeInteger(row.bindingVersion),
     capabilityDigest: bytesToHex(row.capabilityDigest),
     configRevision: row.configRevision,
     createdAt: dateToIso(row.createdAt),
     direction: row.direction,
+    dispatchTransport: row.dispatchTransport,
     domainALabel: row.domainALabel,
     providerId: row.providerId,
     providerInstanceId: row.providerInstanceId,

@@ -1,7 +1,7 @@
 {
-  "name": "@mail-edge/postgres",
+  "name": "@mail-edge/runtime",
   "version": "0.1.0",
-  "description": "PostgreSQL persistence, migrations, and durable workflow repositories for Mail Edge",
+  "description": "Provider-neutral durable workflow orchestration for Mail Edge",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -13,12 +13,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./migrations/*": "./migrations/*"
+    "./examples/maintenance-composition": "./examples/maintenance-composition.mjs"
   },
   "files": [
     "dist",
     "etc",
-    "migrations"
+    "examples",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public",
@@ -27,23 +28,17 @@
   "scripts": {
     "api:check": "api-extractor run",
     "build": "tsc -b",
-    "lint": "eslint src test scripts --max-warnings 0",
-    "migrations:check": "node ./scripts/check-migrations.mjs",
-    "migrations:generate": "node ./scripts/check-migrations.mjs --generate",
+    "lint": "eslint src test --max-warnings 0",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
     "@mail-edge/contracts": "workspace:^",
     "@mail-edge/core": "workspace:^",
-    "@mail-edge/provider": "workspace:^",
-    "@mail-edge/runtime": "workspace:^",
-    "kysely": "0.29.5",
-    "pg": "8.23.0"
+    "@mail-edge/provider": "workspace:^"
   },
   "devDependencies": {
-    "@testcontainers/postgresql": "12.1.0",
-    "@types/pg": "8.21.0",
+    "fast-check": "4.3.0",
     "vitest": "4.1.10"
   }
 }

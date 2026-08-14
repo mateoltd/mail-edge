@@ -14,10 +14,12 @@ sets `app.tenant_id` and a finite statement timeout with transaction-local setti
 also include explicit tenant predicates. Never set tenant context at session scope or issue tenant
 queries outside a unit of work.
 
-Grant the application only the required table and sequence privileges. Grant `EXECUTE` on
-`mail_edge_due_wakeups` and `mail_edge_ensure_monthly_partitions` only to dedicated operational
-roles that need them. Direct access to partition tables remains protected by their own tenant
-policies.
+Grant the application only the required table and sequence privileges. The durable runtime role also
+needs `EXECUTE` on `mail_edge_locate_workflow(text, uuid)` and
+`mail_edge_active_tenants(uuid, integer)`; both return bounded identity-only data and are revoked
+from `PUBLIC`. Grant `EXECUTE` on `mail_edge_due_wakeups` and `mail_edge_ensure_monthly_partitions`
+only to dedicated operational roles that need them. Direct access to partition tables remains
+protected by their own tenant policies.
 
 ## Migrations and upgrades
 

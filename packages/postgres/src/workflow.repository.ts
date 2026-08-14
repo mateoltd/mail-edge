@@ -43,14 +43,39 @@ import {
 export interface SensitiveValueCipher {
   protect(
     tenantId: TenantId,
-    purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id",
+    purpose:
+      | "idempotency_key"
+      | "provider_receipt_key"
+      | "provider_message_id"
+      | "application_destination"
+      | "feedback_event",
     plaintext: Uint8Array,
     signal: AbortSignal,
   ): Promise<Uint8Array>;
   unprotect(
     tenantId: TenantId,
-    purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id",
+    purpose:
+      | "idempotency_key"
+      | "provider_receipt_key"
+      | "provider_message_id"
+      | "application_destination"
+      | "feedback_event",
     ciphertext: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<Uint8Array>;
+}
+
+/** Stable tenant-keyed lookup digests; values never become ambient database identities. @public */
+export interface SensitiveValueDigester {
+  digest(
+    tenantId: TenantId,
+    purpose:
+      | "idempotency_key"
+      | "provider_receipt_key"
+      | "provider_message_id"
+      | "application_destination"
+      | "feedback_event",
+    plaintext: Uint8Array,
     signal: AbortSignal,
   ): Promise<Uint8Array>;
 }

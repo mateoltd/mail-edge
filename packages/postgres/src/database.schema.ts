@@ -5,6 +5,12 @@ type Timestamp = ColumnType<Date, Date | string, Date | string>;
 /** @public */
 type GeneratedTimestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 /** @public */
+type GeneratedNullableTimestamp = ColumnType<
+  Date | null,
+  Date | string | null | undefined,
+  Date | string | null
+>;
+/** @public */
 type JsonObject = Readonly<Record<string, unknown>>;
 /** @public */
 type JsonValue = JsonObject | readonly unknown[];
@@ -26,6 +32,8 @@ export interface RouteBindingTable {
   readonly providerInstanceId: string;
   readonly providerId: string;
   readonly adapterVersion: string;
+  readonly adapterMode: Generated<string>;
+  readonly dispatchTransport: Generated<"http" | "smtp">;
   readonly secretRef: string;
   readonly configRef: string;
   readonly configRevision: string;
@@ -194,6 +202,65 @@ export interface OutboundAttemptTable {
   readonly lastErrorCode: string | null;
   readonly createdAt: Timestamp;
   readonly completedAt: Timestamp | null;
+  readonly reconciliationFence: Generated<string>;
+  readonly reconciliationClaimedUntil: GeneratedNullableTimestamp;
+  readonly reconciliationWindowFrom: GeneratedNullableTimestamp;
+  readonly reconciliationWindowTo: GeneratedNullableTimestamp;
+}
+
+/** @public */
+export interface OutboundAttemptRecipientTable {
+  readonly tenantId: string;
+  readonly attemptId: string;
+  readonly recipientKeyHash: Uint8Array;
+  readonly recipientIndex: number | null;
+  readonly outcome:
+    "pending" | "accepted" | "rejected" | "delivered" | "deferred" | "bounced" | "complained";
+  readonly statusCode: string | null;
+  readonly updatedAt: GeneratedTimestamp;
+}
+
+/** @public */
+export interface RecipientDeliveryProjectionTable {
+  readonly tenantId: string;
+  readonly intentId: string;
+  readonly recipientKeyHash: Uint8Array;
+  readonly transportState:
+    "pending" | "accepted" | "delivered" | "deferred" | "bounced" | "failed_not_sent" | "unknown";
+  readonly complaint: boolean;
+  readonly suppressed: boolean;
+  readonly opened: boolean;
+  readonly clicked: boolean;
+  readonly unsubscribed: boolean;
+  readonly lastTransportOccurredAt: Timestamp | null;
+  readonly latestFeedbackOrderKey: string | null;
+  readonly contradictions: readonly unknown[];
+  readonly optimisticVersion: string;
+  readonly updatedAt: Timestamp;
+}
+
+/** @public */
+export interface ReconciliationDecisionTable {
+  readonly decisionId: string;
+  readonly tenantId: string;
+  readonly intentId: string;
+  readonly attemptId: string;
+  readonly decision: "accepted" | "failed_not_sent" | "authorized_retry" | "quarantined_unknown";
+  readonly evidence: JsonObject;
+  readonly evidenceDigest: Uint8Array;
+  readonly reasonCode: string;
+  readonly actor: string;
+  readonly expectedIntentVersion: string;
+  readonly attemptFence: string;
+  readonly claimFence: string;
+  readonly bindingId: string | null;
+  readonly bindingVersion: string | null;
+  readonly configRevision: string | null;
+  readonly capabilityDigest: Uint8Array | null;
+  readonly adapterMode: string | null;
+  readonly observedAt: Timestamp | null;
+  readonly resolved: boolean;
+  readonly createdAt: GeneratedTimestamp;
 }
 
 /** @public */
@@ -254,6 +321,10 @@ export interface InboundDeliveryTable {
   readonly lastErrorCode: string | null;
   readonly createdAt: Timestamp;
   readonly updatedAt: Timestamp;
+  readonly destinationId: Generated<string | null>;
+  readonly deliveryMode: Generated<"push" | "pull" | null>;
+  readonly destinationTokenCiphertext: Generated<Uint8Array | null>;
+  readonly acknowledgement: Generated<JsonObject | null>;
 }
 
 /** @public */
@@ -338,6 +409,34 @@ export interface ProviderFeedbackEventTable {
   readonly normalized: JsonObject;
   readonly createdAt: GeneratedTimestamp;
   readonly projectedAt: Timestamp | null;
+  readonly intentId: Generated<string | null>;
+  readonly providerId: Generated<string | null>;
+  readonly providerEventKeyHash: Generated<Uint8Array | null>;
+  readonly sequenceHint: Generated<string | null>;
+  readonly eventCiphertext: Generated<Uint8Array | null>;
+  readonly applicationFence: Generated<string>;
+  readonly claimedUntil: GeneratedNullableTimestamp;
+}
+
+/** @public */
+export interface ProviderFeedbackDedupTable {
+  readonly tenantId: string;
+  readonly providerInstanceId: string;
+  readonly providerEventKeyHash: Uint8Array;
+  readonly feedbackEventId: string;
+  readonly firstSeenAt: GeneratedTimestamp;
+  readonly eventDigest: Uint8Array | null;
+}
+
+/** @public */
+export interface WebhookReplayNonceTable {
+  readonly tenantId: string;
+  readonly providerInstanceId: string;
+  readonly nonceHash: Uint8Array;
+  readonly bodyDigest: Uint8Array | null;
+  readonly expiresAt: Timestamp;
+  readonly createdAt: GeneratedTimestamp;
+  readonly receiptId: string | null;
 }
 
 /** @public */
@@ -361,6 +460,9 @@ export interface MailEdgeDatabase {
   readonly rawBlobs: RawBlobTable;
   readonly outboundIntents: OutboundIntentTable;
   readonly outboundAttempts: OutboundAttemptTable;
+  readonly outboundAttemptRecipients: OutboundAttemptRecipientTable;
+  readonly recipientDeliveryProjection: RecipientDeliveryProjectionTable;
+  readonly reconciliationDecisions: ReconciliationDecisionTable;
   readonly inboundReceipts: InboundReceiptTable;
   readonly inboundReceiptDedup: InboundReceiptDedupTable;
   readonly inboundDeliveries: InboundDeliveryTable;
@@ -370,6 +472,8 @@ export interface MailEdgeDatabase {
   readonly rawBlobReferenceSummary: RawBlobReferenceSummaryTable;
   readonly auditEvents: AuditEventTable;
   readonly providerFeedbackEvents: ProviderFeedbackEventTable;
+  readonly providerFeedbackDedup: ProviderFeedbackDedupTable;
+  readonly webhookReplayNonces: WebhookReplayNonceTable;
   readonly workflowWakeupWatermarks: WorkflowWakeupWatermarkTable;
 }
 

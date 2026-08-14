@@ -113,6 +113,7 @@ import type { ProviderAdapterRegistration } from "@mail-edge/provider";
 import type { ProviderConformanceTarget } from "@mail-edge/conformance";
 import type { PostgresBlobRepository } from "@mail-edge/postgres";
 import type { PgBossWakeupConfig } from "@mail-edge/queue-pg-boss";
+import type { DurableRuntimeStore, RuntimeObservabilityPort } from "@mail-edge/runtime";
 
 type AssertAssignable<Target, Source extends Target> = true;
 type BlobMetadataOperations = BlobMetadataStore;
@@ -138,6 +139,8 @@ declare const providerRegistry: ProviderRegistryPort;
 declare const registration: ProviderAdapterRegistration;
 declare const tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
 declare const queueConfig: PgBossWakeupConfig;
+declare const runtimeStore: DurableRuntimeStore;
+declare const runtimeObservability: RuntimeObservabilityPort;
 builder
   .withBlobStore(blobStore)
   .withProviderRegistry(providerRegistry)
@@ -150,6 +153,8 @@ void canonical;
 void conformanceTarget;
 void headerPatcher;
 void queueConfig;
+void runtimeStore;
+void runtimeObservability;
 const postgresSatisfiesNeutral: PostgresSatisfiesNeutralBlobMetadata = true;
 const neutralSatisfiesPostgres: NeutralBlobMetadataSatisfiesPostgres = true;
 void postgresSatisfiesNeutral;
