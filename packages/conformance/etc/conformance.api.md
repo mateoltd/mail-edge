@@ -277,7 +277,13 @@ export interface ProviderConformanceDriver {
     // (undocumented)
     controlStateDigest?(context: ProviderConformanceCallbackContext): Promise<string> | string;
     // (undocumented)
+    createDispatchServices?(fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<Pick<ProviderDispatchContext, "rawSource" | "secrets">> | Pick<ProviderDispatchContext, "rawSource" | "secrets">;
+    // (undocumented)
+    createDispatchSubmission?(submission: ProviderConformanceFixtures["submission"], fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<ProviderConformanceFixtures["submission"]> | ProviderConformanceFixtures["submission"];
+    // (undocumented)
     createFeedbackRequest?(scenario: FeedbackConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<OneShotProviderHttpRequest>;
+    // (undocumented)
+    createFeedbackRequests?(scenario: FeedbackConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<readonly OneShotProviderHttpRequest[]>;
     // (undocumented)
     createInboundRequest?(fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<{
         readonly request: OneShotProviderHttpRequest;

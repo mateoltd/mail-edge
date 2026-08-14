@@ -38,6 +38,7 @@ export const workspaceUnits = Object.freeze([
     "provider",
   ]),
   packageUnit("provider-resend", "@mail-edge/provider-resend", "packages/provider-resend", [
+    "conformance",
     "provider",
   ]),
   packageUnit(

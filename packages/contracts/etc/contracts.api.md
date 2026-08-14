@@ -347,6 +347,9 @@ dnsDiscovery: TBoolean;
 driftDiscovery: TBoolean;
 exactDomainCatchAll: TBoolean;
 }>;
+reconciliation: TOptional<TObject<    {
+canProve: TArray<TUnsafe<"not_sent" | "accepted" | "unknown">>;
+}>>;
 allowedMaturity: TUnion<[TLiteral<"stable">, TLiteral<"experimental">]>;
 region: TOptional<TString>;
 }> | TObject<    {
@@ -1737,6 +1740,9 @@ dnsDiscovery: TBoolean;
 driftDiscovery: TBoolean;
 exactDomainCatchAll: TBoolean;
 }>;
+reconciliation: TOptional<TObject<    {
+canProve: TArray<TUnsafe<"not_sent" | "accepted" | "unknown">>;
+}>>;
 allowedMaturity: TUnion<[TLiteral<"stable">, TLiteral<"experimental">]>;
 region: TOptional<TString>;
 }>;
