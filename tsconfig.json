@@ -9,6 +9,7 @@
     { "path": "packages/queue-pg-boss" },
     { "path": "packages/provider" },
     { "path": "packages/conformance" },
+    { "path": "packages/provider-mailgun" },
     { "path": "packages/mime" },
     { "path": "packages/sdk" }
   ]

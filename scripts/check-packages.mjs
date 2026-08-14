@@ -73,6 +73,7 @@ import * as coreRoot from "@mail-edge/core";
 import * as mimeRoot from "@mail-edge/mime";
 import * as postgresRoot from "@mail-edge/postgres";
 import * as providerRoot from "@mail-edge/provider";
+import * as providerMailgunRoot from "@mail-edge/provider-mailgun";
 import * as queuePgBossRoot from "@mail-edge/queue-pg-boss";
 import * as sdkRoot from "@mail-edge/sdk";
 import { createContractValidator, parseProviderId, SmtpEnvelopeV1Schema } from "@mail-edge/contracts";
@@ -81,8 +82,9 @@ import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import { ProviderConformanceKit } from "@mail-edge/conformance";
 import { conformanceTarget } from "@mail-edge/conformance/examples/third-party-adapter";
+import { registerMailgun } from "@mail-edge/provider-mailgun/examples/register";
 
-for (const root of [blobS3Root, conformanceRoot, contractsRoot, coreRoot, mimeRoot, postgresRoot, providerRoot, queuePgBossRoot, sdkRoot]) {
+for (const root of [blobS3Root, conformanceRoot, contractsRoot, coreRoot, mimeRoot, postgresRoot, providerMailgunRoot, providerRoot, queuePgBossRoot, sdkRoot]) {
   assert.ok(Object.keys(root).length > 0);
 }
 assert.equal(parseProviderId("clean-room-provider").ok, true);
@@ -90,6 +92,9 @@ const envelope = { schemaVersion: "v1", mailFrom: null, rcptTo: [{ address: "rec
 assert.equal(createContractValidator().validate(SmtpEnvelopeV1Schema, envelope).ok, true);
 assert.equal(canonicalizeSmtpEnvelope(envelope).ok, true);
 assert.equal(typeof StreamingHeaderPatchApplier, "function");
+assert.equal(typeof providerMailgunRoot.createMailgunProviderRegistration, "function");
+assert.equal(providerMailgunRoot.mailgunProviderDescriptor.providerId, "mailgun");
+assert.equal(typeof registerMailgun, "function");
 assert.throws(() => new MailEdgeSdkBuilder().build(), /missing/u);
 const conformance = await new ProviderConformanceKit(conformanceTarget).run({ observedAt: "2026-08-13T08:00:00Z" }, new AbortController().signal);
 assert.equal(conformance.ok, true);
@@ -110,6 +115,7 @@ import {
 import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
 import { MailEdgeSdkBuilder } from "@mail-edge/sdk";
 import type { ProviderAdapterRegistration } from "@mail-edge/provider";
+import { createMailgunProviderRegistration, type MailgunProviderConfig } from "@mail-edge/provider-mailgun";
 import type { ProviderConformanceTarget } from "@mail-edge/conformance";
 import type { PostgresBlobRepository } from "@mail-edge/postgres";
 import type { PgBossWakeupConfig } from "@mail-edge/queue-pg-boss";
@@ -138,6 +144,7 @@ declare const providerRegistry: ProviderRegistryPort;
 declare const registration: ProviderAdapterRegistration;
 declare const tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
 declare const queueConfig: PgBossWakeupConfig;
+declare const mailgunConfig: MailgunProviderConfig;
 builder
   .withBlobStore(blobStore)
   .withProviderRegistry(providerRegistry)
@@ -150,6 +157,8 @@ void canonical;
 void conformanceTarget;
 void headerPatcher;
 void queueConfig;
+void mailgunConfig;
+void createMailgunProviderRegistration;
 const postgresSatisfiesNeutral: PostgresSatisfiesNeutralBlobMetadata = true;
 const neutralSatisfiesPostgres: NeutralBlobMetadataSatisfiesPostgres = true;
 void postgresSatisfiesNeutral;
