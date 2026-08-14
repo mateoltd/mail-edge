@@ -111,7 +111,7 @@ const parseDestinations = (
   if (!validated.ok) return { error: hostFailure("destination_shape", false), ok: false };
   const identities = new Set<string>();
   for (const destination of validated.value.destinations) {
-    if (destination.deliveryMode !== "push" || identities.has(destination.destinationId)) {
+    if (identities.has(destination.destinationId)) {
       return { error: hostFailure("destination_shape", false), ok: false };
     }
     identities.add(destination.destinationId);
