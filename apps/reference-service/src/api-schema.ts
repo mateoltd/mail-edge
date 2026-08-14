@@ -3,8 +3,13 @@ import { Ajv, type ValidateFunction } from "ajv";
 
 import {
   BindingLifecycleDecisionV1Schema,
+  contractSchemas,
   InboundQuarantineDecisionV1Schema,
   OutboundQuarantineDecisionV1Schema,
+  ProviderCapabilityDescriptorV1Schema,
+  RawMessageRefV1Schema,
+  RouteBindingSnapshotV1Schema,
+  SmtpEnvelopeV1Schema,
   type MailEdgeError,
   type Result,
 } from "@mail-edge/contracts";
@@ -34,6 +39,17 @@ const StringMap = Type.Record(
   Type.String({ maxLength: 512 }),
   { maxProperties: 64 },
 );
+
+const referenceSchemaId = (name: string): string =>
+  `urn:mail-edge:reference-service:schema:v1:${name}`;
+const schemaRef = <T extends TSchema>(schema: T) => {
+  if (typeof schema.$id !== "string") {
+    throw new TypeError("Referenced API schemas require a stable $id.");
+  }
+  // TypeBox's schema overload preserves Static<T>; the string-only replacement erases it.
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  return Type.Ref(schema);
+};
 
 export const ProviderRouteParamsSchema = Type.Object(
   {
@@ -99,45 +115,10 @@ export const LifecycleDecisionSchema = BindingLifecycleDecisionV1Schema;
 export const OutboundQuarantineDecisionSchema = OutboundQuarantineDecisionV1Schema;
 export const InboundQuarantineDecisionSchema = InboundQuarantineDecisionV1Schema;
 
-const SmtpEnvelopeSchema = Type.Object(
-  {
-    schemaVersion: Type.Literal("v1"),
-    mailFrom: Type.Union([Type.String({ maxLength: 512, minLength: 3 }), Type.Null()]),
-    rcptTo: Type.Array(
-      Type.Object(
-        {
-          address: Type.String({ maxLength: 512, minLength: 3 }),
-          dsn: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { maxProperties: 2 })),
-        },
-        { additionalProperties: false },
-      ),
-      { maxItems: 1000, minItems: 1 },
-    ),
-    smtpUtf8: Type.Boolean(),
-    body: Type.Optional(
-      Type.Union([Type.Literal("7bit"), Type.Literal("8bitmime"), Type.Literal("binarymime")]),
-    ),
-    requireTls: Type.Optional(Type.Boolean()),
-    dsn: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { maxProperties: 2 })),
-  },
-  { additionalProperties: false },
-);
-
-const RawMessageRefSchema = Type.Object(
-  {
-    schemaVersion: Type.Literal("v1"),
-    blobId: UuidV7,
-    sha256: Sha256,
-    size: Type.Integer({ maximum: 26_214_400, minimum: 0 }),
-    mediaType: Type.Literal("message/rfc822"),
-  },
-  { additionalProperties: false },
-);
-
 export const RawAccessGrantRequestSchema = Type.Object(
   {
     purpose: Type.Union([Type.Literal("operator_review"), Type.Literal("reconciliation")]),
-    raw: RawMessageRefSchema,
+    raw: schemaRef(RawMessageRefV1Schema),
     singleUse: Type.Boolean(),
     subjectId: Type.String({
       maxLength: 128,
@@ -145,21 +126,30 @@ export const RawAccessGrantRequestSchema = Type.Object(
       pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
     }),
   },
-  { additionalProperties: false },
+  {
+    $id: referenceSchemaId("raw-access-grant-request"),
+    additionalProperties: false,
+  },
 );
 
 export const RawAccessGrantRevocationSchema = Type.Object(
   { expectedFence: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 0 }) },
-  { additionalProperties: false },
+  {
+    $id: referenceSchemaId("raw-access-grant-revocation"),
+    additionalProperties: false,
+  },
 );
 
 export const OutboundIntentRequestSchema = Type.Object(
   {
-    envelope: SmtpEnvelopeSchema,
+    envelope: schemaRef(SmtpEnvelopeV1Schema),
     opaqueReplyToken: Type.Optional(Type.String({ maxLength: 2048, minLength: 1 })),
-    raw: RawMessageRefSchema,
+    raw: schemaRef(RawMessageRefV1Schema),
   },
-  { additionalProperties: false },
+  {
+    $id: referenceSchemaId("outbound-intent-request"),
+    additionalProperties: false,
+  },
 );
 
 export const DesiredBindingSchema = Type.Object(
@@ -172,7 +162,7 @@ export const DesiredBindingSchema = Type.Object(
     configRevision: Type.String({ maxLength: 128, minLength: 1 }),
     requirementsDigest: Sha256,
   },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("desired-binding"), additionalProperties: false },
 );
 
 const AdapterIdentitySchema = Type.Object(
@@ -181,13 +171,13 @@ const AdapterIdentitySchema = Type.Object(
     adapterVersion: Type.String({ maxLength: 128, minLength: 1 }),
     mode: Token,
   },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("adapter-identity"), additionalProperties: false },
 );
 
 export const BindingPlanSchema = Type.Object(
   {
     schemaVersion: Type.Literal("v1"),
-    identity: AdapterIdentitySchema,
+    identity: schemaRef(AdapterIdentitySchema),
     desiredDigest: Sha256,
     createdAt: Timestamp,
     expiresAt: Timestamp,
@@ -208,26 +198,7 @@ export const BindingPlanSchema = Type.Object(
       { maxItems: 1024 },
     ),
   },
-  { additionalProperties: false },
-);
-
-const RouteBindingSnapshotSchema = Type.Object(
-  {
-    schemaVersion: Type.Literal("v1"),
-    bindingId: UuidV7,
-    bindingVersion: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
-    tenantId: UuidV7,
-    domainALabel: Type.String({ maxLength: 253, minLength: 1 }),
-    direction: Type.Union([Type.Literal("inbound"), Type.Literal("outbound")]),
-    providerId: ProviderId,
-    adapterVersion: Type.String({ maxLength: 128, minLength: 1 }),
-    providerInstanceId: UuidV7,
-    providerResourceIds: StringMap,
-    capabilityDigest: Sha256,
-    configRevision: Type.String({ maxLength: 128, minLength: 1 }),
-    createdAt: Timestamp,
-  },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("binding-plan"), additionalProperties: false },
 );
 
 const ControlOperationSchema = Type.Object(
@@ -235,22 +206,25 @@ const ControlOperationSchema = Type.Object(
     operationId: Token,
     reasonCode: Token,
   },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("control-operation"), additionalProperties: false },
 );
 
 export const ApplyPlanRequestSchema = Type.Object(
-  { operation: ControlOperationSchema, plan: BindingPlanSchema },
-  { additionalProperties: false },
+  { operation: schemaRef(ControlOperationSchema), plan: schemaRef(BindingPlanSchema) },
+  { $id: referenceSchemaId("apply-plan-request"), additionalProperties: false },
 );
 
 export const BindingOperationRequestSchema = Type.Object(
-  { binding: RouteBindingSnapshotSchema, operation: ControlOperationSchema },
-  { additionalProperties: false },
+  {
+    binding: schemaRef(RouteBindingSnapshotV1Schema),
+    operation: schemaRef(ControlOperationSchema),
+  },
+  { $id: referenceSchemaId("binding-operation-request"), additionalProperties: false },
 );
 
 export const BindingDiscoveryRequestSchema = Type.Object(
-  { binding: RouteBindingSnapshotSchema },
-  { additionalProperties: false },
+  { binding: schemaRef(RouteBindingSnapshotV1Schema) },
+  { $id: referenceSchemaId("binding-discovery-request"), additionalProperties: false },
 );
 
 export const AppliedBindingResourcesSchema = Type.Object(
@@ -261,7 +235,7 @@ export const AppliedBindingResourcesSchema = Type.Object(
     appliedAt: Timestamp,
     normalizedEvidence: NormalizedEvidence,
   },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("applied-binding-resources"), additionalProperties: false },
 );
 
 export const DiscoveredBindingResourcesSchema = Type.Object(
@@ -272,7 +246,7 @@ export const DiscoveredBindingResourcesSchema = Type.Object(
     drift: Type.Array(Token, { maxItems: 1024 }),
     normalizedEvidence: NormalizedEvidence,
   },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("discovered-binding-resources"), additionalProperties: false },
 );
 
 export const DeletionEvidenceSchema = Type.Object(
@@ -284,7 +258,7 @@ export const DeletionEvidenceSchema = Type.Object(
     deletedAt: Timestamp,
     normalizedEvidence: NormalizedEvidence,
   },
-  { additionalProperties: false },
+  { $id: referenceSchemaId("deletion-evidence"), additionalProperties: false },
 );
 
 export const FeedbackHandoffResultSchema = Type.Object(
@@ -293,6 +267,85 @@ export const FeedbackHandoffResultSchema = Type.Object(
     duplicates: Type.Integer({ maximum: 4096, minimum: 0 }),
   },
   { additionalProperties: false },
+);
+
+const HealthSchema = Type.Object(
+  { status: Type.Union([Type.Literal("live"), Type.Literal("ready"), Type.Literal("not_ready")]) },
+  { $id: referenceSchemaId("health"), additionalProperties: false },
+);
+
+const DegradedHealthSchema = Type.Object(
+  {
+    providers: Type.Array(
+      Type.Object(
+        {
+          identity: schemaRef(AdapterIdentitySchema),
+          maturity: Type.Union([Type.Literal("stable"), Type.Literal("experimental")]),
+          status: Type.Union([Type.Literal("operational"), Type.Literal("unavailable")]),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 10_000 },
+    ),
+    status: Type.Union([Type.Literal("operational"), Type.Literal("degraded")]),
+  },
+  { $id: referenceSchemaId("degraded-health"), additionalProperties: false },
+);
+
+const ProviderInstanceSchema = Type.Object(
+  {
+    identity: schemaRef(AdapterIdentitySchema),
+    providerInstanceId: UuidV7,
+    tenantId: UuidV7,
+  },
+  { $id: referenceSchemaId("provider-instance"), additionalProperties: false },
+);
+
+const ProviderInstanceListSchema = Type.Object(
+  {
+    providerInstances: Type.Array(schemaRef(ProviderInstanceSchema), { maxItems: 10_000 }),
+  },
+  { $id: referenceSchemaId("provider-instance-list"), additionalProperties: false },
+);
+
+const ProviderRegistrationSummarySchema = Type.Object(
+  {
+    descriptor: schemaRef(ProviderCapabilityDescriptorV1Schema),
+    identity: schemaRef(AdapterIdentitySchema),
+  },
+  { $id: referenceSchemaId("provider-registration-summary"), additionalProperties: false },
+);
+
+const ProviderRegistrationListSchema = Type.Object(
+  {
+    providers: Type.Array(schemaRef(ProviderRegistrationSummarySchema), { maxItems: 10_000 }),
+  },
+  { $id: referenceSchemaId("provider-registration-list"), additionalProperties: false },
+);
+
+/** Deterministically ordered registry of reference-service-owned HTTP schemas. */
+export const referenceServiceSchemas = Object.freeze(
+  [
+    AdapterIdentitySchema,
+    AppliedBindingResourcesSchema,
+    ApplyPlanRequestSchema,
+    BindingDiscoveryRequestSchema,
+    BindingOperationRequestSchema,
+    BindingPlanSchema,
+    ControlOperationSchema,
+    DegradedHealthSchema,
+    DeletionEvidenceSchema,
+    DesiredBindingSchema,
+    DiscoveredBindingResourcesSchema,
+    HealthSchema,
+    OutboundIntentRequestSchema,
+    ProviderInstanceListSchema,
+    ProviderInstanceSchema,
+    ProviderRegistrationListSchema,
+    ProviderRegistrationSummarySchema,
+    RawAccessGrantRequestSchema,
+    RawAccessGrantRevocationSchema,
+  ].toSorted((left, right) => String(left.$id).localeCompare(String(right.$id))),
 );
 
 export type ProviderRouteParams = Static<typeof ProviderRouteParamsSchema>;
@@ -319,11 +372,15 @@ export class ApiValidator {
       strictRequired: true,
       validateFormats: false,
     });
+    for (const schema of [...contractSchemas, ...referenceServiceSchemas]) {
+      this.#ajv.addSchema(schema);
+    }
   }
 
   validate<T extends TSchema>(schema: T, value: unknown): Result<Static<T>, MailEdgeError> {
     const existing = this.#validators.get(schema);
-    const validator = existing ?? this.#ajv.compile(schema);
+    const registered = typeof schema.$id === "string" ? this.#ajv.getSchema(schema.$id) : undefined;
+    const validator = existing ?? registered ?? this.#ajv.compile(schema);
     if (existing === undefined) this.#validators.set(schema, validator);
     return validator(value)
       ? { ok: true, value: value as Static<T> }

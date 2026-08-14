@@ -30,6 +30,13 @@ const componentName = (schema) =>
     .join("");
 
 const componentById = new Map(contractSchemas.map((schema) => [schema.$id, componentName(schema)]));
+const componentReference = (schemaId) => {
+  const component = componentById.get(schemaId);
+  if (component === undefined) {
+    throw new TypeError(`OpenAPI component schema is not registered: ${String(schemaId)}`);
+  }
+  return { $ref: `#/components/schemas/${component}` };
+};
 const rewriteReferences = (value) => {
   if (Array.isArray(value)) return value.map(rewriteReferences);
   if (value !== null && typeof value === "object") {
@@ -122,12 +129,12 @@ const hostCallback = ({ operationId, operation, request, response }) => ({
     operationId,
     parameters: hostSignatureParameters,
     requestBody: {
-      content: { "application/json": { schema: { $ref: `#/components/schemas/${request}` } } },
+      content: { "application/json": { schema: componentReference(request) } },
       required: true,
     },
     responses: {
       200: {
-        content: { "application/json": { schema: { $ref: `#/components/schemas/${response}` } } },
+        content: { "application/json": { schema: componentReference(response) } },
         description:
           "Durably authenticated result; the subject response header must exactly match.",
         headers: {
@@ -149,101 +156,131 @@ const hostCallback = ({ operationId, operation, request, response }) => ({
       "Nonce consumption is atomic after signature verification and before business side effects; duplicate nonces fail closed.",
   },
 });
-expected.set(
-  openApiPath,
-  serialize({
-    components: {
-      responses: {
-        HostProblem: {
-          content: {
-            "application/problem+json": {
-              schema: { $ref: "#/components/schemas/MailEdgeProblemV1" },
-            },
+const openApiDocument = {
+  components: {
+    responses: {
+      HostProblem: {
+        content: {
+          "application/problem+json": {
+            schema: componentReference("urn:mail-edge:schema:v1:mail-edge-problem"),
           },
-          description: "Bounded RFC 9457 failure with no secrets, raw content, or addresses.",
         },
+        description: "Bounded RFC 9457 failure with no secrets, raw content, or addresses.",
       },
-      schemas: components,
     },
-    info: {
-      description: "Versioned provider-neutral Mail Edge wire contracts.",
-      license: { name: "Apache-2.0", identifier: "Apache-2.0" },
-      title: "Mail Edge contracts",
-      version: "1.0.0",
-    },
-    jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
-    openapi: "3.1.0",
-    paths: {
-      "/v1/raw-access-grants/{grantId}/raw": {
-        get: {
-          description:
-            "Stream the exact raw message under a short-lived tenant, subject, audience, and raw_download-operation grant. Redirects, ranges, and content encodings are rejected; single-use grants are atomically consumed and all grants are fenced and revocable.",
-          operationId: "downloadRawMessageByGrant",
-          parameters: [
-            {
-              in: "path",
-              name: "grantId",
-              required: true,
-              schema: { $ref: "#/components/schemas/RawAccessGrantId" },
-            },
-            hostHeader("Authorization", "MailEdgeRaw followed by the opaque grant token.", {
-              pattern: "^MailEdgeRaw [A-Za-z0-9_-]{43,128}$",
-              type: "string",
-            }),
-            hostHeader("X-Mail-Edge-Signature-Audience", "Exact grant audience.", {
-              type: "string",
-            }),
-            hostHeader("X-Mail-Edge-Subject-Id", "Exact grant subject.", { type: "string" }),
-            hostHeader("X-Mail-Edge-Operation", "Grant-bound operation.", {
-              const: "raw_download",
-            }),
-          ],
-          responses: {
-            200: {
-              content: { "message/rfc822": { schema: { format: "binary", type: "string" } } },
-              description: "Constant-memory authenticated byte stream with Content-Length.",
-              headers: {
-                "Accept-Ranges": { schema: { const: "none" } },
-                "Cache-Control": { schema: { const: "no-store, private" } },
-              },
-            },
-            400: { $ref: "#/components/responses/HostProblem" },
-            401: { $ref: "#/components/responses/HostProblem" },
-            404: { $ref: "#/components/responses/HostProblem" },
-            409: { $ref: "#/components/responses/HostProblem" },
-            410: { $ref: "#/components/responses/HostProblem" },
+    schemas: components,
+  },
+  info: {
+    description: "Versioned provider-neutral Mail Edge wire contracts.",
+    license: { name: "Apache-2.0", identifier: "Apache-2.0" },
+    title: "Mail Edge contracts",
+    version: "1.0.0",
+  },
+  jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
+  openapi: "3.1.0",
+  paths: {
+    "/v1/raw-access-grants/{grantId}/raw": {
+      get: {
+        description:
+          "Stream the exact raw message under a short-lived tenant, subject, audience, and raw_download-operation grant. Redirects, ranges, and content encodings are rejected; single-use grants are atomically consumed and all grants are fenced and revocable.",
+        operationId: "downloadRawMessageByGrant",
+        parameters: [
+          {
+            in: "path",
+            name: "grantId",
+            required: true,
+            schema: { $ref: "#/components/schemas/RawAccessGrantId" },
           },
+          hostHeader("Authorization", "MailEdgeRaw followed by the opaque grant token.", {
+            pattern: "^MailEdgeRaw [A-Za-z0-9_-]{43,128}$",
+            type: "string",
+          }),
+          hostHeader("X-Mail-Edge-Signature-Audience", "Exact grant audience.", {
+            type: "string",
+          }),
+          hostHeader("X-Mail-Edge-Subject-Id", "Exact grant subject.", { type: "string" }),
+          hostHeader("X-Mail-Edge-Operation", "Grant-bound operation.", {
+            const: "raw_download",
+          }),
+        ],
+        responses: {
+          200: {
+            content: { "message/rfc822": { schema: { format: "binary", type: "string" } } },
+            description: "Constant-memory authenticated byte stream with Content-Length.",
+            headers: {
+              "Accept-Ranges": { schema: { const: "none" } },
+              "Cache-Control": { schema: { const: "no-store, private" } },
+            },
+          },
+          400: { $ref: "#/components/responses/HostProblem" },
+          401: { $ref: "#/components/responses/HostProblem" },
+          404: { $ref: "#/components/responses/HostProblem" },
+          409: { $ref: "#/components/responses/HostProblem" },
+          410: { $ref: "#/components/responses/HostProblem" },
         },
       },
     },
-    webhooks: {
-      applicationDelivery: hostCallback({
-        operation: "application_delivery",
-        operationId: "receiveApplicationDelivery",
-        request: "ApplicationDeliveryCallbackV1",
-        response: "ApplicationAckV1",
-      }),
-      applicationFeedback: hostCallback({
-        operation: "application_feedback",
-        operationId: "receiveApplicationFeedback",
-        request: "ApplicationFeedbackV1",
-        response: "ApplicationAckV1",
-      }),
-      recipientRoute: hostCallback({
-        operation: "recipient_route",
-        operationId: "resolveRecipientRoute",
-        request: "RecipientRouteRequestV1",
-        response: "RecipientRouteResponseV1",
-      }),
-      reverseRoute: hostCallback({
-        operation: "reverse_route",
-        operationId: "resolveReverseRoute",
-        request: "ReverseRouteRequestV1",
-        response: "ReverseRouteResolutionV1",
-      }),
-    },
-  }),
-);
+  },
+  webhooks: {
+    applicationDelivery: hostCallback({
+      operation: "application_delivery",
+      operationId: "receiveApplicationDelivery",
+      request: "urn:mail-edge:schema:v1:application-delivery-callback",
+      response: "urn:mail-edge:schema:v1:application-ack",
+    }),
+    applicationFeedback: hostCallback({
+      operation: "application_feedback",
+      operationId: "receiveApplicationFeedback",
+      request: "urn:mail-edge:schema:v1:application-feedback",
+      response: "urn:mail-edge:schema:v1:application-ack",
+    }),
+    recipientRoute: hostCallback({
+      operation: "recipient_route",
+      operationId: "resolveRecipientRoute",
+      request: "urn:mail-edge:schema:v1:recipient-route-request",
+      response: "urn:mail-edge:schema:v1:recipient-route-response",
+    }),
+    reverseRoute: hostCallback({
+      operation: "reverse_route",
+      operationId: "resolveReverseRoute",
+      request: "urn:mail-edge:schema:v1:reverse-route-request",
+      response: "urn:mail-edge:schema:v1:reverse-route-resolution",
+    }),
+  },
+};
+
+const localReferenceTarget = (document, reference) => {
+  if (!reference.startsWith("#/")) return undefined;
+  let value = document;
+  for (const encodedPart of reference.slice(2).split("/")) {
+    const part = encodedPart.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (value === null || typeof value !== "object" || !(part in value)) return undefined;
+    value = value[part];
+  }
+  return value;
+};
+
+const assertLocalReferencesResolve = (document) => {
+  const visit = (value, path) => {
+    if (Array.isArray(value)) {
+      value.forEach((child, index) => visit(child, `${path}[${String(index)}]`));
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    if (
+      typeof value.$ref === "string" &&
+      value.$ref.startsWith("#/") &&
+      localReferenceTarget(document, value.$ref) === undefined
+    ) {
+      throw new TypeError(`Unresolved OpenAPI reference at ${path}: ${value.$ref}`);
+    }
+    for (const [key, child] of Object.entries(value)) visit(child, `${path}.${key}`);
+  };
+  visit(document, "$");
+};
+
+assertLocalReferencesResolve(openApiDocument);
+expected.set(openApiPath, serialize(openApiDocument));
 
 let failed = false;
 for (const [path, content] of expected) {

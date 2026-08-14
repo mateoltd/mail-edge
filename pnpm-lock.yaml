@@ -185,9 +185,15 @@ importers:
       '@types/pg':
         specifier: 8.21.0
         version: 8.21.0
+      prettier:
+        specifier: 3.9.6
+        version: 3.9.6
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   packages/blob-s3:
     dependencies:

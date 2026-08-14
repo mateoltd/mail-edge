@@ -13,7 +13,8 @@ tags:
 paths:
   /livez:
     get:
-      tags: [Health]
+      tags:
+        - Health
       operationId: getLiveness
       responses:
         "200":
@@ -24,7 +25,8 @@ paths:
                 $ref: "#/components/schemas/Health"
   /readyz:
     get:
-      tags: [Health]
+      tags:
+        - Health
       operationId: getReadiness
       responses:
         "200":
@@ -41,7 +43,8 @@ paths:
                 $ref: "#/components/schemas/Health"
   /health/degraded:
     get:
-      tags: [Health]
+      tags:
+        - Health
       operationId: getDegradedStatus
       responses:
         "200":
@@ -52,7 +55,8 @@ paths:
                 $ref: "#/components/schemas/DegradedHealth"
   /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound/{providerPath}:
     post:
-      tags: [Provider ingress]
+      tags:
+        - Provider ingress
       operationId: ingestProviderMessage
       description:
         The exact provider adapter authenticates and consumes the one-shot byte stream at its
@@ -87,7 +91,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/feedback:
     post:
-      tags: [Provider ingress]
+      tags:
+        - Provider ingress
       operationId: ingestProviderFeedback
       description: The exact provider adapter authenticates, parses, and hands off feedback durably.
       parameters:
@@ -117,7 +122,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/raw-messages:
     post:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: storeRawMessage
       security:
         - bearerAuth: []
@@ -149,7 +155,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/raw-access-grants/{grantId}/raw:
     get:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: downloadRawMessageByGrant
       description:
         Streams the exact raw object in constant memory. Ranges, redirects, and content encodings
@@ -161,27 +168,38 @@ paths:
         - name: X-Mail-Edge-Signature-Audience
           in: header
           required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
         - name: X-Mail-Edge-Subject-Id
           in: header
           required: true
-          schema: { type: string, minLength: 1, maxLength: 128 }
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
         - name: X-Mail-Edge-Operation
           in: header
           required: true
-          schema: { const: raw_download }
+          schema:
+            const: raw_download
       responses:
         "200":
           description:
             Authenticated raw stream; a single-use grant is consumed before the object opens.
           headers:
             Accept-Ranges:
-              schema: { const: none }
+              schema:
+                const: none
             Cache-Control:
-              schema: { const: "no-store, private" }
+              schema:
+                const: no-store, private
           content:
             message/rfc822:
-              schema: { type: string, format: binary }
+              schema:
+                type: string
+                format: binary
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -192,7 +210,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/raw-access-grants:
     post:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: issueRawAccessGrant
       security:
         - bearerAuth: []
@@ -203,20 +222,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [purpose, raw, singleUse, subjectId]
-              properties:
-                purpose: { type: string, enum: [operator_review, reconciliation] }
-                raw: { $ref: "#/components/schemas/RawMessageRef" }
-                singleUse: { type: boolean }
-                subjectId: { type: string, minLength: 1, maxLength: 128 }
+              $ref: "#/components/schemas/RawAccessGrantRequest"
       responses:
         "201":
           description: Short-lived, fenced raw access grant.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/RawAccessGrant" }
+              schema:
+                $ref: "#/components/schemas/RawAccessGrant"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -225,7 +238,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/raw-access-grants/{grantId}/revoke:
     post:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: revokeRawAccessGrant
       security:
         - bearerAuth: []
@@ -237,13 +251,10 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [expectedFence]
-              properties:
-                expectedFence: { type: integer, minimum: 0 }
+              $ref: "#/components/schemas/RawAccessGrantRevocation"
       responses:
-        "204": { description: Grant revoked and fence advanced. }
+        "204":
+          description: Grant revoked and fence advanced.
         "401":
           $ref: "#/components/responses/Problem"
         "404":
@@ -252,7 +263,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/outbound-intents:
     post:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: createOutboundIntent
       security:
         - bearerAuth: []
@@ -262,9 +274,7 @@ paths:
           in: header
           required: true
           schema:
-            type: string
-            minLength: 1
-            maxLength: 256
+            $ref: "#/components/schemas/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -277,13 +287,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/OutboundIntent"
         "202":
           description: New outbound intent accepted durably.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/OutboundIntent"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -296,7 +306,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/outbound-intents/{intentId}:
     get:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: getOutboundIntent
       security:
         - bearerAuth: []
@@ -309,7 +320,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/OutboundIntent"
         "401":
           $ref: "#/components/responses/Problem"
         "404":
@@ -318,7 +329,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/inbound-receipts/{receiptId}:
     get:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: getInboundReceipt
       security:
         - bearerAuth: []
@@ -331,7 +343,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/VerifiedInboundReceipt"
         "401":
           $ref: "#/components/responses/Problem"
         "404":
@@ -340,7 +352,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/provider-instances:
     get:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: listProviderInstances
       security:
         - bearerAuth: []
@@ -350,22 +363,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required: [providerInstances]
-                properties:
-                  providerInstances:
-                    type: array
-                    maxItems: 10000
-                    items:
-                      $ref: "#/components/schemas/ProviderInstance"
+                $ref: "#/components/schemas/ProviderInstanceList"
         "401":
           $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/bindings/{bindingId}/versions/{bindingVersion}:
     get:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: inspectTenantBinding
       security:
         - bearerAuth: []
@@ -378,14 +384,16 @@ paths:
           description: Tenant-scoped binding lifecycle snapshot.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+              schema:
+                $ref: "#/components/schemas/BindingControlView"
         "401":
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/outbound-intents/{intentId}/quarantine:
     get:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: inspectOutboundQuarantine
       security:
         - bearerAuth: []
@@ -397,14 +405,16 @@ paths:
           description: Tenant-scoped quarantine snapshot without raw content or secrets.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+              schema:
+                $ref: "#/components/schemas/OutboundQuarantineView"
         "401":
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/inbound-receipts/{receiptId}/quarantine:
     get:
-      tags: [Tenant]
+      tags:
+        - Tenant
       operationId: inspectInboundQuarantine
       security:
         - bearerAuth: []
@@ -416,14 +426,16 @@ paths:
           description: Tenant-scoped quarantine snapshot without raw content or secrets.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+              schema:
+                $ref: "#/components/schemas/InboundQuarantineView"
         "401":
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
   /v1/operator/tenants/{tenantId}/bindings/{bindingId}/versions/{bindingVersion}/{action}:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: transitionBindingLifecycle
       description:
         Applies activate, drain, or retire under optimistic concurrency. Drain prevents new
@@ -438,18 +450,25 @@ paths:
         - name: action
           in: path
           required: true
-          schema: { type: string, enum: [activate, drain, retire] }
+          schema:
+            type: string
+            enum:
+              - activate
+              - drain
+              - retire
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/LifecycleDecision" }
+            schema:
+              $ref: "#/components/schemas/BindingLifecycleDecision"
       responses:
         "200":
           description: Updated binding state and concurrency version.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+              schema:
+                $ref: "#/components/schemas/BindingControlView"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -460,7 +479,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/tenants/{tenantId}/outbound-intents/{intentId}/quarantine-decisions:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: decideOutboundQuarantine
       description:
         Records an audited terminal decision or privileged retry authorization. authorize_retry
@@ -474,13 +494,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/OutboundQuarantineDecision" }
+            schema:
+              $ref: "#/components/schemas/OutboundQuarantineDecision"
       responses:
         "200":
           description: Audited decision and resulting snapshot.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+              schema:
+                $ref: "#/components/schemas/OutboundQuarantineView"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -491,7 +513,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/tenants/{tenantId}/inbound-receipts/{receiptId}/quarantine-decisions:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: decideInboundQuarantine
       description:
         Releases a quarantined receipt once or applies an audited terminal action under version and
@@ -505,13 +528,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/InboundQuarantineDecision" }
+            schema:
+              $ref: "#/components/schemas/InboundQuarantineDecision"
       responses:
         "200":
           description: Audited decision and resulting snapshot.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+              schema:
+                $ref: "#/components/schemas/InboundQuarantineView"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -522,7 +547,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/providers:
     get:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: listProviders
       security:
         - bearerAuth: []
@@ -532,28 +558,15 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required: [providers]
-                properties:
-                  providers:
-                    type: array
-                    maxItems: 10000
-                    items:
-                      type: object
-                      required: [identity, descriptor]
-                      properties:
-                        identity:
-                          $ref: "#/components/schemas/AdapterIdentity"
-                        descriptor:
-                          $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/ProviderRegistrationList"
         "401":
           $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
   /v1/operator/provider-instances/{providerInstanceId}/bindings/plan:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: planProviderBinding
       security:
         - bearerAuth: []
@@ -582,7 +595,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/provider-instances/{providerInstanceId}/plans/apply:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: applyProviderBindingPlan
       security:
         - bearerAuth: []
@@ -593,21 +607,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [operation, plan]
-              properties:
-                operation:
-                  $ref: "#/components/schemas/ControlOperation"
-                plan:
-                  $ref: "#/components/schemas/BindingPlan"
+              $ref: "#/components/schemas/ApplyPlanRequest"
       responses:
         "200":
           description: Validated applied provider resources.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/AppliedBindingResources"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -618,7 +625,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/provider-instances/{providerInstanceId}/bindings/discover:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: discoverProviderBinding
       security:
         - bearerAuth: []
@@ -629,19 +637,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [binding]
-              properties:
-                binding:
-                  $ref: "#/components/schemas/RouteBinding"
+              $ref: "#/components/schemas/BindingDiscoveryRequest"
       responses:
         "200":
           description: Validated discovered provider resources and drift.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/DiscoveredBindingResources"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -652,7 +655,8 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/operator/provider-instances/{providerInstanceId}/bindings/delete:
     post:
-      tags: [Operator]
+      tags:
+        - Operator
       operationId: deleteProviderBinding
       security:
         - bearerAuth: []
@@ -663,26 +667,54 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [binding, operation]
-              properties:
-                binding:
-                  $ref: "#/components/schemas/RouteBinding"
-                operation:
-                  $ref: "#/components/schemas/ControlOperation"
+              $ref: "#/components/schemas/BindingOperationRequest"
       responses:
         "200":
           description: Validated provider deletion evidence.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ContractSnapshot"
+                $ref: "#/components/schemas/DeletionEvidence"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
           $ref: "#/components/responses/Problem"
         "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound:
+    post:
+      tags:
+        - Provider ingress
+      operationId: ingestProviderMessageAtRoot
+      description:
+        The exact provider adapter authenticates and consumes the one-shot byte stream at its
+        registered provider path.
+      parameters:
+        - $ref: "#/components/parameters/ProviderId"
+        - $ref: "#/components/parameters/AdapterVersion"
+        - $ref: "#/components/parameters/Mode"
+        - $ref: "#/components/parameters/ProviderInstanceId"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Adapter-defined safe success response.
+        "202":
+          description: Verified ingress was durably accepted or recognized as a replay.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "429":
           $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
@@ -708,277 +740,374 @@ components:
       in: path
       required: true
       schema:
-        type: string
-        minLength: 1
         maxLength: 128
+        minLength: 1
+        type: string
     Mode:
       name: mode
       in: path
       required: true
       schema:
+        maxLength: 128
+        minLength: 1
+        pattern: ^[a-z][a-z0-9_-]*$
         type: string
-        pattern: "^[a-z][a-z0-9_-]{0,63}$"
     ProviderInstanceId:
       name: providerInstanceId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/UuidV7"
+        $ref: "#/components/schemas/ProviderInstanceId"
     ProviderPath:
       name: providerPath
       in: path
       required: true
       description: Adapter-owned ingress path segment, such as raw-mime for Mailgun.
       schema:
-        type: string
-        minLength: 1
         maxLength: 128
+        minLength: 1
+        type: string
     TenantId:
       name: tenantId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/UuidV7"
+        $ref: "#/components/schemas/TenantId"
     IntentId:
       name: intentId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/UuidV7"
+        $ref: "#/components/schemas/IntentId"
     ReceiptId:
       name: receiptId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/UuidV7"
+        $ref: "#/components/schemas/ReceiptId"
     GrantId:
       name: grantId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/UuidV7"
+        $ref: "#/components/schemas/RawAccessGrantId"
     BindingId:
       name: bindingId
       in: path
       required: true
       schema:
-        $ref: "#/components/schemas/UuidV7"
+        $ref: "#/components/schemas/BindingId"
     BindingVersion:
       name: bindingVersion
       in: path
       required: true
       schema:
-        type: integer
-        minimum: 1
+        maxLength: 16
+        minLength: 1
+        pattern: ^[1-9][0-9]{0,15}$
+        type: string
   responses:
     Problem:
       description: Versioned privacy-safe Mail Edge problem.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: "#/components/schemas/MailEdgeProblem"
   schemas:
-    UuidV7:
-      type: string
-      minLength: 36
-      maxLength: 36
-      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-    Sha256:
-      type: string
-      minLength: 64
-      maxLength: 64
-      pattern: "^[0-9a-f]{64}$"
-    ProviderId:
-      type: string
-      minLength: 1
-      maxLength: 63
-      pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
-    Health:
-      type: object
+    AdapterIdentity:
+      $id: urn:mail-edge:reference-service:schema:v1:adapter-identity
       additionalProperties: false
-      required: [status]
-      properties:
-        status:
-          type: string
-          enum: [live, ready, not_ready]
-    DegradedHealth:
       type: object
-      additionalProperties: false
-      required: [status, providers]
       properties:
-        status:
+        providerId:
+          maxLength: 63
+          minLength: 1
+          pattern: ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
           type: string
-          enum: [operational, degraded]
-        providers:
+        adapterVersion:
+          maxLength: 128
+          minLength: 1
+          type: string
+        mode:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_-]*$
+          type: string
+      required:
+        - providerId
+        - adapterVersion
+        - mode
+    AppliedBindingResources:
+      $id: urn:mail-edge:reference-service:schema:v1:applied-binding-resources
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        providerResourceIds:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^(.*)$:
+              maxLength: 512
+              type: string
+        planDigest:
+          maxLength: 64
+          minLength: 64
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        appliedAt:
+          maxLength: 35
+          minLength: 20
+          type: string
+        normalizedEvidence:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^[A-Za-z][A-Za-z0-9_-]*$:
+              anyOf:
+                - maxLength: 256
+                  type: string
+                - type: number
+                - type: boolean
+      required:
+        - schemaVersion
+        - providerResourceIds
+        - planDigest
+        - appliedAt
+        - normalizedEvidence
+    ApplyPlanRequest:
+      $id: urn:mail-edge:reference-service:schema:v1:apply-plan-request
+      additionalProperties: false
+      type: object
+      properties:
+        operation:
+          $ref: "#/components/schemas/ControlOperation"
+        plan:
+          $ref: "#/components/schemas/BindingPlan"
+      required:
+        - operation
+        - plan
+    BindingDiscoveryRequest:
+      $id: urn:mail-edge:reference-service:schema:v1:binding-discovery-request
+      additionalProperties: false
+      type: object
+      properties:
+        binding:
+          $ref: "#/components/schemas/RouteBindingSnapshot"
+      required:
+        - binding
+    BindingOperationRequest:
+      $id: urn:mail-edge:reference-service:schema:v1:binding-operation-request
+      additionalProperties: false
+      type: object
+      properties:
+        binding:
+          $ref: "#/components/schemas/RouteBindingSnapshot"
+        operation:
+          $ref: "#/components/schemas/ControlOperation"
+      required:
+        - binding
+        - operation
+    BindingPlan:
+      $id: urn:mail-edge:reference-service:schema:v1:binding-plan
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        identity:
+          $ref: "#/components/schemas/AdapterIdentity"
+        desiredDigest:
+          maxLength: 64
+          minLength: 64
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        createdAt:
+          maxLength: 35
+          minLength: 20
+          type: string
+        expiresAt:
+          maxLength: 35
+          minLength: 20
+          type: string
+        operations:
+          maxItems: 1024
           type: array
-          maxItems: 10000
           items:
-            type: object
             additionalProperties: false
-            required: [identity, maturity, status]
+            type: object
+            properties:
+              operationId:
+                maxLength: 128
+                minLength: 1
+                pattern: ^[a-z][a-z0-9_-]*$
+                type: string
+              kind:
+                anyOf:
+                  - const: create
+                    type: string
+                  - const: update
+                    type: string
+                  - const: verify
+                    type: string
+              resourceType:
+                maxLength: 128
+                minLength: 1
+                pattern: ^[a-z][a-z0-9_-]*$
+                type: string
+              parameters:
+                maxProperties: 64
+                type: object
+                patternProperties:
+                  ^[A-Za-z][A-Za-z0-9_-]*$:
+                    anyOf:
+                      - maxLength: 256
+                        type: string
+                      - type: number
+                      - type: boolean
+            required:
+              - operationId
+              - kind
+              - resourceType
+              - parameters
+      required:
+        - schemaVersion
+        - identity
+        - desiredDigest
+        - createdAt
+        - expiresAt
+        - operations
+    ControlOperation:
+      $id: urn:mail-edge:reference-service:schema:v1:control-operation
+      additionalProperties: false
+      type: object
+      properties:
+        operationId:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_-]*$
+          type: string
+        reasonCode:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_-]*$
+          type: string
+      required:
+        - operationId
+        - reasonCode
+    DegradedHealth:
+      $id: urn:mail-edge:reference-service:schema:v1:degraded-health
+      additionalProperties: false
+      type: object
+      properties:
+        providers:
+          maxItems: 10000
+          type: array
+          items:
+            additionalProperties: false
+            type: object
             properties:
               identity:
                 $ref: "#/components/schemas/AdapterIdentity"
               maturity:
-                type: string
-                enum: [stable, experimental]
+                anyOf:
+                  - const: stable
+                    type: string
+                  - const: experimental
+                    type: string
               status:
-                type: string
-                enum: [operational, unavailable]
-    RawMessageRef:
-      type: object
-      additionalProperties: false
-      required: [schemaVersion, blobId, sha256, size, mediaType]
-      properties:
-        schemaVersion:
-          const: v1
-        blobId:
-          $ref: "#/components/schemas/UuidV7"
-        sha256:
-          $ref: "#/components/schemas/Sha256"
-        size:
-          type: integer
-          minimum: 0
-          maximum: 26214400
-        mediaType:
-          const: message/rfc822
-    SmtpEnvelope:
-      type: object
-      additionalProperties: false
-      required: [schemaVersion, mailFrom, rcptTo, smtpUtf8]
-      properties:
-        schemaVersion:
-          const: v1
-        mailFrom:
-          type: [string, "null"]
-          maxLength: 512
-        rcptTo:
-          type: array
-          minItems: 1
-          maxItems: 1000
-          items:
-            type: object
-            additionalProperties: false
-            required: [address]
-            properties:
-              address:
-                type: string
-                minLength: 3
-                maxLength: 512
-              dsn:
-                type: object
-                maxProperties: 2
-        smtpUtf8:
-          type: boolean
-        body:
-          type: string
-          enum: [7bit, 8bitmime, binarymime]
-        requireTls:
-          type: boolean
-        dsn:
-          type: object
-          maxProperties: 2
-    OutboundIntentRequest:
-      type: object
-      additionalProperties: false
-      required: [envelope, raw]
-      properties:
-        envelope:
-          $ref: "#/components/schemas/SmtpEnvelope"
-        raw:
-          $ref: "#/components/schemas/RawMessageRef"
-        opaqueReplyToken:
-          type: string
-          minLength: 1
-          maxLength: 2048
-    RawAccessGrant:
-      type: object
-      additionalProperties: false
+                anyOf:
+                  - const: operational
+                    type: string
+                  - const: unavailable
+                    type: string
+            required:
+              - identity
+              - maturity
+              - status
+        status:
+          anyOf:
+            - const: operational
+              type: string
+            - const: degraded
+              type: string
       required:
-        [
-          schemaVersion,
-          grantId,
-          tenantId,
-          raw,
-          audience,
-          operation,
-          subjectId,
-          purpose,
-          singleUse,
-          opaqueToken,
-          downloadPath,
-          issuedAt,
-          expiresAt,
-        ]
-      properties:
-        schemaVersion: { const: v1 }
-        grantId: { $ref: "#/components/schemas/UuidV7" }
-        tenantId: { $ref: "#/components/schemas/UuidV7" }
-        raw: { $ref: "#/components/schemas/RawMessageRef" }
-        audience: { type: string, minLength: 1, maxLength: 128 }
-        operation: { const: raw_download }
-        subjectId: { type: string, minLength: 1, maxLength: 128 }
-        purpose: { type: string, enum: [application_delivery, operator_review, reconciliation] }
-        singleUse: { type: boolean }
-        opaqueToken: { type: string, minLength: 43, maxLength: 128 }
-        downloadPath: { type: string, minLength: 1, maxLength: 256 }
-        issuedAt: { type: string, format: date-time }
-        expiresAt: { type: string, format: date-time }
-    LifecycleDecision:
-      type: object
+        - providers
+        - status
+    DeletionEvidence:
+      $id: urn:mail-edge:reference-service:schema:v1:deletion-evidence
       additionalProperties: false
-      required: [expectedVersion, reasonCode]
-      properties:
-        expectedVersion: { type: integer, minimum: 0 }
-        reasonCode: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
-    OutboundQuarantineDecision:
       type: object
-      additionalProperties: false
-      required: [action, evidence, expectedFence, expectedVersion, reasonCode]
       properties:
-        action: { type: string, enum: [resolve_accepted, resolve_not_sent, authorize_retry] }
-        evidence: { type: object, maxProperties: 64 }
-        expectedFence: { type: integer, minimum: 0 }
-        expectedVersion: { type: integer, minimum: 0 }
-        reasonCode: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
-    InboundQuarantineDecision:
-      type: object
-      additionalProperties: false
-      required: [action, evidence, expectedFence, expectedVersion, reasonCode]
-      properties:
-        action: { type: string, enum: [release, terminal] }
-        evidence: { type: object, maxProperties: 64 }
-        expectedFence: { type: integer, minimum: 0 }
-        expectedVersion: { type: integer, minimum: 0 }
-        reasonCode: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
-    AdapterIdentity:
-      type: object
-      additionalProperties: false
-      required: [providerId, adapterVersion, mode]
-      properties:
-        providerId:
-          $ref: "#/components/schemas/ProviderId"
-        adapterVersion:
+        schemaVersion:
+          const: v1
           type: string
-          minLength: 1
-          maxLength: 128
-        mode:
+        deletedResourceIds:
+          maxItems: 1024
+          type: array
+          items:
+            maxLength: 512
+            minLength: 1
+            type: string
+        deletedAt:
+          maxLength: 35
+          minLength: 20
           type: string
-          pattern: "^[a-z][a-z0-9_-]{0,63}$"
-    ProviderInstance:
-      type: object
-      additionalProperties: false
-      required: [tenantId, providerInstanceId, identity]
-      properties:
-        tenantId:
-          $ref: "#/components/schemas/UuidV7"
-        providerInstanceId:
-          $ref: "#/components/schemas/UuidV7"
-        identity:
-          $ref: "#/components/schemas/AdapterIdentity"
+        normalizedEvidence:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^[A-Za-z][A-Za-z0-9_-]*$:
+              anyOf:
+                - maxLength: 256
+                  type: string
+                - type: number
+                - type: boolean
+      required:
+        - schemaVersion
+        - deletedResourceIds
+        - deletedAt
+        - normalizedEvidence
     DesiredBinding:
-      type: object
+      $id: urn:mail-edge:reference-service:schema:v1:desired-binding
       additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        tenantId:
+          maxLength: 36
+          minLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+          type: string
+        domainALabel:
+          maxLength: 253
+          minLength: 1
+          type: string
+        direction:
+          anyOf:
+            - const: inbound
+              type: string
+            - const: outbound
+              type: string
+        providerInstanceId:
+          maxLength: 36
+          minLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+          type: string
+        configRevision:
+          maxLength: 128
+          minLength: 1
+          type: string
+        requirementsDigest:
+          maxLength: 64
+          minLength: 64
+          pattern: ^[0-9a-f]{64}$
+          type: string
       required:
         - schemaVersion
         - tenantId
@@ -987,68 +1116,1215 @@ components:
         - providerInstanceId
         - configRevision
         - requirementsDigest
-      properties:
-        schemaVersion:
-          const: v1
-        tenantId:
-          $ref: "#/components/schemas/UuidV7"
-        domainALabel:
-          type: string
-          minLength: 1
-          maxLength: 253
-        direction:
-          type: string
-          enum: [inbound, outbound]
-        providerInstanceId:
-          $ref: "#/components/schemas/UuidV7"
-        configRevision:
-          type: string
-          minLength: 1
-          maxLength: 128
-        requirementsDigest:
-          $ref: "#/components/schemas/Sha256"
-    BindingPlan:
-      type: object
+    DiscoveredBindingResources:
+      $id: urn:mail-edge:reference-service:schema:v1:discovered-binding-resources
       additionalProperties: false
-      required: [schemaVersion, identity, desiredDigest, createdAt, expiresAt, operations]
+      type: object
       properties:
         schemaVersion:
           const: v1
+          type: string
+        providerResourceIds:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^(.*)$:
+              maxLength: 512
+              type: string
+        discoveredAt:
+          maxLength: 35
+          minLength: 20
+          type: string
+        drift:
+          maxItems: 1024
+          type: array
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[a-z][a-z0-9_-]*$
+            type: string
+        normalizedEvidence:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^[A-Za-z][A-Za-z0-9_-]*$:
+              anyOf:
+                - maxLength: 256
+                  type: string
+                - type: number
+                - type: boolean
+      required:
+        - schemaVersion
+        - providerResourceIds
+        - discoveredAt
+        - drift
+        - normalizedEvidence
+    Health:
+      $id: urn:mail-edge:reference-service:schema:v1:health
+      additionalProperties: false
+      type: object
+      properties:
+        status:
+          anyOf:
+            - const: live
+              type: string
+            - const: ready
+              type: string
+            - const: not_ready
+              type: string
+      required:
+        - status
+    OutboundIntentRequest:
+      $id: urn:mail-edge:reference-service:schema:v1:outbound-intent-request
+      additionalProperties: false
+      type: object
+      properties:
+        envelope:
+          $ref: "#/components/schemas/SmtpEnvelope"
+        opaqueReplyToken:
+          maxLength: 2048
+          minLength: 1
+          type: string
+        raw:
+          $ref: "#/components/schemas/RawMessageRef"
+      required:
+        - envelope
+        - raw
+    ProviderInstance:
+      $id: urn:mail-edge:reference-service:schema:v1:provider-instance
+      additionalProperties: false
+      type: object
+      properties:
         identity:
           $ref: "#/components/schemas/AdapterIdentity"
-        desiredDigest:
-          $ref: "#/components/schemas/Sha256"
-        createdAt:
+        providerInstanceId:
+          maxLength: 36
+          minLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
           type: string
-          minLength: 20
-          maxLength: 35
-        expiresAt:
+        tenantId:
+          maxLength: 36
+          minLength: 36
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
           type: string
-          minLength: 20
-          maxLength: 35
-        operations:
-          type: array
-          maxItems: 1024
-          items:
-            type: object
-            additionalProperties: false
-            required: [operationId, kind, resourceType, parameters]
-            properties:
-              operationId:
-                type: string
-                pattern: "^[a-z][a-z0-9_-]*$"
-              kind:
-                type: string
-                enum: [create, update, verify]
-              resourceType:
-                type: string
-                pattern: "^[a-z][a-z0-9_-]*$"
-              parameters:
-                type: object
-                maxProperties: 64
-    RouteBinding:
-      type: object
+      required:
+        - identity
+        - providerInstanceId
+        - tenantId
+    ProviderInstanceList:
+      $id: urn:mail-edge:reference-service:schema:v1:provider-instance-list
       additionalProperties: false
+      type: object
+      properties:
+        providerInstances:
+          maxItems: 10000
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderInstance"
+      required:
+        - providerInstances
+    ProviderRegistrationList:
+      $id: urn:mail-edge:reference-service:schema:v1:provider-registration-list
+      additionalProperties: false
+      type: object
+      properties:
+        providers:
+          maxItems: 10000
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderRegistrationSummary"
+      required:
+        - providers
+    ProviderRegistrationSummary:
+      $id: urn:mail-edge:reference-service:schema:v1:provider-registration-summary
+      additionalProperties: false
+      type: object
+      properties:
+        descriptor:
+          $ref: "#/components/schemas/ProviderCapabilityDescriptor"
+        identity:
+          $ref: "#/components/schemas/AdapterIdentity"
+      required:
+        - descriptor
+        - identity
+    RawAccessGrantRequest:
+      $id: urn:mail-edge:reference-service:schema:v1:raw-access-grant-request
+      additionalProperties: false
+      type: object
+      properties:
+        purpose:
+          anyOf:
+            - const: operator_review
+              type: string
+            - const: reconciliation
+              type: string
+        raw:
+          $ref: "#/components/schemas/RawMessageRef"
+        singleUse:
+          type: boolean
+        subjectId:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$
+          type: string
+      required:
+        - purpose
+        - raw
+        - singleUse
+        - subjectId
+    RawAccessGrantRevocation:
+      $id: urn:mail-edge:reference-service:schema:v1:raw-access-grant-revocation
+      additionalProperties: false
+      type: object
+      properties:
+        expectedFence:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+      required:
+        - expectedFence
+    BindingControlView:
+      $id: urn:mail-edge:schema:v1:binding-control-view
+      additionalProperties: false
+      type: object
+      properties:
+        binding:
+          $ref: "#/components/schemas/RouteBindingSnapshot"
+        state:
+          anyOf:
+            - const: draft
+              type: string
+            - const: testing
+              type: string
+            - const: active
+              type: string
+            - const: draining
+              type: string
+            - const: retired
+              type: string
+            - const: failed
+              type: string
+        optimisticVersion:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        qualifiedAt:
+          anyOf:
+            - $ref: "#/components/schemas/Rfc3339Timestamp"
+            - type: "null"
+        activatedAt:
+          anyOf:
+            - $ref: "#/components/schemas/Rfc3339Timestamp"
+            - type: "null"
+        drainingAt:
+          anyOf:
+            - $ref: "#/components/schemas/Rfc3339Timestamp"
+            - type: "null"
+        retiredAt:
+          anyOf:
+            - $ref: "#/components/schemas/Rfc3339Timestamp"
+            - type: "null"
+        checks:
+          maxItems: 1024
+          type: array
+          items:
+            additionalProperties: false
+            type: object
+            properties:
+              checkKind:
+                anyOf:
+                  - const: capability
+                    type: string
+                  - const: dns
+                    type: string
+                  - const: control_plane
+                    type: string
+                  - const: live_conformance
+                    type: string
+                  - const: drift
+                    type: string
+              outcome:
+                anyOf:
+                  - const: pass
+                    type: string
+                  - const: fail
+                    type: string
+                  - const: expired
+                    type: string
+              evidenceAt:
+                $ref: "#/components/schemas/Rfc3339Timestamp"
+              expiresAt:
+                $ref: "#/components/schemas/Rfc3339Timestamp"
+              reportDigest:
+                $ref: "#/components/schemas/Sha256"
+            required:
+              - checkKind
+              - outcome
+              - evidenceAt
+              - expiresAt
+              - reportDigest
+        pinnedInbound:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        pinnedOutbound:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+      required:
+        - binding
+        - state
+        - optimisticVersion
+        - qualifiedAt
+        - activatedAt
+        - drainingAt
+        - retiredAt
+        - checks
+        - pinnedInbound
+        - pinnedOutbound
+    BindingId:
+      $id: urn:mail-edge:schema:v1:binding-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    BindingLifecycleDecision:
+      $id: urn:mail-edge:schema:v1:binding-lifecycle-decision
+      additionalProperties: false
+      type: object
+      properties:
+        expectedVersion:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        reasonCode:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_]{0,63}$
+          type: string
+      required:
+        - expectedVersion
+        - reasonCode
+    BlobId:
+      $id: urn:mail-edge:schema:v1:blob-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    BoundedStringMap:
+      $id: urn:mail-edge:schema:v1:bounded-string-map
+      additionalProperties: false
+      maxProperties: 32
+      type: object
+      patternProperties:
+        ^[A-Za-z][A-Za-z0-9_.-]*$:
+          maxLength: 512
+          type: string
+    CapabilityEvidence:
+      $id: urn:mail-edge:schema:v1:capability-evidence
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        source:
+          anyOf:
+            - const: official_doc
+              type: string
+            - const: maintained_source
+              type: string
+            - const: live_conformance
+              type: string
+        sourceUri:
+          format: uri
+          maxLength: 512
+          minLength: 1
+          type: string
+        sourceRevision:
+          maxLength: 128
+          minLength: 1
+          type: string
+        observedAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
+        reportDigest:
+          $ref: "#/components/schemas/Sha256"
+        environment:
+          $ref: "#/components/schemas/BoundedStringMap"
+      required:
+        - schemaVersion
+        - source
+        - sourceUri
+        - observedAt
+        - reportDigest
+        - environment
+    DeliveryCertainty:
+      $id: urn:mail-edge:schema:v1:delivery-certainty
+      anyOf:
+        - const: not_sent
+          type: string
+        - const: accepted
+          type: string
+        - const: unknown
+          type: string
+    DomainALabel:
+      $id: urn:mail-edge:schema:v1:domain-a-label
+      maxLength: 253
+      minLength: 1
+      pattern: ^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$
+      type: string
+    DsnNotify:
+      $id: urn:mail-edge:schema:v1:dsn-notify
+      anyOf:
+        - type: array
+          items:
+            - const: never
+              type: string
+          additionalItems: false
+          minItems: 1
+          maxItems: 1
+        - maxItems: 3
+          minItems: 1
+          uniqueItems: true
+          type: array
+          items:
+            anyOf:
+              - const: success
+                type: string
+              - const: failure
+                type: string
+              - const: delay
+                type: string
+    IdempotencyKey:
+      $id: urn:mail-edge:schema:v1:idempotency-key
+      maxLength: 200
+      minLength: 1
+      pattern: ^[\x21-\x7e]+$
+      type: string
+    InboundQuarantineDecision:
+      $id: urn:mail-edge:schema:v1:inbound-quarantine-decision
+      additionalProperties: false
+      type: object
+      properties:
+        action:
+          anyOf:
+            - const: release
+              type: string
+            - const: terminal
+              type: string
+        evidence:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^[A-Za-z][A-Za-z0-9_-]*$:
+              anyOf:
+                - maxLength: 512
+                  type: string
+                - maximum: 9007199254740991
+                  minimum: -9007199254740991
+                  type: number
+                - type: boolean
+        expectedFence:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        expectedVersion:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        reasonCode:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_]{0,63}$
+          type: string
+      required:
+        - action
+        - evidence
+        - expectedFence
+        - expectedVersion
+        - reasonCode
+    InboundQuarantineView:
+      $id: urn:mail-edge:schema:v1:inbound-quarantine-view
+      additionalProperties: false
+      type: object
+      properties:
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        receiptId:
+          $ref: "#/components/schemas/ReceiptId"
+        state:
+          maxLength: 64
+          minLength: 1
+          type: string
+        version:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        fence:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        lastErrorCode:
+          anyOf:
+            - maxLength: 64
+              minLength: 1
+              type: string
+            - type: "null"
+      required:
+        - tenantId
+        - receiptId
+        - state
+        - version
+        - fence
+        - lastErrorCode
+    IntentId:
+      $id: urn:mail-edge:schema:v1:intent-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    MailEdgeProblem:
+      $id: urn:mail-edge:schema:v1:mail-edge-problem
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        type:
+          maxLength: 128
+          pattern: ^https://mail-edge\.dev/problems/[a-z0-9]+(?:-[a-z0-9]+)*$
+          type: string
+        title:
+          maxLength: 96
+          minLength: 1
+          type: string
+        status:
+          maximum: 599
+          minimum: 400
+          type: integer
+        detail:
+          maxLength: 256
+          minLength: 1
+          type: string
+        instance:
+          maxLength: 256
+          minLength: 1
+          type: string
+        code:
+          anyOf:
+            - const: validation-failed
+              type: string
+            - const: authentication-failed
+              type: string
+            - const: authorization-failed
+              type: string
+            - const: not-found
+              type: string
+            - const: conflict
+              type: string
+            - const: idempotency-conflict
+              type: string
+            - const: binding-unavailable
+              type: string
+            - const: capability-unsupported
+              type: string
+            - const: rate-limited
+              type: string
+            - const: ingress-limit-exceeded
+              type: string
+            - const: ingress-failed
+              type: string
+            - const: storage-unavailable
+              type: string
+            - const: workflow-conflict
+              type: string
+            - const: stale-fence
+              type: string
+            - const: illegal-transition
+              type: string
+            - const: provider-not-sent
+              type: string
+            - const: provider-outcome-unknown
+              type: string
+            - const: provider-rejected
+              type: string
+            - const: host-unavailable
+              type: string
+            - const: internal
+              type: string
+        retryable:
+          type: boolean
+        deliveryCertainty:
+          $ref: "#/components/schemas/DeliveryCertainty"
+        traceId:
+          maxLength: 64
+          minLength: 1
+          type: string
+        safeDetails:
+          $ref: "#/components/schemas/SafeDetails"
+        occurredAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
+      required:
+        - schemaVersion
+        - type
+        - title
+        - status
+        - code
+        - retryable
+        - deliveryCertainty
+    OutboundIntent:
+      $id: urn:mail-edge:schema:v1:outbound-intent
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        intentId:
+          $ref: "#/components/schemas/IntentId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        raw:
+          $ref: "#/components/schemas/RawMessageRef"
+        envelope:
+          $ref: "#/components/schemas/SmtpEnvelope"
+        primaryBinding:
+          $ref: "#/components/schemas/RouteBindingSnapshot"
+        fallbackBindings:
+          maxItems: 8
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteBindingSnapshot"
+        transmissionRaw:
+          $ref: "#/components/schemas/RawMessageRef"
+        fingerprint:
+          $ref: "#/components/schemas/Sha256"
+        state:
+          anyOf:
+            - const: accepted
+              type: string
+            - const: ready
+              type: string
+            - const: dispatching
+              type: string
+            - const: retry_wait
+              type: string
+            - const: provider_accepted
+              type: string
+            - const: failed_not_sent
+              type: string
+            - const: quarantined_unknown
+              type: string
+            - const: canceled
+              type: string
+        createdAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
+        version:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+      required:
+        - schemaVersion
+        - intentId
+        - tenantId
+        - raw
+        - envelope
+        - primaryBinding
+        - fallbackBindings
+        - transmissionRaw
+        - fingerprint
+        - state
+        - createdAt
+        - version
+    OutboundQuarantineDecision:
+      $id: urn:mail-edge:schema:v1:outbound-quarantine-decision
+      additionalProperties: false
+      type: object
+      properties:
+        action:
+          anyOf:
+            - const: resolve_accepted
+              type: string
+            - const: resolve_not_sent
+              type: string
+            - const: authorize_retry
+              type: string
+        evidence:
+          maxProperties: 64
+          type: object
+          patternProperties:
+            ^[A-Za-z][A-Za-z0-9_-]*$:
+              anyOf:
+                - maxLength: 512
+                  type: string
+                - maximum: 9007199254740991
+                  minimum: -9007199254740991
+                  type: number
+                - type: boolean
+        expectedFence:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        expectedVersion:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        reasonCode:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_]{0,63}$
+          type: string
+      required:
+        - action
+        - evidence
+        - expectedFence
+        - expectedVersion
+        - reasonCode
+    OutboundQuarantineView:
+      $id: urn:mail-edge:schema:v1:outbound-quarantine-view
+      additionalProperties: false
+      type: object
+      properties:
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        intentId:
+          $ref: "#/components/schemas/IntentId"
+        intentState:
+          maxLength: 64
+          minLength: 1
+          type: string
+        intentVersion:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+        attemptId:
+          anyOf:
+            - maxLength: 36
+              minLength: 36
+              type: string
+            - type: "null"
+        attemptState:
+          anyOf:
+            - maxLength: 64
+              minLength: 1
+              type: string
+            - type: "null"
+        attemptFence:
+          anyOf:
+            - maximum: 9007199254740991
+              minimum: 0
+              type: integer
+            - type: "null"
+        certainty:
+          anyOf:
+            - maxLength: 64
+              minLength: 1
+              type: string
+            - type: "null"
+      required:
+        - tenantId
+        - intentId
+        - intentState
+        - intentVersion
+        - attemptId
+        - attemptState
+        - attemptFence
+        - certainty
+    ProviderCapabilityDescriptor:
+      $id: urn:mail-edge:schema:v1:provider-capability-descriptor
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        providerId:
+          $ref: "#/components/schemas/ProviderId"
+        adapterVersion:
+          maxLength: 64
+          minLength: 1
+          type: string
+        maturity:
+          anyOf:
+            - const: stable
+              type: string
+            - const: experimental
+              type: string
+        inbound:
+          additionalProperties: false
+          type: object
+          properties:
+            supported:
+              type: boolean
+            acquisition:
+              maxItems: 3
+              uniqueItems: true
+              type: array
+              items:
+                anyOf:
+                  - const: inline_stream
+                    type: string
+                  - const: signed_reference_stream
+                    type: string
+                  - const: worker_frame_stream
+                    type: string
+            signatureCoverage:
+              anyOf:
+                - const: whole_body
+                  type: string
+                - const: body_digest
+                  type: string
+                - const: token_timestamp_only
+                  type: string
+                - const: worker_frames
+                  type: string
+                - const: none
+                  type: string
+            replayIdentity:
+              anyOf:
+                - const: provider_event
+                  type: string
+                - const: signed_token
+                  type: string
+                - const: worker_nonce
+                  type: string
+                - const: none
+                  type: string
+            exactDomainCatchAll:
+              type: boolean
+            bytePreservation:
+              anyOf:
+                - const: verified_exact
+                  type: string
+                - const: provider_mutated
+                  type: string
+                - const: unknown
+                  type: string
+            maxBytes:
+              maximum: 9007199254740991
+              minimum: 0
+              type: integer
+          required:
+            - supported
+            - acquisition
+            - signatureCoverage
+            - replayIdentity
+            - exactDomainCatchAll
+            - bytePreservation
+        outbound:
+          additionalProperties: false
+          type: object
+          properties:
+            supported:
+              type: boolean
+            transports:
+              maxItems: 3
+              uniqueItems: true
+              type: array
+              items:
+                anyOf:
+                  - const: http_binary
+                    type: string
+                  - const: http_utf8_json
+                    type: string
+                  - const: smtp_raw
+                    type: string
+            bytePreservation:
+              anyOf:
+                - const: verified_exact
+                  type: string
+                - const: provider_mutated
+                  type: string
+                - const: unknown
+                  type: string
+            mimeMutation:
+              maxItems: 5
+              uniqueItems: true
+              type: array
+              items:
+                anyOf:
+                  - const: none
+                    type: string
+                  - const: transport_headers
+                    type: string
+                  - const: dkim_signature
+                    type: string
+                  - const: content_reencoding
+                    type: string
+                  - const: unknown
+                    type: string
+            envelope:
+              additionalProperties: false
+              type: object
+              properties:
+                nullReversePath:
+                  type: boolean
+                multipleRecipients:
+                  type: boolean
+                smtpUtf8:
+                  type: boolean
+                dsnRetEnvid:
+                  type: boolean
+                perRecipientDsn:
+                  type: boolean
+                bodyModes:
+                  maxItems: 3
+                  uniqueItems: true
+                  type: array
+                  items:
+                    anyOf:
+                      - const: 7bit
+                        type: string
+                      - const: 8bitmime
+                        type: string
+                      - const: binarymime
+                        type: string
+                requireTls:
+                  type: boolean
+              required:
+                - nullReversePath
+                - multipleRecipients
+                - smtpUtf8
+                - dsnRetEnvid
+                - perRecipientDsn
+                - bodyModes
+                - requireTls
+            idempotency:
+              additionalProperties: false
+              type: object
+              properties:
+                mode:
+                  anyOf:
+                    - const: none
+                      type: string
+                    - const: header
+                      type: string
+                    - const: request_key
+                      type: string
+                scope:
+                  anyOf:
+                    - const: account
+                      type: string
+                    - const: domain
+                      type: string
+                ttlSeconds:
+                  maximum: 31536000
+                  minimum: 1
+                  type: integer
+              required:
+                - mode
+            reconciliation:
+              additionalProperties: false
+              type: object
+              properties:
+                supported:
+                  type: boolean
+                keys:
+                  maxItems: 16
+                  uniqueItems: true
+                  type: array
+                  items:
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                canProve:
+                  maxItems: 3
+                  uniqueItems: true
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/DeliveryCertainty"
+              required:
+                - supported
+                - keys
+                - canProve
+            maxBytes:
+              maximum: 9007199254740991
+              minimum: 0
+              type: integer
+            rateLimit:
+              additionalProperties: false
+              maxProperties: 16
+              type: object
+              patternProperties:
+                ^(.*)$:
+                  maximum: 9007199254740991
+                  minimum: 0
+                  type: number
+          required:
+            - supported
+            - transports
+            - bytePreservation
+            - mimeMutation
+            - envelope
+            - idempotency
+            - reconciliation
+        feedback:
+          additionalProperties: false
+          type: object
+          properties:
+            supported:
+              type: boolean
+            kinds:
+              maxItems: 9
+              uniqueItems: true
+              type: array
+              items:
+                anyOf:
+                  - const: accepted
+                    type: string
+                  - const: delivered
+                    type: string
+                  - const: deferred
+                    type: string
+                  - const: bounced
+                    type: string
+                  - const: complained
+                    type: string
+                  - const: suppressed
+                    type: string
+                  - const: opened
+                    type: string
+                  - const: clicked
+                    type: string
+                  - const: unsubscribed
+                    type: string
+            perRecipient:
+              type: boolean
+            signatureCoverage:
+              anyOf:
+                - const: whole_body
+                  type: string
+                - const: body_digest
+                  type: string
+                - const: token_timestamp_only
+                  type: string
+                - const: worker_event
+                  type: string
+                - const: none
+                  type: string
+          required:
+            - supported
+            - kinds
+            - perRecipient
+            - signatureCoverage
+        controlPlane:
+          additionalProperties: false
+          type: object
+          properties:
+            supported:
+              type: boolean
+            domainProvisioning:
+              type: boolean
+            dnsDiscovery:
+              type: boolean
+            driftDiscovery:
+              type: boolean
+            exactDomainCatchAll:
+              type: boolean
+          required:
+            - supported
+            - domainProvisioning
+            - dnsDiscovery
+            - driftDiscovery
+            - exactDomainCatchAll
+        prerequisites:
+          maxItems: 32
+          uniqueItems: true
+          type: array
+          items:
+            maxLength: 256
+            minLength: 1
+            type: string
+        evidence:
+          maxItems: 64
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityEvidence"
+      required:
+        - schemaVersion
+        - providerId
+        - adapterVersion
+        - maturity
+        - inbound
+        - outbound
+        - feedback
+        - controlPlane
+        - prerequisites
+        - evidence
+    ProviderId:
+      $id: urn:mail-edge:schema:v1:provider-id
+      maxLength: 63
+      minLength: 1
+      pattern: ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
+      type: string
+    ProviderInstanceId:
+      $id: urn:mail-edge:schema:v1:provider-instance-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    RawAccessGrant:
+      $id: urn:mail-edge:schema:v1:raw-access-grant
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        grantId:
+          $ref: "#/components/schemas/RawAccessGrantId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        raw:
+          $ref: "#/components/schemas/RawMessageRef"
+        audience:
+          maxLength: 128
+          minLength: 1
+          type: string
+        operation:
+          const: raw_download
+          type: string
+        subjectId:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$
+          type: string
+        purpose:
+          anyOf:
+            - const: application_delivery
+              type: string
+            - const: operator_review
+              type: string
+            - const: reconciliation
+              type: string
+        singleUse:
+          type: boolean
+        opaqueToken:
+          maxLength: 128
+          minLength: 43
+          pattern: ^[A-Za-z0-9_-]{43,128}$
+          type: string
+        downloadPath:
+          maxLength: 256
+          minLength: 1
+          pattern: ^/v1/raw-access-grants/[0-9a-f-]{36}/raw$
+          type: string
+        issuedAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
+        expiresAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
+      required:
+        - schemaVersion
+        - grantId
+        - tenantId
+        - raw
+        - audience
+        - operation
+        - subjectId
+        - purpose
+        - singleUse
+        - opaqueToken
+        - downloadPath
+        - issuedAt
+        - expiresAt
+    RawAccessGrantId:
+      $id: urn:mail-edge:schema:v1:raw-access-grant-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    RawMessageRef:
+      $id: urn:mail-edge:schema:v1:raw-message-ref
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        blobId:
+          $ref: "#/components/schemas/BlobId"
+        sha256:
+          $ref: "#/components/schemas/Sha256"
+        size:
+          maximum: 26214400
+          minimum: 0
+          type: integer
+        mediaType:
+          const: message/rfc822
+          type: string
+      required:
+        - schemaVersion
+        - blobId
+        - sha256
+        - size
+        - mediaType
+    ReceiptId:
+      $id: urn:mail-edge:schema:v1:receipt-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    Rfc3339Timestamp:
+      $id: urn:mail-edge:schema:v1:rfc3339-timestamp
+      format: date-time
+      maxLength: 35
+      minLength: 20
+      pattern: ^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$
+      type: string
+    RouteBindingSnapshot:
+      $id: urn:mail-edge:schema:v1:route-binding-snapshot
+      additionalProperties: false
+      type: object
+      properties:
+        schemaVersion:
+          const: v1
+          type: string
+        bindingId:
+          $ref: "#/components/schemas/BindingId"
+        bindingVersion:
+          maximum: 9007199254740991
+          minimum: 1
+          type: integer
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        domainALabel:
+          $ref: "#/components/schemas/DomainALabel"
+        direction:
+          anyOf:
+            - const: inbound
+              type: string
+            - const: outbound
+              type: string
+        providerId:
+          $ref: "#/components/schemas/ProviderId"
+        adapterVersion:
+          maxLength: 64
+          minLength: 1
+          type: string
+        adapterMode:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z][a-z0-9_-]{0,63}$
+          type: string
+        dispatchTransport:
+          anyOf:
+            - const: http
+              type: string
+            - const: smtp
+              type: string
+        providerInstanceId:
+          $ref: "#/components/schemas/ProviderInstanceId"
+        providerResourceIds:
+          $ref: "#/components/schemas/BoundedStringMap"
+        capabilityDigest:
+          $ref: "#/components/schemas/Sha256"
+        configRevision:
+          maxLength: 128
+          minLength: 1
+          type: string
+        createdAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
       required:
         - schemaVersion
         - bindingId
@@ -1063,110 +2339,173 @@ components:
         - capabilityDigest
         - configRevision
         - createdAt
+    SafeDetails:
+      $id: urn:mail-edge:schema:v1:safe-details
+      additionalProperties: false
+      maxProperties: 16
+      type: object
+      patternProperties:
+        ^[a-z][A-Za-z0-9]*$:
+          anyOf:
+            - maxLength: 256
+              type: string
+            - maximum: 9007199254740991
+              minimum: -9007199254740991
+              type: number
+            - type: boolean
+    Sha256:
+      $id: urn:mail-edge:schema:v1:sha256
+      maxLength: 64
+      minLength: 64
+      pattern: ^[0-9a-f]{64}$
+      type: string
+    SmtpEnvelope:
+      $id: urn:mail-edge:schema:v1:smtp-envelope
+      additionalProperties: false
+      type: object
       properties:
         schemaVersion:
           const: v1
-        bindingId:
-          $ref: "#/components/schemas/UuidV7"
-        bindingVersion:
-          type: integer
-          minimum: 1
-        tenantId:
-          $ref: "#/components/schemas/UuidV7"
-        domainALabel:
           type: string
-          minLength: 1
-          maxLength: 253
-        direction:
-          type: string
-          enum: [inbound, outbound]
-        providerId:
-          $ref: "#/components/schemas/ProviderId"
-        adapterVersion:
-          type: string
-          minLength: 1
-          maxLength: 128
-        providerInstanceId:
-          $ref: "#/components/schemas/UuidV7"
-        providerResourceIds:
+        mailFrom:
+          anyOf:
+            - maxLength: 512
+              minLength: 3
+              type: string
+            - type: "null"
+        rcptTo:
+          maxItems: 1000
+          minItems: 1
+          type: array
+          items:
+            $ref: "#/components/schemas/SmtpRecipient"
+        smtpUtf8:
+          type: boolean
+        body:
+          anyOf:
+            - const: 7bit
+              type: string
+            - const: 8bitmime
+              type: string
+            - const: binarymime
+              type: string
+        requireTls:
+          type: boolean
+        dsn:
+          additionalProperties: false
           type: object
-          maxProperties: 64
-          additionalProperties:
-            type: string
-            maxLength: 512
-        capabilityDigest:
-          $ref: "#/components/schemas/Sha256"
-        configRevision:
-          type: string
-          minLength: 1
-          maxLength: 128
-        createdAt:
-          type: string
-          minLength: 20
-          maxLength: 35
-    ControlOperation:
-      type: object
-      additionalProperties: false
-      required: [operationId, reasonCode]
-      properties:
-        operationId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: "^[a-z][a-z0-9_-]*$"
-        reasonCode:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: "^[a-z][a-z0-9_-]*$"
-    ContractSnapshot:
-      type: object
-      description: Versioned schema-validated Mail Edge contract from the runtime package.
-      required: [schemaVersion]
-      properties:
-        schemaVersion:
-          const: v1
-    Problem:
-      type: object
-      additionalProperties: false
+          properties:
+            ret:
+              anyOf:
+                - const: full
+                  type: string
+                - const: headers
+                  type: string
+            envelopeId:
+              maxLength: 100
+              minLength: 1
+              pattern: ^(?:[\x21-\x2a\x2c-\x3c\x3e-\x7e]|\+[0-9A-F]{2})+$
+              type: string
       required:
         - schemaVersion
-        - type
-        - title
-        - status
-        - detail
-        - code
-        - retryable
-        - deliveryCertainty
+        - mailFrom
+        - rcptTo
+        - smtpUtf8
+    SmtpRecipient:
+      $id: urn:mail-edge:schema:v1:smtp-recipient
+      additionalProperties: false
+      type: object
+      properties:
+        address:
+          maxLength: 512
+          minLength: 3
+          type: string
+        dsn:
+          additionalProperties: false
+          type: object
+          properties:
+            notify:
+              $ref: "#/components/schemas/DsnNotify"
+            originalRecipient:
+              maxLength: 500
+              minLength: 3
+              pattern: ^[A-Za-z][A-Za-z0-9-]{0,63};(?:[\x21-\x2a\x2c-\x3c\x3e-\x7e]|\+[0-9A-F]{2})+$
+              type: string
+      required:
+        - address
+    TenantId:
+      $id: urn:mail-edge:schema:v1:tenant-id
+      maxLength: 36
+      minLength: 36
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+      type: string
+    VerifiedInboundReceipt:
+      $id: urn:mail-edge:schema:v1:verified-inbound-receipt
+      additionalProperties: false
+      type: object
       properties:
         schemaVersion:
           const: v1
-        type:
           type: string
-          format: uri
-        title:
-          type: string
-        status:
-          type: integer
-          minimum: 400
-          maximum: 599
-        detail:
-          type: string
-        code:
-          type: string
-        retryable:
-          type: boolean
-        deliveryCertainty:
-          type: string
-          enum: [not_sent, sent, unknown]
-        instance:
-          type: string
+        receiptId:
+          $ref: "#/components/schemas/ReceiptId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        providerId:
+          $ref: "#/components/schemas/ProviderId"
+        providerInstanceId:
+          $ref: "#/components/schemas/ProviderInstanceId"
+        providerReceiptKey:
           maxLength: 256
-        traceId:
+          minLength: 1
           type: string
-          maxLength: 64
-        occurredAt:
-          type: string
-        safeDetails:
-          type: object
-          maxProperties: 16
+        binding:
+          $ref: "#/components/schemas/RouteBindingSnapshot"
+        envelope:
+          $ref: "#/components/schemas/SmtpEnvelope"
+        raw:
+          $ref: "#/components/schemas/RawMessageRef"
+        verificationEvidenceDigest:
+          $ref: "#/components/schemas/Sha256"
+        receivedAt:
+          $ref: "#/components/schemas/Rfc3339Timestamp"
+        state:
+          anyOf:
+            - const: received
+              type: string
+            - const: acquiring
+              type: string
+            - const: stored
+              type: string
+            - const: routing
+              type: string
+            - const: delivering
+              type: string
+            - const: retry_wait
+              type: string
+            - const: delivered
+              type: string
+            - const: quarantined
+              type: string
+            - const: dead_letter
+              type: string
+            - const: purged
+              type: string
+        version:
+          maximum: 9007199254740991
+          minimum: 0
+          type: integer
+      required:
+        - schemaVersion
+        - receiptId
+        - tenantId
+        - providerId
+        - providerInstanceId
+        - providerReceiptKey
+        - binding
+        - envelope
+        - raw
+        - verificationEvidenceDigest
+        - receivedAt
+        - state
+        - version

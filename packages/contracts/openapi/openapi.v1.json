@@ -5,7 +5,7 @@
         "content": {
           "application/problem+json": {
             "schema": {
-              "$ref": "#/components/schemas/MailEdgeProblemV1"
+              "$ref": "#/components/schemas/MailEdgeProblem"
             }
           }
         },
@@ -3844,7 +3844,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApplicationDeliveryCallbackV1"
+                "$ref": "#/components/schemas/ApplicationDeliveryCallback"
               }
             }
           },
@@ -3855,7 +3855,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApplicationAckV1"
+                  "$ref": "#/components/schemas/ApplicationAck"
                 }
               }
             },
@@ -4010,7 +4010,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApplicationFeedbackV1"
+                "$ref": "#/components/schemas/ApplicationFeedback"
               }
             }
           },
@@ -4021,7 +4021,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApplicationAckV1"
+                  "$ref": "#/components/schemas/ApplicationAck"
                 }
               }
             },
@@ -4176,7 +4176,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RecipientRouteRequestV1"
+                "$ref": "#/components/schemas/RecipientRouteRequest"
               }
             }
           },
@@ -4187,7 +4187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RecipientRouteResponseV1"
+                  "$ref": "#/components/schemas/RecipientRouteResponse"
                 }
               }
             },
@@ -4342,7 +4342,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReverseRouteRequestV1"
+                "$ref": "#/components/schemas/ReverseRouteRequest"
               }
             }
           },
@@ -4353,7 +4353,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReverseRouteResolutionV1"
+                  "$ref": "#/components/schemas/ReverseRouteResolution"
                 }
               }
             },

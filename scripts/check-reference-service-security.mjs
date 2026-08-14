@@ -135,6 +135,7 @@ const expectedOperationIds = [
   "getReadiness",
   "ingestProviderFeedback",
   "ingestProviderMessage",
+  "ingestProviderMessageAtRoot",
   "inspectInboundQuarantine",
   "inspectOutboundQuarantine",
   "inspectTenantBinding",
