@@ -778,11 +778,16 @@ export class PostgresBlobRepository {
 
   async listPendingPromotions(
     tenantId: TenantId,
+    staleBefore: string,
     limit: number,
     signal: AbortSignal,
   ): Promise<Result<readonly PendingBlobPromotion[], MailEdgeError>> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
       throw new TypeError("Promotion repair limit must be between 1 and 1000.");
+    }
+    const staleBeforeDate = new Date(staleBefore);
+    if (!Number.isFinite(staleBeforeDate.getTime())) {
+      throw new TypeError("Promotion repair cutoff must be a valid timestamp.");
     }
     return this.#unitOfWork.executeForTenant(
       tenantId,
@@ -808,6 +813,7 @@ export class PostgresBlobRepository {
             .where("tenantId", "=", tenantId)
             .where("state", "=", "promoting")
             .where("finalObjectKey", "is not", null)
+            .where("updatedAt", "<=", staleBeforeDate)
             .orderBy("updatedAt")
             .limit(limit)
             .execute();

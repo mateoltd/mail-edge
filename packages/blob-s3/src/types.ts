@@ -268,6 +268,7 @@ export interface BlobMetadataStore {
   ): Promise<DriverResult<StoredBlobRecord>>;
   listPendingPromotions(
     tenantId: BlobTenantId,
+    staleBefore: string,
     limit: number,
     signal: AbortSignal,
   ): Promise<DriverResult<readonly PendingBlobPromotion[]>>;

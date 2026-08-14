@@ -109,7 +109,7 @@ export interface BlobMetadataStore {
     // (undocumented)
     getBlob(tenantId: BlobTenantId, blobId: string, signal: AbortSignal): Promise<DriverResult<StoredBlobRecord>>;
     // (undocumented)
-    listPendingPromotions(tenantId: BlobTenantId, limit: number, signal: AbortSignal): Promise<DriverResult<readonly PendingBlobPromotion[]>>;
+    listPendingPromotions(tenantId: BlobTenantId, staleBefore: string, limit: number, signal: AbortSignal): Promise<DriverResult<readonly PendingBlobPromotion[]>>;
     // (undocumented)
     listRetentionCandidates(tenantId: BlobTenantId, now: string, limit: number, signal: AbortSignal): Promise<DriverResult<readonly string[]>>;
     // (undocumented)
@@ -219,9 +219,22 @@ export interface BlobPromotionPreparation {
 
 // @public
 export class BlobPromotionRepairWorker {
-    constructor(metadata: BlobMetadataStore, blobs: PromotionRepairStore, batchSize: number);
+    constructor(input: {
+        readonly blobs: PromotionRepairStore;
+        readonly clock: BlobClock;
+        readonly config: BlobPromotionRepairWorkerConfig;
+        readonly metadata: BlobMetadataStore;
+    });
     // (undocumented)
     runTenant(tenantId: BlobTenantId, signal: AbortSignal): Promise<DriverResult<readonly StoredBlobRecord[]>>;
+}
+
+// @public (undocumented)
+export interface BlobPromotionRepairWorkerConfig {
+    // (undocumented)
+    readonly batchSize: number;
+    // (undocumented)
+    readonly staleAfterMilliseconds: number;
 }
 
 // @public (undocumented)

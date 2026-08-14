@@ -1,4 +1,5 @@
 import type {
+  BlobClock,
   BlobMetadataStore,
   BlobTenantId,
   DriverResult,
@@ -14,26 +15,54 @@ export interface PromotionRepairStore {
   ): Promise<DriverResult<StoredBlobRecord>>;
 }
 
+/** @public */
+export interface BlobPromotionRepairWorkerConfig {
+  readonly batchSize: number;
+  readonly staleAfterMilliseconds: number;
+}
+
 /** Repairs final S3 objects left between copy and the PostgreSQL availability commit. @public */
 export class BlobPromotionRepairWorker {
-  readonly #batchSize: number;
   readonly #blobs: PromotionRepairStore;
+  readonly #clock: BlobClock;
+  readonly #config: Readonly<BlobPromotionRepairWorkerConfig>;
   readonly #metadata: BlobMetadataStore;
 
-  constructor(metadata: BlobMetadataStore, blobs: PromotionRepairStore, batchSize: number) {
-    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
-      throw new TypeError("Promotion repair batch size must be between 1 and 1000.");
+  constructor(input: {
+    readonly blobs: PromotionRepairStore;
+    readonly clock: BlobClock;
+    readonly config: BlobPromotionRepairWorkerConfig;
+    readonly metadata: BlobMetadataStore;
+  }) {
+    if (
+      !Number.isSafeInteger(input.config.batchSize) ||
+      input.config.batchSize < 1 ||
+      input.config.batchSize > 1000 ||
+      !Number.isSafeInteger(input.config.staleAfterMilliseconds) ||
+      input.config.staleAfterMilliseconds < 1 ||
+      input.config.staleAfterMilliseconds > 2_678_400_000
+    ) {
+      throw new TypeError("Promotion repair worker limits must be positive and bounded.");
     }
-    this.#batchSize = batchSize;
-    this.#blobs = blobs;
-    this.#metadata = metadata;
+    this.#blobs = input.blobs;
+    this.#clock = input.clock;
+    this.#config = Object.freeze({ ...input.config });
+    this.#metadata = input.metadata;
   }
 
   async runTenant(
     tenantId: BlobTenantId,
     signal: AbortSignal,
   ): Promise<DriverResult<readonly StoredBlobRecord[]>> {
-    const pending = await this.#metadata.listPendingPromotions(tenantId, this.#batchSize, signal);
+    const staleBefore = new Date(
+      new Date(this.#clock.now()).getTime() - this.#config.staleAfterMilliseconds,
+    ).toISOString();
+    const pending = await this.#metadata.listPendingPromotions(
+      tenantId,
+      staleBefore,
+      this.#config.batchSize,
+      signal,
+    );
     if (!pending.ok) {
       return pending;
     }

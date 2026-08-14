@@ -221,6 +221,7 @@ class MemoryBlobMetadata implements BlobMetadataStore {
 
   async listPendingPromotions(
     tenantId: BlobTenantId,
+    _staleBefore: string,
     limit: number,
   ): Promise<DriverResult<readonly PendingBlobPromotion[]>> {
     return {
@@ -492,10 +493,12 @@ describe("encrypted S3 blob runtime", { concurrent: false }, () => {
       }),
     );
 
-    const repaired = await new BlobPromotionRepairWorker(metadata, blobs, 10).runTenant(
-      tenantId,
-      new AbortController().signal,
-    );
+    const repaired = await new BlobPromotionRepairWorker({
+      blobs,
+      clock: { now: () => now.value },
+      config: { batchSize: 10, staleAfterMilliseconds: 1_000 },
+      metadata,
+    }).runTenant(tenantId, new AbortController().signal);
     expect(repaired.ok).toBe(true);
     expect(metadata.blobs.has(stageId)).toBe(true);
     const opened = await blobs.openRaw(tenantId, stageId as never, new AbortController().signal);
@@ -535,10 +538,12 @@ describe("encrypted S3 blob runtime", { concurrent: false }, () => {
       }),
     );
 
-    const repaired = await new BlobPromotionRepairWorker(metadata, blobs, 10).runTenant(
-      tenantId,
-      new AbortController().signal,
-    );
+    const repaired = await new BlobPromotionRepairWorker({
+      blobs,
+      clock: { now: () => now.value },
+      config: { batchSize: 10, staleAfterMilliseconds: 1_000 },
+      metadata,
+    }).runTenant(tenantId, new AbortController().signal);
     expect(repaired).toMatchObject({ ok: true, value: [{ raw: { blobId: stageId } }] });
     const repairedVersion = metadata.stages.get(stageId)?.finalObjectVersion;
     expect(repairedVersion).toBeDefined();

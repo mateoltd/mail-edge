@@ -255,13 +255,34 @@ const main = async () => {
       "promoting",
       `completion failed before the injected boundary: ${String(failedCommit.error?.cause)}`,
     );
+    const freshPending = must(
+      await repository.listPendingPromotions(
+        tenantId,
+        new Date(new Date(clock.value).getTime() - 1_000).toISOString(),
+        10,
+        signal,
+      ),
+      "fresh promotion discovery",
+    );
+    assert.equal(freshPending.length, 0, "a live promotion must remain owned by its writer");
+    clock.value = new Date(new Date(clock.value).getTime() + 2_000).toISOString();
     const pending = must(
-      await repository.listPendingPromotions(tenantId, 10, signal),
+      await repository.listPendingPromotions(
+        tenantId,
+        new Date(new Date(clock.value).getTime() - 1_000).toISOString(),
+        10,
+        signal,
+      ),
       "promotion discovery",
     );
     assert.equal(pending.length, 1, "the copied final object must remain discoverable");
     const repaired = must(
-      await new BlobPromotionRepairWorker(repository, blobStore, 10).runTenant(tenantId, signal),
+      await new BlobPromotionRepairWorker({
+        blobs: blobStore,
+        clock: { now: () => clock.value },
+        config: { batchSize: 10, staleAfterMilliseconds: 1_000 },
+        metadata: repository,
+      }).runTenant(tenantId, signal),
       "promotion repair",
     );
     assert.equal(repaired.length, 1);

@@ -874,11 +874,15 @@ class ProductionComposition implements ReferenceServiceComposition {
           ),
           new NamedTenantMaintenanceTask(
             "promotion_repair",
-            new BlobPromotionRepairWorker(
-              infrastructure.blobMetadata,
-              infrastructure.blobStore,
-              this.#config.maintenance.blobBatchSize,
-            ),
+            new BlobPromotionRepairWorker({
+              blobs: infrastructure.blobStore,
+              clock: infrastructure.clock,
+              config: {
+                batchSize: this.#config.maintenance.blobBatchSize,
+                staleAfterMilliseconds: this.#config.maintenance.orphanGraceMilliseconds,
+              },
+              metadata: infrastructure.blobMetadata,
+            }),
           ),
           new NamedTenantMaintenanceTask(
             "stage_cleanup",

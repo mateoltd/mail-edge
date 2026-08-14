@@ -14,7 +14,10 @@ export {
 } from "./encryption.js";
 export type { BlobOrphanReaperConfig, BlobOrphanReaperFailure } from "./orphan-reaper.worker.js";
 export { BlobOrphanReaper } from "./orphan-reaper.worker.js";
-export type { PromotionRepairStore } from "./promotion-repair.worker.js";
+export type {
+  BlobPromotionRepairWorkerConfig,
+  PromotionRepairStore,
+} from "./promotion-repair.worker.js";
 export { BlobPromotionRepairWorker } from "./promotion-repair.worker.js";
 export type { BlobRetentionWorkerConfig } from "./retention.worker.js";
 export { BlobRetentionWorker, defaultBlobRetentionWorkerConfig } from "./retention.worker.js";

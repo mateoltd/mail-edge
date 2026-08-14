@@ -881,7 +881,7 @@ export class PostgresBlobRepository {
     // (undocumented)
     getBlob(tenantId: TenantId, blobId: string, signal: AbortSignal): Promise<Result<StoredBlobRecord, MailEdgeError>>;
     // (undocumented)
-    listPendingPromotions(tenantId: TenantId, limit: number, signal: AbortSignal): Promise<Result<readonly PendingBlobPromotion[], MailEdgeError>>;
+    listPendingPromotions(tenantId: TenantId, staleBefore: string, limit: number, signal: AbortSignal): Promise<Result<readonly PendingBlobPromotion[], MailEdgeError>>;
     // (undocumented)
     listRetentionCandidates(tenantId: TenantId, now: string, limit: number, signal: AbortSignal): Promise<Result<readonly string[], MailEdgeError>>;
     // (undocumented)

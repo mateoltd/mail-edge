@@ -52,6 +52,10 @@ Construct the adapters without I/O, then start them through `DurableRuntimeHost`
 4. Bounded tenant maintenance: reconciliation, lease recovery, retention, orphan reaping, promotion
    repair, stage cleanup, and wakeup repair.
 
+Promotion repair considers only stages older than the configured orphan grace period. This keeps a
+live S3-to-PostgreSQL promotion under its writer's optimistic fence while making an interrupted
+promotion discoverable after the bounded crash window.
+
 Use one shared `BoundedWorkLimiter` for expensive work or deliberately partition finite capacity by
 workflow. `NamedTenantMaintenanceTask` adapts existing blob workers and the reconciliation/recovery
 workers without copying their logic. `DurableWakeupRepairTask` joins
