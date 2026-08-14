@@ -11,6 +11,7 @@
     { "path": "packages/runtime" },
     { "path": "packages/conformance" },
     { "path": "packages/provider-mailgun" },
+    { "path": "packages/provider-resend" },
     { "path": "packages/mime" },
     { "path": "packages/sdk" },
     { "path": "apps/reference-service" }

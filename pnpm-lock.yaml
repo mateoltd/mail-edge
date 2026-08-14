@@ -310,6 +310,19 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
+  packages/provider-resend:
+    dependencies:
+      '@mail-edge/provider':
+        specifier: workspace:^
+        version: link:../provider
+    devDependencies:
+      '@mail-edge/conformance':
+        specifier: workspace:^
+        version: link:../conformance
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
+
   packages/queue-pg-boss:
     dependencies:
       '@mail-edge/core':

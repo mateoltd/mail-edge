@@ -253,6 +253,17 @@ export const RouteRequirementsV1Schema = Type.Object(
       },
       { additionalProperties: false },
     ),
+    reconciliation: Type.Optional(
+      Type.Object(
+        {
+          canProve: Type.Array(schemaRef(DeliveryCertaintySchema), {
+            maxItems: 3,
+            uniqueItems: true,
+          }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     allowedMaturity: Type.Union([Type.Literal("stable"), Type.Literal("experimental")]),
     region: Type.Optional(Type.String({ maxLength: 64, minLength: 1 })),
   },

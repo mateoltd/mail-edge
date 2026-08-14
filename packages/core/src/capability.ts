@@ -86,6 +86,14 @@ export const evaluateActivation = (
     ) {
       reasons.push("max_message_bytes");
     }
+    const requiredEnvelope = requirements.envelope;
+    if (requiredEnvelope.nullReversePath) reasons.push("null_reverse_path");
+    if (requiredEnvelope.multipleRecipients) reasons.push("multiple_recipients");
+    if (requiredEnvelope.smtpUtf8) reasons.push("smtp_utf8");
+    if (requiredEnvelope.dsnRetEnvid) reasons.push("dsn_ret_envid");
+    if (requiredEnvelope.perRecipientDsn) reasons.push("per_recipient_dsn");
+    if (requiredEnvelope.requireTls) reasons.push("require_tls");
+    for (const mode of requiredEnvelope.bodyModes) reasons.push(`body_mode_${mode}`);
   } else {
     if (!descriptor.outbound.supported) reasons.push("outbound_unsupported");
     if (descriptor.outbound.transports.length === 0) reasons.push("outbound_transport");
@@ -112,6 +120,20 @@ export const evaluateActivation = (
     if (requiredEnvelope.requireTls && !availableEnvelope.requireTls) reasons.push("require_tls");
     for (const mode of requiredEnvelope.bodyModes) {
       if (!availableEnvelope.bodyModes.includes(mode)) reasons.push(`body_mode_${mode}`);
+    }
+  }
+
+  if (requirements.reconciliation !== undefined) {
+    if (
+      requirements.reconciliation.canProve.length > 0 &&
+      !descriptor.outbound.reconciliation.supported
+    ) {
+      reasons.push("reconciliation_unsupported");
+    }
+    for (const certainty of requirements.reconciliation.canProve) {
+      if (!descriptor.outbound.reconciliation.canProve.includes(certainty)) {
+        reasons.push(`reconciliation_${certainty}`);
+      }
     }
   }
 

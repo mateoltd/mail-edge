@@ -1,0 +1,43 @@
+{
+  "name": "@mail-edge/provider-resend",
+  "version": "0.1.0",
+  "description": "Authenticated raw-MIME Resend provider adapter for Mail Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "24.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./examples/register": "./examples/register.mjs"
+  },
+  "files": [
+    "dist",
+    "etc",
+    "examples",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "api:check": "api-extractor run",
+    "build": "tsc -b",
+    "lint": "eslint src test --max-warnings 0",
+    "test": "vitest run",
+    "test:live": "vitest run test/e2e/resend-live.test.ts",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@mail-edge/provider": "workspace:^"
+  },
+  "devDependencies": {
+    "@mail-edge/conformance": "workspace:^",
+    "vitest": "4.1.10"
+  }
+}

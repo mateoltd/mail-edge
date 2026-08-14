@@ -2396,6 +2396,23 @@
             "minimum": 0,
             "type": "integer"
           },
+          "reconciliation": {
+            "additionalProperties": false,
+            "properties": {
+              "canProve": {
+                "items": {
+                  "$ref": "#/components/schemas/DeliveryCertainty"
+                },
+                "maxItems": 3,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "required": [
+              "canProve"
+            ],
+            "type": "object"
+          },
           "region": {
             "maxLength": 64,
             "minLength": 1,

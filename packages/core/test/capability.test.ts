@@ -168,4 +168,41 @@ describe("capability activation", () => {
         .reasons,
     ).toContain("null_reverse_path");
   });
+
+  it("fails closed for undeclared reconciliation and inbound envelope properties", () => {
+    const reconciliationRequirements: RouteRequirementsV1 = Object.freeze({
+      ...requirements,
+      reconciliation: Object.freeze({ canProve: Object.freeze(["not_sent"] as const) }),
+    });
+    expect(
+      evaluateActivation(
+        reconciliationRequirements,
+        descriptor,
+        conformance(),
+        "2026-08-13T09:00:00Z",
+      ).reasons,
+    ).toContain("reconciliation_not_sent");
+
+    const inboundRequirements: RouteRequirementsV1 = Object.freeze({
+      ...requirements,
+      direction: "inbound",
+    });
+    const inbound = evaluateActivation(
+      inboundRequirements,
+      descriptor,
+      conformance(),
+      "2026-08-13T09:00:00Z",
+    );
+    expect(inbound.reasons).toEqual(
+      expect.arrayContaining([
+        "body_mode_7bit",
+        "dsn_ret_envid",
+        "multiple_recipients",
+        "null_reverse_path",
+        "per_recipient_dsn",
+        "require_tls",
+        "smtp_utf8",
+      ]),
+    );
+  });
 });

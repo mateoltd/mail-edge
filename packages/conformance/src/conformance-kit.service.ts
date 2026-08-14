@@ -1,4 +1,5 @@
 import {
+  bindingPlanDigest,
   DispatchBoundaryRecorder,
   MailEdgeError,
   ProviderAdapterRegistry,
@@ -7,7 +8,6 @@ import {
   ProviderInboundIngressService,
   StrictBoundedBodyCollector,
   conformanceCheckDigest,
-  bindingPlanDigest,
   desiredBindingDigest,
   evaluateReconciliationEvidence,
   inspectBindingPlan,
@@ -89,6 +89,11 @@ export interface ProviderConformanceDriver {
   ):
     | Promise<Pick<ProviderDispatchContext, "rawSource" | "secrets">>
     | Pick<ProviderDispatchContext, "rawSource" | "secrets">;
+  createDispatchSubmission?(
+    submission: ProviderConformanceFixtures["submission"],
+    fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
+  ): Promise<ProviderConformanceFixtures["submission"]> | ProviderConformanceFixtures["submission"];
   createFeedbackRequest?(
     scenario: FeedbackConformanceScenario,
     fixtures: ProviderConformanceFixtures,
@@ -570,10 +575,19 @@ export class ProviderConformanceKit {
       const services = await runOwner.callback(() =>
         this.#target.driver.createDispatchServices?.(fixtures, runOwner.context()),
       );
+      const baseSubmission = submissionForDescriptor(fixtures, this.#target.registration);
+      const submission =
+        (await runOwner.callback(() =>
+          this.#target.driver.createDispatchSubmission?.(
+            baseSubmission,
+            fixtures,
+            runOwner.context(),
+          ),
+        )) ?? baseSubmission;
       const sink = new CountingInstrumentationSink();
       const context = contextForDispatch(this.#target, fixtures, sink, services);
       const execution = await new ProviderDispatchService(outbound).execute(
-        submissionForDescriptor(fixtures, this.#target.registration),
+        submission,
         context,
         runOwner.signal,
       );
@@ -859,7 +873,7 @@ export class ProviderConformanceKit {
       return Object.freeze([]);
     const query: ProviderReconciliationQueryV1 = Object.freeze({
       attemptId: fixtures.attemptId,
-      providerMessageId: "provider-conformance-message",
+      providerMessageId: "018f1f2e-7b4a-7c11-8a00-000000000010",
       routeBinding: fixtures.binding,
       schemaVersion: "v1",
       window: Object.freeze({
