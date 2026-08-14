@@ -157,6 +157,39 @@ describe("inbound ingress ownership", () => {
     expect(input.body.state).toBe("aborted");
   });
 
+  it("allows a bounded framing overhead while leaving decoded-size enforcement to the adapter", async () => {
+    const adapter: InboundProviderAdapter = {
+      descriptor: {
+        ...descriptor,
+        inbound: { ...descriptor.inbound, maxBytes: 2 },
+      },
+      maximumIngressWireBytes: 3,
+      async ingest(inboundRequest) {
+        let observed = 0;
+        for await (const chunk of inboundRequest.body) observed += chunk.byteLength;
+        if (observed !== 3) throw new TypeError("Fixture wire body was not consumed exactly.");
+        return {
+          ok: true,
+          value: {
+            duplicate: false,
+            receiptId: receiptId.value,
+            response: { class: "success", statusCode: 200 },
+          },
+        };
+      },
+    };
+    const input = request({ bytes: [1, 2, 3], contentLength: null });
+    const result = await executeInboundIngress(
+      adapter,
+      input,
+      context,
+      services,
+      new AbortController().signal,
+    );
+    expect(result.ok).toBe(true);
+    expect(input.body.state).toBe("completed");
+  });
+
   it.each([
     {
       duplicate: false,

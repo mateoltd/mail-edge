@@ -101,6 +101,11 @@ export interface InboundIngestionServices {
 /** Provider-owned one-shot streaming inbound surface. @public */
 export interface InboundProviderAdapter {
   readonly descriptor: ProviderCapabilityDescriptorV1;
+  /**
+   * Optional transport-wire ceiling when authenticated framing adds bytes beyond the descriptor's
+   * decoded-message maximum. The adapter remains responsible for enforcing the decoded maximum.
+   */
+  readonly maximumIngressWireBytes?: number;
   ingest(
     request: OneShotProviderHttpRequest,
     context: ProviderHttpIngressContext,

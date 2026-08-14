@@ -1,0 +1,28 @@
+{
+  "name": "@mail-edge/cloudflare-ingress-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Email Routing and Queue bridge for Mail Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": "24.19.0"
+  },
+  "scripts": {
+    "build": "wrangler deploy --dry-run --env staging --outdir dist/staging && wrangler deploy --dry-run --env production --outdir dist/production",
+    "deploy:dry-run": "wrangler deploy --dry-run --env staging && wrangler deploy --dry-run --env production",
+    "lint": "eslint src test vitest.config.mjs --max-warnings 0",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "types:check": "wrangler types --env staging --check worker-configuration.d.ts",
+    "types:generate": "wrangler types --env staging worker-configuration.d.ts"
+  },
+  "dependencies": {
+    "@mail-edge/contracts": "workspace:^"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.21.3",
+    "vitest": "4.1.10",
+    "wrangler": "4.123.0"
+  }
+}

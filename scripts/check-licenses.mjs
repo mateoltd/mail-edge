@@ -23,6 +23,21 @@ const allowedLicenses = new Set([
   "Zlib",
 ]);
 
+const reviewedPackageLicenses = new Map(
+  [
+    "@img/sharp-libvips-darwin-arm64",
+    "@img/sharp-libvips-darwin-x64",
+    "@img/sharp-libvips-linux-arm",
+    "@img/sharp-libvips-linux-arm64",
+    "@img/sharp-libvips-linux-ppc64",
+    "@img/sharp-libvips-linux-riscv64",
+    "@img/sharp-libvips-linux-s390x",
+    "@img/sharp-libvips-linux-x64",
+    "@img/sharp-libvips-linuxmusl-arm64",
+    "@img/sharp-libvips-linuxmusl-x64",
+  ].map((name) => [name, { expression: "LGPL-3.0-or-later", versions: new Set(["1.3.1"]) }]),
+);
+
 const output = execFileSync("corepack", ["pnpm", "licenses", "list", "--json"], {
   cwd: repositoryRoot,
   encoding: "utf8",
@@ -46,7 +61,31 @@ const hasAllowedAlternative = (expression) =>
       identifiers(alternative).every((identifier) => allowedLicenses.has(identifier)),
     );
 
-const rejected = expressions.filter((expression) => !hasAllowedAlternative(expression));
+const entriesForExpression = (expression) =>
+  Array.isArray(inventory)
+    ? inventory.filter((entry) => entry.license === expression)
+    : (inventory[expression] ?? []);
+
+const hasReviewedPackageLicense = (expression) => {
+  const entries = entriesForExpression(expression);
+
+  return (
+    entries.length > 0 &&
+    entries.every((entry) => {
+      const reviewed = reviewedPackageLicenses.get(entry.name);
+      return (
+        reviewed?.expression === expression &&
+        Array.isArray(entry.versions) &&
+        entry.versions.length > 0 &&
+        entry.versions.every((version) => reviewed.versions.has(version))
+      );
+    })
+  );
+};
+
+const rejected = expressions.filter(
+  (expression) => !hasAllowedAlternative(expression) && !hasReviewedPackageLicense(expression),
+);
 
 if (rejected.length > 0) {
   console.error(`Unapproved dependency license expressions:\n${rejected.sort().join("\n")}`);
