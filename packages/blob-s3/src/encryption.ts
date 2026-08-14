@@ -122,9 +122,15 @@ export const encryptFrame = (
     authTagLength: authenticationTagBytes,
   });
   cipher.setAAD(frameAad(header.digest, identity, prefix, previousTag));
-  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const updated = cipher.update(plaintext);
+  const finalized = cipher.final();
+  const ciphertext = finalized.byteLength === 0 ? updated : Buffer.concat([updated, finalized]);
   const tag = cipher.getAuthTag();
-  return Object.freeze({ bytes: Buffer.concat([prefix, ciphertext, tag]), tag });
+  const bytes = Buffer.allocUnsafe(prefix.byteLength + ciphertext.byteLength + tag.byteLength);
+  prefix.copy(bytes, 0);
+  ciphertext.copy(bytes, prefix.byteLength);
+  tag.copy(bytes, prefix.byteLength + ciphertext.byteLength);
+  return Object.freeze({ bytes, tag });
 };
 
 class EncryptedStreamTruncatedError extends Error {}
@@ -278,7 +284,9 @@ export async function* decryptFrames(
         });
         decipher.setAAD(frameAad(header.digest, identity, prefix, previousTag));
         decipher.setAuthTag(tag);
-        plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+        const updated = decipher.update(ciphertext);
+        const finalized = decipher.final();
+        plaintext = finalized.byteLength === 0 ? updated : Buffer.concat([updated, finalized]);
       } catch (cause) {
         throw failure("frame_authentication_failed", cause);
       }
