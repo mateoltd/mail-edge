@@ -15,7 +15,8 @@ mail-edge-conformance keygen \
 ```
 
 An adapter module must export `conformanceTarget`, containing its public registration, protocol
-driver, region, and bounded environment facts. Run and sign qualification with an explicit
+driver, region, and bounded environment facts. Driver callbacks receive an `AbortSignal` and an
+absolute deadline and must stop when either expires. Run and sign qualification with an explicit
 observation time so the result is reproducible:
 
 ```sh
@@ -46,5 +47,16 @@ Each check hashes its normalized check payload. The report digest is SHA-256 ove
 The Ed25519 signature covers a versioned domain prefix plus the canonical unsigned report. The
 evidence identity is SHA-256 over the complete signed envelope. These identities are deterministic
 for the same adapter behavior, descriptor, fixtures, observation time, environment, and signing key.
+
+Only the environment keys `accountTier`, `deployment`, `runtime`, and `transport` are accepted.
+Their values are domain-separated SHA-256 hashes in signed evidence, never plaintext. Do not pass
+credentials or operational secrets as environment facts.
+
+Control-plane qualification requires `controlStateDigest` to return a lowercase SHA-256 digest
+before and after read-only and mutating probes. Plans are checked against the exact registered
+identity, desired-state digest, observation time, expiration, operation order, and operation IDs
+before apply. A real apply runs only when `mutationTarget` is explicitly marked `protected: true`
+with `scope: "qualification"` or `scope: "sandbox"`; unmarked targets fail the mutation check
+without invoking apply.
 
 See the packaged `examples/third-party-adapter` export for a runnable public-surface adapter target.

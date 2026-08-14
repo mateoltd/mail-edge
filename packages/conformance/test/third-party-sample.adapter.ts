@@ -96,7 +96,8 @@ export const prepareSampleReconciliation = (scenario: ReconciliationScenario): v
   reconciliationScenario = scenario;
 };
 
-export const sampleControlStateDigest = (): string => String(controlRevision);
+export const sampleControlStateDigest = (): string =>
+  sha256CanonicalJson({ revision: controlRevision });
 
 const inbound = {
   descriptor: sampleDescriptor,

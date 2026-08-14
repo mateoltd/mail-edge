@@ -62,14 +62,14 @@ mediaType: "message/rfc822";
 }>;
 binding: TUnsafe<    {
 schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
 bindingId: BindingId;
 bindingVersion: number;
-tenantId: TenantId;
 domainALabel: string;
 direction: "inbound" | "outbound";
-providerId: ProviderId;
 adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -92,7 +92,7 @@ tenantId: TUnsafe<TenantId>;
 intentId: TUnsafe<IntentId>;
 attemptId: TOptional<TUnsafe<AttemptId>>;
 recipient: TOptional<TString>;
-kind: TUnion<TLiteral<"accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
+kind: TUnion<TLiteral<"delivered" | "accepted" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
 occurredAt: TUnsafe<string>;
 normalizedEvidence: TUnsafe<    {
 [x: string]: string | number | boolean;
@@ -195,7 +195,13 @@ failedChecks: TArray<TString>;
 }>;
 
 // @public
-export const contractSchemas: readonly (TString | TRecord<TString, TString> | TRecord<TString, TUnion<[TString, TNumber, TBoolean]>> | TUnsafe<ProviderId> | TUnsafe<TenantId> | TUnsafe<BindingId> | TUnsafe<ProviderInstanceId> | TUnsafe<BlobId> | TUnsafe<ReceiptId> | TUnsafe<IntentId> | TUnsafe<AttemptId> | TUnsafe<DeliveryId> | TUnsafe<FeedbackEventId> | TUnsafe<RawAccessGrantId> | TUnsafe<AuditId> | TUnsafe<IdempotencyKey> | TObject<    {
+export const contractSchemas: readonly (TUnsafe<BlobId> | TString | TObject<    {
+schemaVersion: TLiteral<"v1">;
+blobId: TUnsafe<BlobId>;
+sha256: TUnsafe<string>;
+size: TInteger;
+mediaType: TLiteral<"message/rfc822">;
+}> | TUnsafe<ReceiptId> | TUnsafe<TenantId> | TUnsafe<ProviderId> | TUnsafe<ProviderInstanceId> | TUnsafe<BindingId> | TRecord<TString, TString> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 bindingId: TUnsafe<BindingId>;
 bindingVersion: TInteger;
@@ -234,21 +240,407 @@ dsn: TOptional<TObject<    {
 ret: TOptional<TUnion<[TLiteral<"full">, TLiteral<"headers">]>>;
 envelopeId: TOptional<TString>;
 }>>;
-}> | TUnion<TLiteral<"not_sent" | "accepted" | "unknown">[]> | TObject<    {
+}> | TObject<    {
 schemaVersion: TLiteral<"v1">;
-type: TString;
-title: TString;
-status: TInteger;
-detail: TOptional<TString>;
-instance: TOptional<TString>;
-code: TUnion<TLiteral<"validation-failed" | "authentication-failed" | "authorization-failed" | "not-found" | "conflict" | "idempotency-conflict" | "binding-unavailable" | "capability-unsupported" | "rate-limited" | "ingress-limit-exceeded" | "ingress-failed" | "storage-unavailable" | "workflow-conflict" | "stale-fence" | "illegal-transition" | "provider-not-sent" | "provider-outcome-unknown" | "provider-rejected" | "host-unavailable" | "internal">[]>;
-retryable: TBoolean;
-deliveryCertainty: TUnsafe<"not_sent" | "accepted" | "unknown">;
-traceId: TOptional<TString>;
-safeDetails: TOptional<TUnsafe<    {
+receiptId: TUnsafe<ReceiptId>;
+tenantId: TUnsafe<TenantId>;
+providerId: TUnsafe<ProviderId>;
+providerInstanceId: TUnsafe<ProviderInstanceId>;
+providerReceiptKey: TString;
+binding: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
+bindingId: BindingId;
+bindingVersion: number;
+domainALabel: string;
+direction: "inbound" | "outbound";
+adapterVersion: string;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+verificationEvidenceDigest: TUnsafe<string>;
+receivedAt: TUnsafe<string>;
+state: TUnion<TLiteral<"received" | "acquiring" | "stored" | "routing" | "delivering" | "retry_wait" | "delivered" | "quarantined" | "dead_letter" | "purged">[]>;
+version: TInteger;
+}> | TUnsafe<DeliveryId> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+deliveryId: TUnsafe<DeliveryId>;
+receiptId: TUnsafe<ReceiptId>;
+tenantId: TUnsafe<TenantId>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+binding: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
+bindingId: BindingId;
+bindingVersion: number;
+domainALabel: string;
+direction: "inbound" | "outbound";
+adapterVersion: string;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+attempt: TInteger;
+occurredAt: TUnsafe<string>;
+}> | TUnsafe<IntentId> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+intentId: TUnsafe<IntentId>;
+tenantId: TUnsafe<TenantId>;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+primaryBinding: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
+bindingId: BindingId;
+bindingVersion: number;
+domainALabel: string;
+direction: "inbound" | "outbound";
+adapterVersion: string;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+fallbackBindings: TArray<TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
+bindingId: BindingId;
+bindingVersion: number;
+domainALabel: string;
+direction: "inbound" | "outbound";
+adapterVersion: string;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>>;
+transmissionRaw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+fingerprint: TUnsafe<string>;
+state: TUnion<TLiteral<"retry_wait" | "accepted" | "ready" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown" | "canceled">[]>;
+createdAt: TUnsafe<string>;
+version: TInteger;
+}> | TUnsafe<AttemptId> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+intentId: TUnsafe<IntentId>;
+attemptId: TUnsafe<AttemptId>;
+fence: TInteger;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+transmissionRaw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+routeBinding: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
+bindingId: BindingId;
+bindingVersion: number;
+domainALabel: string;
+direction: "inbound" | "outbound";
+adapterVersion: string;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+deadline: TUnsafe<string>;
+}> | TObject<    {
+address: TString;
+outcome: TUnion<[TLiteral<"accepted">, TLiteral<"rejected">]>;
+statusCode: TOptional<TString>;
+evidenceCode: TString;
+}> | TRecord<TString, TUnion<[TString, TNumber, TBoolean]>> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+providerMessageId: TOptional<TString>;
+acceptedRecipients: TArray<TString>;
+rejectedRecipients: TArray<TUnsafe<    {
+statusCode?: string;
+address: string;
+outcome: "accepted" | "rejected";
+evidenceCode: string;
+}>>;
+acceptedAt: TUnsafe<string>;
+normalizedEvidence: TUnsafe<    {
+[x: string]: string | number | boolean;
+}>;
+}> | TUnion<TLiteral<"accepted" | "unknown" | "not_sent">[]> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+attemptId: TUnsafe<AttemptId>;
+intentId: TUnsafe<IntentId>;
+tenantId: TUnsafe<TenantId>;
+ordinal: TInteger;
+fence: TInteger;
+routeBinding: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
+bindingId: BindingId;
+bindingVersion: number;
+domainALabel: string;
+direction: "inbound" | "outbound";
+adapterVersion: string;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+recipientIndexes: TArray<TInteger>;
+transmissionRaw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+state: TUnion<TLiteral<"retry_wait" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown">[]>;
+deliveryCertainty: TUnsafe<"accepted" | "unknown" | "not_sent">;
+createdAt: TUnsafe<string>;
+completedAt: TOptional<TUnsafe<string>>;
+providerAcceptance: TOptional<TUnsafe<    {
+providerMessageId?: string;
+schemaVersion: "v1";
+acceptedRecipients: string[];
+rejectedRecipients: {
+statusCode?: string;
+address: string;
+outcome: "accepted" | "rejected";
+evidenceCode: string;
+}[];
+acceptedAt: string;
+normalizedEvidence: {
+[x: string]: string | number | boolean;
+};
+}>>;
+lastEvidence: TOptional<TUnsafe<    {
 [x: string]: string | number | boolean;
 }>>;
-occurredAt: TOptional<TUnsafe<string>>;
+}> | TUnsafe<FeedbackEventId> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+feedbackEventId: TUnsafe<FeedbackEventId>;
+providerId: TUnsafe<ProviderId>;
+providerInstanceId: TUnsafe<ProviderInstanceId>;
+providerEventKey: TString;
+providerMessageId: TOptional<TString>;
+attemptId: TOptional<TUnsafe<AttemptId>>;
+recipient: TOptional<TString>;
+kind: TUnion<TLiteral<"delivered" | "accepted" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
+occurredAt: TUnsafe<string>;
+receivedAt: TUnsafe<string>;
+sequenceHint: TOptional<TInteger>;
+normalizedEvidence: TUnsafe<    {
+[x: string]: string | number | boolean;
+}>;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+intentId: TUnsafe<IntentId>;
+recipientKey: TUnsafe<string>;
+transportState: TUnion<TLiteral<"delivered" | "accepted" | "failed_not_sent" | "pending" | "deferred" | "bounced" | "unknown">[]>;
+complaint: TBoolean;
+suppressed: TBoolean;
+opened: TBoolean;
+clicked: TBoolean;
+unsubscribed: TBoolean;
+lastTransportOccurredAt: TOptional<TUnsafe<string>>;
+latestFeedbackOrderKey: TOptional<TString>;
+contradictions: TArray<TString>;
+version: TInteger;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+feedbackEventId: TUnsafe<FeedbackEventId>;
+tenantId: TUnsafe<TenantId>;
+intentId: TUnsafe<IntentId>;
+attemptId: TOptional<TUnsafe<AttemptId>>;
+recipient: TOptional<TString>;
+kind: TUnion<TLiteral<"delivered" | "accepted" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
+occurredAt: TUnsafe<string>;
+normalizedEvidence: TUnsafe<    {
+[x: string]: string | number | boolean;
+}>;
+}> | TUnsafe<RawAccessGrantId> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+grantId: TUnsafe<RawAccessGrantId>;
+tenantId: TUnsafe<TenantId>;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+audience: TString;
+purpose: TUnion<[TLiteral<"application_delivery">, TLiteral<"operator_review">, TLiteral<"reconciliation">]>;
+singleUse: TBoolean;
+issuedAt: TUnsafe<string>;
+expiresAt: TUnsafe<string>;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+tenantId: TUnsafe<TenantId>;
+keyDigest: TUnsafe<string>;
+requestFingerprint: TUnsafe<string>;
+intentId: TUnsafe<IntentId>;
+createdAt: TUnsafe<string>;
+}> | TUnion<[TObject<    {
+schemaVersion: TLiteral<"v1">;
+type: TLiteral<"inbound_receipt">;
+receiptId: TUnsafe<ReceiptId>;
+}>, TObject<    {
+schemaVersion: TLiteral<"v1">;
+type: TLiteral<"outbound_intent">;
+intentId: TUnsafe<IntentId>;
+}>, TObject<    {
+schemaVersion: TLiteral<"v1">;
+type: TLiteral<"feedback_event">;
+feedbackEventId: TUnsafe<FeedbackEventId>;
+}>, TObject<    {
+schemaVersion: TLiteral<"v1">;
+type: TLiteral<"application_delivery">;
+deliveryId: TUnsafe<DeliveryId>;
+}>]> | TUnsafe<AuditId> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+auditId: TUnsafe<AuditId>;
+tenantId: TOptional<TUnsafe<TenantId>>;
+actorType: TUnion<[TLiteral<"system">, TLiteral<"operator">, TLiteral<"application">]>;
+actorIdHash: TUnsafe<string>;
+action: TString;
+targetType: TString;
+targetId: TOptional<TString>;
+reasonCode: TOptional<TString>;
+beforeDigest: TOptional<TUnsafe<string>>;
+afterDigest: TOptional<TUnsafe<string>>;
+metadata: TUnsafe<    {
+[x: string]: string | number | boolean;
+}>;
+occurredAt: TUnsafe<string>;
 }> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 source: TUnion<[TLiteral<"official_doc">, TLiteral<"maintained_source">, TLiteral<"live_conformance">]>;
@@ -259,96 +651,6 @@ reportDigest: TUnsafe<string>;
 environment: TUnsafe<    {
 [x: string]: string;
 }>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-providerId: TUnsafe<ProviderId>;
-adapterVersion: TString;
-maturity: TUnion<[TLiteral<"stable">, TLiteral<"experimental">]>;
-inbound: TObject<    {
-supported: TBoolean;
-acquisition: TArray<TUnion<TLiteral<"inline_stream" | "signed_reference_stream" | "worker_frame_stream">[]>>;
-signatureCoverage: TUnion<[TLiteral<"whole_body">, TLiteral<"body_digest">, TLiteral<"token_timestamp_only">, TLiteral<"worker_frames">, TLiteral<"none">]>;
-replayIdentity: TUnion<[TLiteral<"provider_event">, TLiteral<"signed_token">, TLiteral<"worker_nonce">, TLiteral<"none">]>;
-exactDomainCatchAll: TBoolean;
-bytePreservation: TUnion<[TLiteral<"verified_exact">, TLiteral<"provider_mutated">, TLiteral<"unknown">]>;
-maxBytes: TOptional<TInteger>;
-}>;
-outbound: TObject<    {
-supported: TBoolean;
-transports: TArray<TUnion<[TLiteral<"http_binary">, TLiteral<"http_utf8_json">, TLiteral<"smtp_raw">]>>;
-bytePreservation: TUnion<[TLiteral<"verified_exact">, TLiteral<"provider_mutated">, TLiteral<"unknown">]>;
-mimeMutation: TArray<TUnion<TLiteral<"unknown" | "none" | "transport_headers" | "dkim_signature" | "content_reencoding">[]>>;
-envelope: TObject<    {
-nullReversePath: TBoolean;
-multipleRecipients: TBoolean;
-smtpUtf8: TBoolean;
-dsnRetEnvid: TBoolean;
-perRecipientDsn: TBoolean;
-bodyModes: TArray<TUnion<TLiteral<"7bit" | "8bitmime" | "binarymime">[]>>;
-requireTls: TBoolean;
-}>;
-idempotency: TObject<    {
-mode: TUnion<[TLiteral<"none">, TLiteral<"header">, TLiteral<"request_key">]>;
-scope: TOptional<TUnion<[TLiteral<"account">, TLiteral<"domain">]>>;
-ttlSeconds: TOptional<TInteger>;
-}>;
-reconciliation: TObject<    {
-supported: TBoolean;
-keys: TArray<TString>;
-canProve: TArray<TUnsafe<"not_sent" | "accepted" | "unknown">>;
-}>;
-maxBytes: TOptional<TInteger>;
-rateLimit: TOptional<TRecord<TString, TNumber>>;
-}>;
-feedback: TObject<    {
-supported: TBoolean;
-kinds: TArray<TUnion<TLiteral<"accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>>;
-perRecipient: TBoolean;
-signatureCoverage: TUnion<[TLiteral<"whole_body">, TLiteral<"body_digest">, TLiteral<"token_timestamp_only">, TLiteral<"worker_event">, TLiteral<"none">]>;
-}>;
-controlPlane: TObject<    {
-supported: TBoolean;
-domainProvisioning: TBoolean;
-dnsDiscovery: TBoolean;
-driftDiscovery: TBoolean;
-exactDomainCatchAll: TBoolean;
-}>;
-prerequisites: TArray<TString>;
-evidence: TArray<TUnsafe<    {
-sourceRevision?: string;
-source: "official_doc" | "maintained_source" | "live_conformance";
-schemaVersion: "v1";
-sourceUri: string;
-observedAt: string;
-reportDigest: string;
-environment: {
-[x: string]: string;
-};
-}>>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-direction: TUnion<[TLiteral<"inbound">, TLiteral<"outbound">]>;
-acquisition: TOptional<TUnion<TLiteral<"inline_stream" | "signed_reference_stream" | "worker_frame_stream">[]>>;
-bytePreservation: TOptional<TUnion<[TLiteral<"verified_exact">, TLiteral<"provider_mutated">, TLiteral<"unknown">]>>;
-maxMessageBytes: TInteger;
-envelope: TObject<    {
-nullReversePath: TBoolean;
-multipleRecipients: TBoolean;
-smtpUtf8: TBoolean;
-dsnRetEnvid: TBoolean;
-perRecipientDsn: TBoolean;
-bodyModes: TArray<TUnion<TLiteral<"7bit" | "8bitmime" | "binarymime">[]>>;
-requireTls: TBoolean;
-}>;
-feedbackKinds: TArray<TUnion<TLiteral<"accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>>;
-controlPlane: TObject<    {
-domainProvisioning: TBoolean;
-dnsDiscovery: TBoolean;
-driftDiscovery: TBoolean;
-exactDomainCatchAll: TBoolean;
-}>;
-allowedMaturity: TUnion<[TLiteral<"stable">, TLiteral<"experimental">]>;
-region: TOptional<TString>;
 }> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 providerId: TUnsafe<ProviderId>;
@@ -390,413 +692,111 @@ name: string;
 occurrence: number;
 }>>;
 reason: TUnion<TLiteral<"reverse_alias" | "provider_compatibility" | "host_policy">[]>;
+}> | TUnsafe<IdempotencyKey> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+type: TString;
+title: TString;
+status: TInteger;
+detail: TOptional<TString>;
+instance: TOptional<TString>;
+code: TUnion<TLiteral<"validation-failed" | "authentication-failed" | "authorization-failed" | "not-found" | "conflict" | "idempotency-conflict" | "binding-unavailable" | "capability-unsupported" | "rate-limited" | "ingress-limit-exceeded" | "ingress-failed" | "storage-unavailable" | "workflow-conflict" | "stale-fence" | "illegal-transition" | "provider-not-sent" | "provider-outcome-unknown" | "provider-rejected" | "host-unavailable" | "internal">[]>;
+retryable: TBoolean;
+deliveryCertainty: TUnsafe<"accepted" | "unknown" | "not_sent">;
+traceId: TOptional<TString>;
+safeDetails: TOptional<TUnsafe<    {
+[x: string]: string | number | boolean;
+}>>;
+occurredAt: TOptional<TUnsafe<string>>;
 }> | TObject<    {
 schemaVersion: TLiteral<"v1">;
-blobId: TUnsafe<BlobId>;
-sha256: TUnsafe<string>;
-size: TInteger;
-mediaType: TLiteral<"message/rfc822">;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-receiptId: TUnsafe<ReceiptId>;
-tenantId: TUnsafe<TenantId>;
 providerId: TUnsafe<ProviderId>;
-providerInstanceId: TUnsafe<ProviderInstanceId>;
-providerReceiptKey: TString;
-binding: TUnsafe<    {
+adapterVersion: TString;
+maturity: TUnion<[TLiteral<"stable">, TLiteral<"experimental">]>;
+inbound: TObject<    {
+supported: TBoolean;
+acquisition: TArray<TUnion<TLiteral<"inline_stream" | "signed_reference_stream" | "worker_frame_stream">[]>>;
+signatureCoverage: TUnion<[TLiteral<"whole_body">, TLiteral<"body_digest">, TLiteral<"token_timestamp_only">, TLiteral<"worker_frames">, TLiteral<"none">]>;
+replayIdentity: TUnion<[TLiteral<"provider_event">, TLiteral<"signed_token">, TLiteral<"worker_nonce">, TLiteral<"none">]>;
+exactDomainCatchAll: TBoolean;
+bytePreservation: TUnion<[TLiteral<"verified_exact">, TLiteral<"provider_mutated">, TLiteral<"unknown">]>;
+maxBytes: TOptional<TInteger>;
+}>;
+outbound: TObject<    {
+supported: TBoolean;
+transports: TArray<TUnion<[TLiteral<"http_binary">, TLiteral<"http_utf8_json">, TLiteral<"smtp_raw">]>>;
+bytePreservation: TUnion<[TLiteral<"verified_exact">, TLiteral<"provider_mutated">, TLiteral<"unknown">]>;
+mimeMutation: TArray<TUnion<TLiteral<"unknown" | "none" | "transport_headers" | "dkim_signature" | "content_reencoding">[]>>;
+envelope: TObject<    {
+nullReversePath: TBoolean;
+multipleRecipients: TBoolean;
+smtpUtf8: TBoolean;
+dsnRetEnvid: TBoolean;
+perRecipientDsn: TBoolean;
+bodyModes: TArray<TUnion<TLiteral<"7bit" | "8bitmime" | "binarymime">[]>>;
+requireTls: TBoolean;
+}>;
+idempotency: TObject<    {
+mode: TUnion<[TLiteral<"none">, TLiteral<"header">, TLiteral<"request_key">]>;
+scope: TOptional<TUnion<[TLiteral<"account">, TLiteral<"domain">]>>;
+ttlSeconds: TOptional<TInteger>;
+}>;
+reconciliation: TObject<    {
+supported: TBoolean;
+keys: TArray<TString>;
+canProve: TArray<TUnsafe<"accepted" | "unknown" | "not_sent">>;
+}>;
+maxBytes: TOptional<TInteger>;
+rateLimit: TOptional<TRecord<TString, TNumber>>;
+}>;
+feedback: TObject<    {
+supported: TBoolean;
+kinds: TArray<TUnion<TLiteral<"delivered" | "accepted" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>>;
+perRecipient: TBoolean;
+signatureCoverage: TUnion<[TLiteral<"whole_body">, TLiteral<"body_digest">, TLiteral<"token_timestamp_only">, TLiteral<"worker_event">, TLiteral<"none">]>;
+}>;
+controlPlane: TObject<    {
+supported: TBoolean;
+domainProvisioning: TBoolean;
+dnsDiscovery: TBoolean;
+driftDiscovery: TBoolean;
+exactDomainCatchAll: TBoolean;
+}>;
+prerequisites: TArray<TString>;
+evidence: TArray<TUnsafe<    {
+sourceRevision?: string;
 schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
+source: "official_doc" | "maintained_source" | "live_conformance";
+sourceUri: string;
+observedAt: string;
+reportDigest: string;
+environment: {
 [x: string]: string;
 };
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-envelope: TUnsafe<    {
-dsn?: {
-ret?: "full" | "headers";
-envelopeId?: string;
-};
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
-schemaVersion: "v1";
-mailFrom: string | null;
-rcptTo: {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}[];
-smtpUtf8: boolean;
-}>;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-verificationEvidenceDigest: TUnsafe<string>;
-receivedAt: TUnsafe<string>;
-state: TUnion<TLiteral<"delivered" | "received" | "acquiring" | "stored" | "routing" | "delivering" | "retry_wait" | "quarantined" | "dead_letter" | "purged">[]>;
-version: TInteger;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-deliveryId: TUnsafe<DeliveryId>;
-receiptId: TUnsafe<ReceiptId>;
-tenantId: TUnsafe<TenantId>;
-envelope: TUnsafe<    {
-dsn?: {
-ret?: "full" | "headers";
-envelopeId?: string;
-};
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
-schemaVersion: "v1";
-mailFrom: string | null;
-rcptTo: {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}[];
-smtpUtf8: boolean;
-}>;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-binding: TUnsafe<    {
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-attempt: TInteger;
-occurredAt: TUnsafe<string>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-intentId: TUnsafe<IntentId>;
-tenantId: TUnsafe<TenantId>;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-envelope: TUnsafe<    {
-dsn?: {
-ret?: "full" | "headers";
-envelopeId?: string;
-};
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
-schemaVersion: "v1";
-mailFrom: string | null;
-rcptTo: {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}[];
-smtpUtf8: boolean;
-}>;
-primaryBinding: TUnsafe<    {
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-fallbackBindings: TArray<TUnsafe<    {
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>>;
-transmissionRaw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-fingerprint: TUnsafe<string>;
-state: TUnion<TLiteral<"accepted" | "retry_wait" | "ready" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown" | "canceled">[]>;
-createdAt: TUnsafe<string>;
-version: TInteger;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-intentId: TUnsafe<IntentId>;
-attemptId: TUnsafe<AttemptId>;
-fence: TInteger;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-transmissionRaw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-envelope: TUnsafe<    {
-dsn?: {
-ret?: "full" | "headers";
-envelopeId?: string;
-};
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
-schemaVersion: "v1";
-mailFrom: string | null;
-rcptTo: {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}[];
-smtpUtf8: boolean;
-}>;
-routeBinding: TUnsafe<    {
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-deadline: TUnsafe<string>;
-}> | TObject<    {
-address: TString;
-outcome: TUnion<[TLiteral<"accepted">, TLiteral<"rejected">]>;
-statusCode: TOptional<TString>;
-evidenceCode: TString;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-providerMessageId: TOptional<TString>;
-acceptedRecipients: TArray<TString>;
-rejectedRecipients: TArray<TUnsafe<    {
-statusCode?: string;
-address: string;
-evidenceCode: string;
-outcome: "accepted" | "rejected";
-}>>;
-acceptedAt: TUnsafe<string>;
-normalizedEvidence: TUnsafe<    {
-[x: string]: string | number | boolean;
-}>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-attemptId: TUnsafe<AttemptId>;
-intentId: TUnsafe<IntentId>;
-tenantId: TUnsafe<TenantId>;
-ordinal: TInteger;
-fence: TInteger;
-routeBinding: TUnsafe<    {
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-recipientIndexes: TArray<TInteger>;
-transmissionRaw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-state: TUnion<TLiteral<"retry_wait" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown">[]>;
-deliveryCertainty: TUnsafe<"not_sent" | "accepted" | "unknown">;
-createdAt: TUnsafe<string>;
-completedAt: TOptional<TUnsafe<string>>;
-providerAcceptance: TOptional<TUnsafe<    {
-providerMessageId?: string;
-schemaVersion: "v1";
-acceptedRecipients: string[];
-rejectedRecipients: {
-statusCode?: string;
-address: string;
-evidenceCode: string;
-outcome: "accepted" | "rejected";
-}[];
-acceptedAt: string;
-normalizedEvidence: {
-[x: string]: string | number | boolean;
-};
-}>>;
-lastEvidence: TOptional<TUnsafe<    {
-[x: string]: string | number | boolean;
 }>>;
 }> | TObject<    {
 schemaVersion: TLiteral<"v1">;
-feedbackEventId: TUnsafe<FeedbackEventId>;
-providerId: TUnsafe<ProviderId>;
-providerInstanceId: TUnsafe<ProviderInstanceId>;
-providerEventKey: TString;
-providerMessageId: TOptional<TString>;
-attemptId: TOptional<TUnsafe<AttemptId>>;
-recipient: TOptional<TString>;
-kind: TUnion<TLiteral<"accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
-occurredAt: TUnsafe<string>;
-receivedAt: TUnsafe<string>;
-sequenceHint: TOptional<TInteger>;
-normalizedEvidence: TUnsafe<    {
-[x: string]: string | number | boolean;
+direction: TUnion<[TLiteral<"inbound">, TLiteral<"outbound">]>;
+acquisition: TOptional<TUnion<TLiteral<"inline_stream" | "signed_reference_stream" | "worker_frame_stream">[]>>;
+bytePreservation: TOptional<TUnion<[TLiteral<"verified_exact">, TLiteral<"provider_mutated">, TLiteral<"unknown">]>>;
+maxMessageBytes: TInteger;
+envelope: TObject<    {
+nullReversePath: TBoolean;
+multipleRecipients: TBoolean;
+smtpUtf8: TBoolean;
+dsnRetEnvid: TBoolean;
+perRecipientDsn: TBoolean;
+bodyModes: TArray<TUnion<TLiteral<"7bit" | "8bitmime" | "binarymime">[]>>;
+requireTls: TBoolean;
 }>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-intentId: TUnsafe<IntentId>;
-recipientKey: TUnsafe<string>;
-transportState: TUnion<TLiteral<"accepted" | "unknown" | "delivered" | "deferred" | "bounced" | "failed_not_sent" | "pending">[]>;
-complaint: TBoolean;
-suppressed: TBoolean;
-opened: TBoolean;
-clicked: TBoolean;
-unsubscribed: TBoolean;
-lastTransportOccurredAt: TOptional<TUnsafe<string>>;
-latestFeedbackOrderKey: TOptional<TString>;
-contradictions: TArray<TString>;
-version: TInteger;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-feedbackEventId: TUnsafe<FeedbackEventId>;
-tenantId: TUnsafe<TenantId>;
-intentId: TUnsafe<IntentId>;
-attemptId: TOptional<TUnsafe<AttemptId>>;
-recipient: TOptional<TString>;
-kind: TUnion<TLiteral<"accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
-occurredAt: TUnsafe<string>;
-normalizedEvidence: TUnsafe<    {
-[x: string]: string | number | boolean;
+feedbackKinds: TArray<TUnion<TLiteral<"delivered" | "accepted" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>>;
+controlPlane: TObject<    {
+domainProvisioning: TBoolean;
+dnsDiscovery: TBoolean;
+driftDiscovery: TBoolean;
+exactDomainCatchAll: TBoolean;
 }>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-grantId: TUnsafe<RawAccessGrantId>;
-tenantId: TUnsafe<TenantId>;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-audience: TString;
-purpose: TUnion<[TLiteral<"application_delivery">, TLiteral<"operator_review">, TLiteral<"reconciliation">]>;
-singleUse: TBoolean;
-issuedAt: TUnsafe<string>;
-expiresAt: TUnsafe<string>;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-tenantId: TUnsafe<TenantId>;
-keyDigest: TUnsafe<string>;
-requestFingerprint: TUnsafe<string>;
-intentId: TUnsafe<IntentId>;
-createdAt: TUnsafe<string>;
-}> | TUnion<[TObject<    {
-schemaVersion: TLiteral<"v1">;
-type: TLiteral<"inbound_receipt">;
-receiptId: TUnsafe<ReceiptId>;
-}>, TObject<    {
-schemaVersion: TLiteral<"v1">;
-type: TLiteral<"outbound_intent">;
-intentId: TUnsafe<IntentId>;
-}>, TObject<    {
-schemaVersion: TLiteral<"v1">;
-type: TLiteral<"feedback_event">;
-feedbackEventId: TUnsafe<FeedbackEventId>;
-}>, TObject<    {
-schemaVersion: TLiteral<"v1">;
-type: TLiteral<"application_delivery">;
-deliveryId: TUnsafe<DeliveryId>;
-}>]> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-auditId: TUnsafe<AuditId>;
-tenantId: TOptional<TUnsafe<TenantId>>;
-actorType: TUnion<[TLiteral<"system">, TLiteral<"operator">, TLiteral<"application">]>;
-actorIdHash: TUnsafe<string>;
-action: TString;
-targetType: TString;
-targetId: TOptional<TString>;
-reasonCode: TOptional<TString>;
-beforeDigest: TOptional<TUnsafe<string>>;
-afterDigest: TOptional<TUnsafe<string>>;
-metadata: TUnsafe<    {
-[x: string]: string | number | boolean;
-}>;
-occurredAt: TUnsafe<string>;
+allowedMaturity: TUnion<[TLiteral<"stable">, TLiteral<"experimental">]>;
+region: TOptional<TString>;
 }>)[];
 
 // @public
@@ -1104,14 +1104,14 @@ ordinal: TInteger;
 fence: TInteger;
 routeBinding: TUnsafe<    {
 schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
 bindingId: BindingId;
 bindingVersion: number;
-tenantId: TenantId;
 domainALabel: string;
 direction: "inbound" | "outbound";
-providerId: ProviderId;
 adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1128,7 +1128,7 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 state: TUnion<TLiteral<"retry_wait" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown">[]>;
-deliveryCertainty: TUnsafe<"not_sent" | "accepted" | "unknown">;
+deliveryCertainty: TUnsafe<"accepted" | "unknown" | "not_sent">;
 createdAt: TUnsafe<string>;
 completedAt: TOptional<TUnsafe<string>>;
 providerAcceptance: TOptional<TUnsafe<    {
@@ -1138,8 +1138,8 @@ acceptedRecipients: string[];
 rejectedRecipients: {
 statusCode?: string;
 address: string;
-evidenceCode: string;
 outcome: "accepted" | "rejected";
+evidenceCode: string;
 }[];
 acceptedAt: string;
 normalizedEvidence: {
@@ -1192,14 +1192,14 @@ smtpUtf8: boolean;
 }>;
 primaryBinding: TUnsafe<    {
 schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
 bindingId: BindingId;
 bindingVersion: number;
-tenantId: TenantId;
 domainALabel: string;
 direction: "inbound" | "outbound";
-providerId: ProviderId;
 adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1209,14 +1209,14 @@ createdAt: string;
 }>;
 fallbackBindings: TArray<TUnsafe<    {
 schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
 bindingId: BindingId;
 bindingVersion: number;
-tenantId: TenantId;
 domainALabel: string;
 direction: "inbound" | "outbound";
-providerId: ProviderId;
 adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1232,7 +1232,7 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 fingerprint: TUnsafe<string>;
-state: TUnion<TLiteral<"accepted" | "retry_wait" | "ready" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown" | "canceled">[]>;
+state: TUnion<TLiteral<"retry_wait" | "accepted" | "ready" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown" | "canceled">[]>;
 createdAt: TUnsafe<string>;
 version: TInteger;
 }>;
@@ -1280,14 +1280,14 @@ smtpUtf8: boolean;
 }>;
 routeBinding: TUnsafe<    {
 schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
 bindingId: BindingId;
 bindingVersion: number;
-tenantId: TenantId;
 domainALabel: string;
 direction: "inbound" | "outbound";
-providerId: ProviderId;
 adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1364,8 +1364,8 @@ acceptedRecipients: TArray<TString>;
 rejectedRecipients: TArray<TUnsafe<    {
 statusCode?: string;
 address: string;
-evidenceCode: string;
 outcome: "accepted" | "rejected";
+evidenceCode: string;
 }>>;
 acceptedAt: TUnsafe<string>;
 normalizedEvidence: TUnsafe<    {
@@ -1495,7 +1495,7 @@ providerEventKey: TString;
 providerMessageId: TOptional<TString>;
 attemptId: TOptional<TUnsafe<AttemptId>>;
 recipient: TOptional<TString>;
-kind: TUnion<TLiteral<"accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
+kind: TUnion<TLiteral<"delivered" | "accepted" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed">[]>;
 occurredAt: TUnsafe<string>;
 receivedAt: TUnsafe<string>;
 sequenceHint: TOptional<TInteger>;
@@ -1592,7 +1592,7 @@ export interface RawMessageIntegrityErrorOptions {
 export type RawMessageIntegrityReason = (typeof rawMessageIntegrityReasons)[number];
 
 // @public
-export const rawMessageIntegrityReasons: readonly ["invalid_encryption_input", "noncanonical_encryption_header", "noncanonical_frame_shape", "frame_authentication_failed", "encrypted_stream_truncated", "encrypted_stream_trailing_data", "plaintext_size_exceeded", "plaintext_metadata_mismatch"];
+export const rawMessageIntegrityReasons: readonly ["invalid_encryption_input", "noncanonical_encryption_header", "encryption_header_identity_mismatch", "noncanonical_frame_shape", "frame_authentication_failed", "encrypted_stream_truncated", "encrypted_stream_trailing_data", "plaintext_size_exceeded", "plaintext_metadata_mismatch"];
 
 // @public (undocumented)
 export type RawMessageRefV1 = DeepReadonly<Static<typeof RawMessageRefV1Schema>>;
@@ -1630,7 +1630,7 @@ export const RecipientDeliveryProjectionV1Schema: TObject<    {
 schemaVersion: TLiteral<"v1">;
 intentId: TUnsafe<IntentId>;
 recipientKey: TUnsafe<string>;
-transportState: TUnion<TLiteral<"accepted" | "unknown" | "delivered" | "deferred" | "bounced" | "failed_not_sent" | "pending">[]>;
+transportState: TUnion<TLiteral<"delivered" | "accepted" | "failed_not_sent" | "pending" | "deferred" | "bounced" | "unknown">[]>;
 complaint: TBoolean;
 suppressed: TBoolean;
 opened: TBoolean;
@@ -1853,14 +1853,14 @@ providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerReceiptKey: TString;
 binding: TUnsafe<    {
 schemaVersion: "v1";
+tenantId: TenantId;
+providerId: ProviderId;
+providerInstanceId: ProviderInstanceId;
 bindingId: BindingId;
 bindingVersion: number;
-tenantId: TenantId;
 domainALabel: string;
 direction: "inbound" | "outbound";
-providerId: ProviderId;
 adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
 providerResourceIds: {
 [x: string]: string;
 };
@@ -1895,7 +1895,7 @@ mediaType: "message/rfc822";
 }>;
 verificationEvidenceDigest: TUnsafe<string>;
 receivedAt: TUnsafe<string>;
-state: TUnion<TLiteral<"delivered" | "received" | "acquiring" | "stored" | "routing" | "delivering" | "retry_wait" | "quarantined" | "dead_letter" | "purged">[]>;
+state: TUnion<TLiteral<"received" | "acquiring" | "stored" | "routing" | "delivering" | "retry_wait" | "delivered" | "quarantined" | "dead_letter" | "purged">[]>;
 version: TInteger;
 }>;
 

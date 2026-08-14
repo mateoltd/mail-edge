@@ -11,7 +11,7 @@ import { Result } from '@mail-edge/contracts';
 
 // @public
 export class BoundedPostalMimeInspector {
-    constructor(structuralInspector?: MailsplitStructuralInspector);
+    constructor(structuralInspector?: MailsplitStructuralInspector, instrumentation?: MimeInspectionInstrumentationOptions);
     // (undocumented)
     inspect(input: RawMessageStream, limits: SemanticInspectionLimits | undefined, signal: AbortSignal): Promise<Result<SemanticMessageView, MailEdgeError>>;
 }
@@ -56,8 +56,41 @@ export type LegacyLineEndingMode = "reject" | "allow_lf";
 
 // @public
 export class MailsplitStructuralInspector {
+    constructor(instrumentation?: MimeInspectionInstrumentationOptions);
     // (undocumented)
     inspect(input: MimeStructureInput, limits: MimeStructureLimits | undefined, signal: AbortSignal): Promise<Result<MimeStructureSummary, MailEdgeError>>;
+}
+
+// @public
+export interface MimeCpuClock {
+    // (undocumented)
+    nowMicroseconds(): number;
+}
+
+// @public
+export interface MimeInspectionInstrumentationEvent {
+    // (undocumented)
+    readonly cpuMilliseconds: number;
+    // (undocumented)
+    readonly outcome: "fail" | "pass";
+    // (undocumented)
+    readonly phase: "semantic" | "structural";
+    // (undocumented)
+    readonly totalBytes: number;
+}
+
+// @public
+export interface MimeInspectionInstrumentationOptions {
+    // (undocumented)
+    readonly clock?: MimeCpuClock;
+    // (undocumented)
+    readonly sink?: MimeInspectionInstrumentationSink;
+}
+
+// @public
+export interface MimeInspectionInstrumentationSink {
+    // (undocumented)
+    record(event: MimeInspectionInstrumentationEvent): void;
 }
 
 // @public (undocumented)
@@ -84,6 +117,8 @@ export interface MimeStructureLimits {
     readonly maxMessageBytes: number;
     // (undocumented)
     readonly maxParts: number;
+    // (undocumented)
+    readonly maxProcessingCpuMilliseconds: number;
 }
 
 // @public (undocumented)
@@ -193,6 +228,8 @@ export interface SemanticInspectionLimits {
     readonly maxParts: number;
     // (undocumented)
     readonly maxPreviewBytes: number;
+    // (undocumented)
+    readonly maxProcessingCpuMilliseconds: number;
     // (undocumented)
     readonly maxRfc822Depth: number;
     // (undocumented)

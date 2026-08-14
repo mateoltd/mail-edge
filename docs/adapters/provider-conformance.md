@@ -41,3 +41,34 @@ The package deliberately does not perform provider network calls on its own. An 
 supplies protocol-specific requests and controlled scenario selection, while the kit invokes the
 real public adapter methods and independently inspects stream ownership, normalized results,
 transport boundary state, and observable control-plane state.
+
+Control-plane mutation probes require an explicit protected qualification or sandbox marker. They
+also require a verifiable SHA-256 control-state digest: absence of that digest cannot qualify
+planning determinism, read-only discovery, or observable mutation. Every returned plan is validated
+against the registered provider/version/mode, desired-state digest, observation time, expiry, and
+canonical operation order before it can reach `applyBindingPlan`.
+
+All adapter-owned conformance callbacks receive the run signal and deadline. The harness races each
+callback against the finite run budget, validates observation and derived time windows before
+building fixtures, and reports invalid time input as an explicit failed `Result`. Signed environment
+evidence accepts only documented deployment dimensions and hashes their values with a
+domain-separated SHA-256 policy, preventing credentials and arbitrary environment values from
+entering the report.
+
+## W5-W8 reconciliation composition gate
+
+This repository slice exposes reconciliation queries, evidence evaluation, and fenced workflow
+reducers, but it has no orchestration writer that consumes a reconciliation result. A later W5-W8
+composition must enforce the following at its actual transaction boundary; the provider evaluator
+alone is not authorization to write:
+
+1. Retain the exact query context plus the orchestration claim fence, and require its attempt ID,
+   route binding identity, tenant, and claimed fence to equal the currently persisted attempt.
+2. Require evidence `observedAt` to be valid, inside the requested reconciliation window, no later
+   than the orchestration clock, and fresh under the deployment's documented maximum age.
+3. Re-read the attempt and binding in the write transaction, reject superseded attempts or changed
+   binding/config revisions, and apply only authoritative certainty declared by that exact adapter
+   descriptor.
+4. Persist the reducer transition with the current attempt ID, fence, and expected workflow version
+   atomically. A conflict or stale observation preserves `quarantined_unknown`; it never retries or
+   resolves a newer attempt.

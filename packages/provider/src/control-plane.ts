@@ -18,6 +18,7 @@ export const bindingPlanDigest = (plan: BindingPlanV1): string =>
 export const inspectBindingPlan = (
   plan: BindingPlanV1,
   identity: ProviderAdapterIdentity,
+  expectedDesiredDigest: string,
   now: string,
 ): BindingPlanInspection => {
   const issues = new Set<string>();
@@ -27,6 +28,7 @@ export const inspectBindingPlan = (
   if (!created.ok || !expires.ok || !current.ok) issues.add("plan_time_invalid");
   else {
     if (Date.parse(plan.createdAt) >= Date.parse(plan.expiresAt)) issues.add("plan_window_invalid");
+    if (Date.parse(plan.createdAt) > Date.parse(now)) issues.add("plan_not_yet_valid");
     if (Date.parse(plan.expiresAt) <= Date.parse(now)) issues.add("plan_expired");
   }
   if (
@@ -37,6 +39,7 @@ export const inspectBindingPlan = (
     issues.add("plan_identity_mismatch");
   }
   if (!/^[0-9a-f]{64}$/u.test(plan.desiredDigest)) issues.add("desired_digest_invalid");
+  else if (plan.desiredDigest !== expectedDesiredDigest) issues.add("desired_digest_mismatch");
   const operationIds = plan.operations.map((operation) => operation.operationId);
   if (new Set(operationIds).size !== operationIds.length) issues.add("duplicate_operation_id");
   if (operationIds.join("\0") !== operationIds.toSorted().join("\0"))

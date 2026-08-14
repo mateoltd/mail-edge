@@ -507,6 +507,16 @@ interface PurgingBlobStore_2 extends BlobStorePort {
     purge(claim: BlobPurgeClaim, occurredAt: string, signal: AbortSignal): Promise<DriverResult<void>>;
 }
 
+// @public (undocumented)
+export interface RawBlobIntegrityClaim {
+    // (undocumented)
+    readonly blobId: string;
+    // (undocumented)
+    readonly expectedVersion: number;
+    // (undocumented)
+    readonly tenantId: BlobTenantId;
+}
+
 // @public
 export interface RawBlobRestorationProof {
     // (undocumented)
@@ -529,16 +539,6 @@ export interface RawBlobRestorationProof {
     readonly tenantId: BlobTenantId;
     // (undocumented)
     readonly verifiedAt: string;
-}
-
-// @public (undocumented)
-export interface RawBlobIntegrityClaim {
-    // (undocumented)
-    readonly blobId: string;
-    // (undocumented)
-    readonly expectedVersion: number;
-    // (undocumented)
-    readonly tenantId: BlobTenantId;
 }
 
 // @public (undocumented)

@@ -102,3 +102,5 @@ jobs:
         run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
       - name: Check DCO sign-offs
         run: node ./scripts/check-dco.mjs "$BASE_SHA" "$HEAD_SHA"
+      - name: Check publishable package Changesets
+        run: node ./scripts/check-changesets.mjs "$BASE_SHA"

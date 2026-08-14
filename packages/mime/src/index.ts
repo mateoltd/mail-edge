@@ -28,3 +28,9 @@ export {
   BoundedPostalMimeInspector,
   DEFAULT_SEMANTIC_INSPECTION_LIMITS,
 } from "./semantic-inspector.service.js";
+export type {
+  MimeCpuClock,
+  MimeInspectionInstrumentationEvent,
+  MimeInspectionInstrumentationOptions,
+  MimeInspectionInstrumentationSink,
+} from "./inspection-budget.js";

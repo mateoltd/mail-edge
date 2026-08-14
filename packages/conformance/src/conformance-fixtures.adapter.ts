@@ -38,6 +38,8 @@ import {
   type TenantId,
 } from "@mail-edge/provider";
 
+import type { ProviderConformanceTimeWindow } from "./conformance-time.js";
+
 const ids = Object.freeze({
   attempt: "018f1f2e-7b4a-7c11-8a00-000000000006",
   binding: "018f1f2e-7b4a-7c11-8a00-000000000003",
@@ -95,10 +97,8 @@ const envelope: SmtpEnvelopeV1 = Object.freeze({
   smtpUtf8: false,
 });
 
-const rawBytes = Buffer.from(
-  "From: sender@example.test\r\nTo: one@example.test, two@example.test\r\nSubject: provider conformance\r\n\r\nfixture body\r\n",
-  "utf8",
-);
+const rawMessage =
+  "From: sender@example.test\r\nTo: one@example.test, two@example.test\r\nSubject: provider conformance\r\n\r\nfixture body\r\n";
 
 /** Deterministic, provider-neutral fixture set shared by every adapter qualification. @public */
 export interface ProviderConformanceFixtures {
@@ -108,6 +108,8 @@ export interface ProviderConformanceFixtures {
   readonly attemptId: AttemptId;
   readonly blobId: BlobId;
   readonly observedAt: string;
+  readonly deadline: string;
+  /** Returns a fresh copy; the canonical fixture bytes are never exposed. */
   readonly rawBytes: Uint8Array;
   readonly raw: RawMessageRefV1;
   readonly envelope: SmtpEnvelopeV1;
@@ -120,14 +122,15 @@ export interface ProviderConformanceFixtures {
 /** Creates the deterministic fixture set for one exact adapter identity and observation time. @public */
 export const createProviderConformanceFixtures = (
   identity: ProviderAdapterIdentity,
-  observedAt: string,
+  timing: ProviderConformanceTimeWindow,
 ): ProviderConformanceFixtures => {
+  const privateRawBytes = Buffer.from(rawMessage, "utf8");
   const raw: RawMessageRefV1 = Object.freeze({
     blobId,
     mediaType: "message/rfc822",
     schemaVersion: "v1",
     sha256: "69fc28dab07b49aaa4c755eb57e60358262c10bdecd68c9119968ae16cd3e3fc",
-    size: rawBytes.byteLength,
+    size: privateRawBytes.byteLength,
   });
   const binding: RouteBindingSnapshotV1 = Object.freeze({
     adapterVersion: identity.adapterVersion,
@@ -135,7 +138,7 @@ export const createProviderConformanceFixtures = (
     bindingVersion: 1,
     capabilityDigest: "0".repeat(64),
     configRevision: "fixture-v1",
-    createdAt: observedAt,
+    createdAt: timing.observedAt,
     direction: "outbound",
     domainALabel: "example.test",
     providerId: identity.providerId,
@@ -146,7 +149,7 @@ export const createProviderConformanceFixtures = (
   });
   const submission: OutboundSubmissionV1 = Object.freeze({
     attemptId,
-    deadline: new Date(Date.parse(observedAt) + 60_000).toISOString(),
+    deadline: timing.probeDeadline,
     envelope,
     fence: 1,
     intentId: ids.intent as OutboundSubmissionV1["intentId"],
@@ -163,7 +166,7 @@ export const createProviderConformanceFixtures = (
       attemptId,
       "accepted",
       "fixture-accepted",
-      observedAt,
+      timing.observedAt,
       1,
     ),
     feedbackEvent(
@@ -173,7 +176,7 @@ export const createProviderConformanceFixtures = (
       attemptId,
       "delivered",
       "fixture-delivered",
-      new Date(Date.parse(observedAt) + 1_000).toISOString(),
+      timing.feedbackObservedAt,
       2,
     ),
   ]);
@@ -189,13 +192,16 @@ export const createProviderConformanceFixtures = (
     attemptId,
     binding,
     blobId,
+    deadline: timing.probeDeadline,
     envelope,
     feedback,
     fixtureSetDigest: sha256CanonicalJson(digestable),
-    observedAt,
+    observedAt: timing.observedAt,
     providerInstanceId,
     raw,
-    rawBytes: new Uint8Array(rawBytes),
+    get rawBytes(): Uint8Array {
+      return Uint8Array.from(privateRawBytes);
+    },
     receiptId,
     submission,
     tenantId,
@@ -263,7 +269,7 @@ export const createFixtureIngressContext = (
   fixtures: ProviderConformanceFixtures,
 ): ProviderHttpIngressContext =>
   Object.freeze({
-    deadline: new Date(Date.parse(fixtures.observedAt) + 60_000).toISOString(),
+    deadline: fixtures.deadline,
     providerInstanceId: fixtures.providerInstanceId,
     requestId: "provider-conformance-request",
   });
@@ -361,6 +367,7 @@ export class FixtureSecretResolver implements SecretResolver {
 /** Receipt port that records only successful verified commits. @public */
 export class FixtureInboundReceiptCommitPort implements InboundReceiptCommitPort {
   readonly #receiptId: ReceiptId;
+  readonly #receiptIdentities = new Set<string>();
   readonly commits: InboundReceiptCommitInput[] = [];
 
   constructor(receiptId: ReceiptId) {
@@ -372,11 +379,21 @@ export class FixtureInboundReceiptCommitPort implements InboundReceiptCommitPort
     signal: AbortSignal,
   ): Promise<Result<InboundIngressCommit, MailEdgeError>> {
     if (signal.aborted) return Promise.resolve({ error: abortedFixtureError(signal), ok: false });
-    this.commits.push(input);
+    const identity = [
+      input.tenantId,
+      input.providerId,
+      input.providerInstanceId,
+      input.providerReceiptKey,
+    ].join("\0");
+    const duplicate = this.#receiptIdentities.has(identity);
+    if (!duplicate) {
+      this.#receiptIdentities.add(identity);
+      this.commits.push(input);
+    }
     return Promise.resolve({
       ok: true as const,
       value: Object.freeze({
-        duplicate: this.commits.length > 1,
+        duplicate,
         receiptId: this.#receiptId,
         response: Object.freeze({ class: "success" as const, statusCode: 200 as const }),
       }),

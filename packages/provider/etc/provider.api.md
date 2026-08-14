@@ -457,7 +457,7 @@ export interface InboundReceiptCommitPort {
 export type IngressError = MailEdgeError;
 
 // @public
-export const inspectBindingPlan: (plan: BindingPlanV1, identity: ProviderAdapterIdentity, now: string) => BindingPlanInspection;
+export const inspectBindingPlan: (plan: BindingPlanV1, identity: ProviderAdapterIdentity, expectedDesiredDigest: string, now: string) => BindingPlanInspection;
 
 // @public
 export const inspectProviderCapabilityDescriptor: (descriptor: unknown) => CapabilityDescriptorInspection;

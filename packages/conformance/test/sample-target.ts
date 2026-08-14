@@ -37,6 +37,7 @@ export const createSampleTarget = (): ProviderConformanceTarget => ({
     },
   },
   environment: Object.freeze({ accountTier: "fixture", transport: "in_memory" }),
+  mutationTarget: Object.freeze({ protected: true, scope: "qualification" }),
   region: "test-region",
   registration: sampleRegistration,
 });

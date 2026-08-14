@@ -115,7 +115,13 @@ export const createFixtureInboundServices: (fixtures: ProviderConformanceFixture
 export const createFixtureIngressContext: (fixtures: ProviderConformanceFixtures) => ProviderHttpIngressContext;
 
 // @public
-export const createProviderConformanceFixtures: (identity: ProviderAdapterIdentity, observedAt: string) => ProviderConformanceFixtures;
+export const createProviderConformanceFixtures: (identity: ProviderAdapterIdentity, timing: ProviderConformanceTimeWindow) => ProviderConformanceFixtures;
+
+// @public
+export const createProviderConformanceTimeWindow: (observedAt: string, maturity: "experimental" | "stable", runBudgetMilliseconds?: number) => Result<ProviderConformanceTimeWindow, MailEdgeError>;
+
+// @public
+export const DEFAULT_PROVIDER_CONFORMANCE_RUN_BUDGET_MILLISECONDS = 60000;
 
 export { DeletionEvidenceV1 }
 
@@ -228,6 +234,9 @@ export { MailEdgeError }
 
 export { MailEdgeErrorCode }
 
+// @public
+export const MAX_PROVIDER_CONFORMANCE_RUN_BUDGET_MILLISECONDS: number;
+
 export { ok }
 
 export { OneShotProviderHttpRequest }
@@ -256,22 +265,33 @@ export { ProviderAdapterRegistry }
 export { ProviderCapabilityDescriptorV1 }
 
 // @public
+export interface ProviderConformanceCallbackContext {
+    // (undocumented)
+    readonly deadline: string;
+    // (undocumented)
+    readonly signal: AbortSignal;
+}
+
+// @public
 export interface ProviderConformanceDriver {
     // (undocumented)
-    controlStateDigest?(): Promise<string> | string;
+    controlStateDigest?(context: ProviderConformanceCallbackContext): Promise<string> | string;
     // (undocumented)
-    createFeedbackRequest?(scenario: FeedbackConformanceScenario, fixtures: ProviderConformanceFixtures): Promise<OneShotProviderHttpRequest>;
+    createFeedbackRequest?(scenario: FeedbackConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<OneShotProviderHttpRequest>;
     // (undocumented)
-    createInboundRequest?(fixtures: ProviderConformanceFixtures): Promise<{
+    createInboundRequest?(fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<{
         readonly request: OneShotProviderHttpRequest;
         readonly context?: ProviderHttpIngressContext;
         readonly services?: InboundIngestionServices;
     }>;
     // (undocumented)
-    prepareDispatchScenario?(scenario: DispatchConformanceScenario, fixtures: ProviderConformanceFixtures): Promise<void> | void;
+    prepareDispatchScenario?(scenario: DispatchConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<void> | void;
     // (undocumented)
-    prepareReconciliationScenario?(scenario: ReconciliationConformanceScenario, fixtures: ProviderConformanceFixtures): Promise<void> | void;
+    prepareReconciliationScenario?(scenario: ReconciliationConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<void> | void;
 }
+
+// @public
+export type ProviderConformanceEnvironmentKey = "accountTier" | "deployment" | "runtime" | "transport";
 
 // @public
 export interface ProviderConformanceFixtures {
@@ -281,6 +301,8 @@ export interface ProviderConformanceFixtures {
     readonly binding: RouteBindingSnapshotV1;
     // (undocumented)
     readonly blobId: BlobId;
+    // (undocumented)
+    readonly deadline: string;
     // (undocumented)
     readonly envelope: SmtpEnvelopeV1;
     // (undocumented)
@@ -293,7 +315,6 @@ export interface ProviderConformanceFixtures {
     readonly providerInstanceId: ProviderInstanceId;
     // (undocumented)
     readonly raw: RawMessageRefV1;
-    // (undocumented)
     readonly rawBytes: Uint8Array;
     // (undocumented)
     readonly receiptId: ReceiptId;
@@ -308,6 +329,14 @@ export class ProviderConformanceKit {
     constructor(target: ProviderConformanceTarget);
     // (undocumented)
     run(options: ProviderConformanceRunOptions, signal: AbortSignal): Promise<Result<ProviderConformanceRun, MailEdgeError>>;
+}
+
+// @public
+export interface ProviderConformanceMutationTarget {
+    // (undocumented)
+    readonly protected: true;
+    // (undocumented)
+    readonly scope: "qualification" | "sandbox";
 }
 
 export { ProviderConformanceReportV1 }
@@ -328,6 +357,8 @@ export interface ProviderConformanceRun {
 export interface ProviderConformanceRunOptions {
     // (undocumented)
     readonly observedAt: string;
+    // (undocumented)
+    readonly runBudgetMilliseconds?: number;
 }
 
 // @public
@@ -335,11 +366,25 @@ export interface ProviderConformanceTarget {
     // (undocumented)
     readonly driver: ProviderConformanceDriver;
     // (undocumented)
-    readonly environment: Readonly<Record<string, string>>;
+    readonly environment: Readonly<Partial<Record<ProviderConformanceEnvironmentKey, string>>>;
+    // (undocumented)
+    readonly mutationTarget?: ProviderConformanceMutationTarget;
     // (undocumented)
     readonly region: string;
     // (undocumented)
     readonly registration: ProviderAdapterRegistration;
+}
+
+// @public
+export interface ProviderConformanceTimeWindow {
+    // (undocumented)
+    readonly feedbackObservedAt: string;
+    // (undocumented)
+    readonly observedAt: string;
+    // (undocumented)
+    readonly probeDeadline: string;
+    // (undocumented)
+    readonly reportExpiresAt: string;
 }
 
 export { ProviderControlPlaneAdapter }
