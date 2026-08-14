@@ -1249,12 +1249,12 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       `INSERT INTO blob_ingest_stages
         (stage_id, tenant_id, purpose, object_key, object_version, final_object_key,
          final_object_version, state, expected_max_bytes, observed_bytes, observed_sha256,
-         encryption_key_ref, wrapped_dek, encryption_metadata, expires_at)
+         encryption_key_ref, wrapped_dek, encryption_metadata, expires_at, created_at, updated_at)
        VALUES ($1, $2, 'inbound', 'scratch/promoted-retry', 'scratch-version',
          'raw/promoted-retry', 'final-version', 'promoted', 2, 2,
          decode(repeat('e1', 32), 'hex'), 'kms://key', decode('11', 'hex'),
-         '{"formatVersion":1,"purpose":"inbound"}', now() + interval '1 day')`,
-      [stageId, tenantId],
+         '{"formatVersion":1,"purpose":"inbound"}', now() + interval '1 day', $3, $3)`,
+      [stageId, tenantId, occurredAt],
     );
     const claimed = await blobs.claimExpiredStages(
       tenantId,
