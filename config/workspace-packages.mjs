@@ -35,6 +35,7 @@ export const workspaceUnits = Object.freeze([
   packageUnit("observability", "@mail-edge/observability", "packages/observability", []),
   packageUnit("conformance", "@mail-edge/conformance", "packages/conformance", ["provider"]),
   packageUnit("provider-mailgun", "@mail-edge/provider-mailgun", "packages/provider-mailgun", [
+    "conformance",
     "provider",
   ]),
   packageUnit("provider-resend", "@mail-edge/provider-resend", "packages/provider-resend", [

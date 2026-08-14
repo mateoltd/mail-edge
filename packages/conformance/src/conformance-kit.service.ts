@@ -12,6 +12,7 @@ import {
   inspectProviderCapabilityDescriptor,
   requiredConformanceChecks,
   sha256CanonicalJson,
+  validateProviderFeedbackBatch,
   type CanonicalJsonValue,
   type ConformanceCheckResultV1,
   type DesiredBindingV1,
@@ -23,6 +24,7 @@ import {
   type ProviderDispatchContext,
   type ProviderDispatchInstrumentationEvent,
   type ProviderDispatchInstrumentationSink,
+  type ProviderFeedbackV1,
   type ProviderHttpIngressContext,
   type ProviderReconciliationQueryV1,
   type Result,
@@ -80,11 +82,22 @@ export interface ProviderConformanceDriver {
     fixtures: ProviderConformanceFixtures,
     context: ProviderConformanceCallbackContext,
   ): Promise<void> | void;
+  createDispatchServices?(
+    fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
+  ):
+    | Promise<Pick<ProviderDispatchContext, "rawSource" | "secrets">>
+    | Pick<ProviderDispatchContext, "rawSource" | "secrets">;
   createFeedbackRequest?(
     scenario: FeedbackConformanceScenario,
     fixtures: ProviderConformanceFixtures,
     context: ProviderConformanceCallbackContext,
   ): Promise<OneShotProviderHttpRequest>;
+  createFeedbackRequests?(
+    scenario: FeedbackConformanceScenario,
+    fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
+  ): Promise<readonly OneShotProviderHttpRequest[]>;
   prepareReconciliationScenario?(
     scenario: ReconciliationConformanceScenario,
     fixtures: ProviderConformanceFixtures,
@@ -206,6 +219,7 @@ const contextForDispatch = (
   target: ProviderConformanceTarget,
   fixtures: ProviderConformanceFixtures,
   sink: CountingInstrumentationSink,
+  services?: Pick<ProviderDispatchContext, "rawSource" | "secrets">,
 ): ProviderDispatchContext =>
   Object.freeze({
     boundary: new DispatchBoundaryRecorder({
@@ -217,9 +231,37 @@ const contextForDispatch = (
     clock: new FixtureClock(fixtures.observedAt),
     mode: target.registration.identity.mode,
     providerInstanceId: fixtures.providerInstanceId,
-    rawSource: new FixtureRawSource(fixtures),
-    secrets: new FixtureSecretResolver(),
+    rawSource: services?.rawSource ?? new FixtureRawSource(fixtures),
+    secrets: services?.secrets ?? new FixtureSecretResolver(),
   });
+
+const submissionForDescriptor = (
+  fixtures: ProviderConformanceFixtures,
+  registration: ProviderAdapterRegistration,
+): ProviderConformanceFixtures["submission"] => {
+  const support = registration.descriptor.outbound.envelope;
+  const recipients = (
+    support.multipleRecipients ? fixtures.envelope.rcptTo : fixtures.envelope.rcptTo.slice(0, 1)
+  ).map((recipient) =>
+    Object.freeze({
+      address: recipient.address,
+      ...(support.perRecipientDsn && recipient.dsn !== undefined ? { dsn: recipient.dsn } : {}),
+    }),
+  );
+  const body = support.bodyModes[0];
+  const envelope = Object.freeze({
+    ...(body === undefined ? {} : { body }),
+    ...(support.dsnRetEnvid && fixtures.envelope.dsn !== undefined
+      ? { dsn: fixtures.envelope.dsn }
+      : {}),
+    mailFrom: fixtures.envelope.mailFrom,
+    rcptTo: Object.freeze(recipients),
+    ...(support.requireTls ? { requireTls: true } : {}),
+    schemaVersion: "v1" as const,
+    smtpUtf8: false,
+  });
+  return Object.freeze({ ...fixtures.submission, envelope });
+};
 
 const asFailureCode = (cause: unknown): string =>
   cause instanceof MailEdgeError ? cause.code.toLowerCase() : "probe_threw";
@@ -524,10 +566,13 @@ export class ProviderConformanceKit {
       await runOwner.callback(() =>
         this.#target.driver.prepareDispatchScenario?.(scenario, fixtures, runOwner.context()),
       );
+      const services = await runOwner.callback(() =>
+        this.#target.driver.createDispatchServices?.(fixtures, runOwner.context()),
+      );
       const sink = new CountingInstrumentationSink();
-      const context = contextForDispatch(this.#target, fixtures, sink);
+      const context = contextForDispatch(this.#target, fixtures, sink, services);
       const execution = await new ProviderDispatchService(outbound).execute(
-        fixtures.submission,
+        submissionForDescriptor(fixtures, this.#target.registration),
         context,
         runOwner.signal,
       );
@@ -570,18 +615,38 @@ export class ProviderConformanceKit {
     runOwner: ProviderConformanceRunOwner,
   ): Promise<readonly ConformanceCheckResultV1[]> {
     const adapter = this.#target.registration.feedback;
-    if (adapter === undefined || this.#target.driver.createFeedbackRequest === undefined)
+    if (
+      adapter === undefined ||
+      (this.#target.driver.createFeedbackRequest === undefined &&
+        this.#target.driver.createFeedbackRequests === undefined)
+    )
       return Object.freeze([]);
     const run = async (scenario: FeedbackConformanceScenario) => {
-      const request = await runOwner.callback(() =>
-        this.#target.driver.createFeedbackRequest?.(scenario, fixtures, runOwner.context()),
+      const supplied = await runOwner.callback(() =>
+        this.#target.driver.createFeedbackRequests === undefined
+          ? this.#target.driver
+              .createFeedbackRequest?.(scenario, fixtures, runOwner.context())
+              .then((request) => Object.freeze([request]))
+          : this.#target.driver.createFeedbackRequests(scenario, fixtures, runOwner.context()),
       );
-      if (request === undefined) throw new Error("Feedback conformance driver disappeared.");
-      return new ProviderFeedbackIngressService(adapter, new StrictBoundedBodyCollector()).execute(
-        request,
-        createFixtureIngressContext(fixtures),
-        runOwner.signal,
+      if (supplied === undefined || supplied.length < 1) {
+        throw new Error("Feedback conformance driver supplied no requests.");
+      }
+      const events: ProviderFeedbackV1[] = [];
+      for (const request of supplied) {
+        const result = await new ProviderFeedbackIngressService(
+          adapter,
+          new StrictBoundedBodyCollector(),
+        ).execute(request, createFixtureIngressContext(fixtures), runOwner.signal);
+        if (!result.ok) return result;
+        events.push(...result.value);
+      }
+      const validated = validateProviderFeedbackBatch(
+        events,
+        adapter.descriptor,
+        fixtures.providerInstanceId,
       );
+      return validated.ok ? { ok: true as const, value: validated.value.events } : validated;
     };
     const malformed = await run("malformed");
     const duplicates = await run("duplicates");
@@ -794,6 +859,7 @@ export class ProviderConformanceKit {
       return Object.freeze([]);
     const query: ProviderReconciliationQueryV1 = Object.freeze({
       attemptId: fixtures.attemptId,
+      providerMessageId: "provider-conformance-message",
       routeBinding: fixtures.binding,
       schemaVersion: "v1",
       window: Object.freeze({
@@ -817,8 +883,15 @@ export class ProviderConformanceKit {
     const accepted = await run("accepted");
     const notSent = await run("not_sent");
     const unknown = await run("unknown");
+    const declared = outbound.descriptor.outbound.reconciliation.canProve;
+    const acceptedValid = declared.includes("accepted")
+      ? accepted?.nextState === "provider_accepted"
+      : accepted?.nextState === "quarantined_unknown";
+    const notSentValid = declared.includes("not_sent")
+      ? notSent?.nextState === "failed_not_sent"
+      : notSent?.nextState === "quarantined_unknown";
     return Object.freeze([
-      accepted?.nextState === "provider_accepted" && notSent?.nextState === "failed_not_sent"
+      acceptedValid && notSentValid
         ? pass("reconciliation.certainty_transitions", "reconciliation", "authoritative_only")
         : fail(
             "reconciliation.certainty_transitions",

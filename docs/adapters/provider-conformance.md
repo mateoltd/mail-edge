@@ -42,6 +42,11 @@ supplies protocol-specific requests and controlled scenario selection, while the
 real public adapter methods and independently inspects stream ownership, normalized results,
 transport boundary state, and observable control-plane state.
 
+Feedback drivers may supply one provider-native request or an ordered list of requests. The harness
+normalizes each request through the real adapter, then applies the shared identity deduplication and
+ordering rules to the combined events. This keeps single-event webhook protocols conformant without
+inventing an undocumented provider batch format.
+
 Control-plane mutation probes require an explicit protected qualification or sandbox marker. They
 also require a verifiable SHA-256 control-state digest: absence of that digest cannot qualify
 planning determinism, read-only discovery, or observable mutation. Every returned plan is validated
