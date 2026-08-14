@@ -256,7 +256,7 @@ export class CloudflareInboundAdapter implements InboundProviderAdapter {
         Object.freeze({
           maximumBytes: this.#config.maximumRawBytes,
           purpose: "inbound" as const,
-          stageId: header.receiptId,
+          stageId: context.requestId,
           tenantId: binding.value.tenantId,
         }),
         signal,

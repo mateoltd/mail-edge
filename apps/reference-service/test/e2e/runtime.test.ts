@@ -1701,18 +1701,21 @@ describe("shipped reference-service production composition", { concurrent: false
         `Message-ID: <cloudflare-inbound@${cloudflareDomain}>\r\nSubject: inbound\r\n\r\nbody\r\n`,
     );
     const cloudflareObservedAt = new Date().toISOString();
-    const cloudflareIngress = await fetch(
-      new URL(
-        `/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/${cloudflareProviderInstanceId}/inbound`,
-        base,
-      ),
-      {
-        body: cloudflareInboundWire(cloudflareRaw, cloudflareObservedAt),
-        headers: { "content-type": CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE },
-        method: "POST",
-      },
-    );
-    expect(cloudflareIngress.status).toBe(202);
+    const cloudflareWire = cloudflareInboundWire(cloudflareRaw, cloudflareObservedAt);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const cloudflareIngress = await fetch(
+        new URL(
+          `/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/${cloudflareProviderInstanceId}/inbound`,
+          base,
+        ),
+        {
+          body: cloudflareWire,
+          headers: { "content-type": CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE },
+          method: "POST",
+        },
+      );
+      expect(cloudflareIngress.status).toBe(202);
+    }
     try {
       await waitFor(
         async () => {
@@ -1736,6 +1739,22 @@ describe("shipped reference-service production composition", { concurrent: false
       (await owner.query<{ count: number }>("SELECT count(*)::int AS count FROM inbound_receipts"))
         .rows[0]?.count,
     ).toBe(3);
+    expect(
+      (
+        await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM inbound_receipts WHERE provider_instance_id = $1",
+          [cloudflareProviderInstanceId],
+        )
+      ).rows[0]?.count,
+    ).toBe(1);
+    expect(
+      (
+        await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM webhook_replay_nonces WHERE provider_instance_id = $1",
+          [cloudflareProviderInstanceId],
+        )
+      ).rows[0]?.count,
+    ).toBe(1);
     expect(providerProtocols.calls).toContain(`GET /emails/receiving/${resendReceivedEmailId}`);
     expect(providerProtocols.calls).toContain("GET /message.eml?signature=e2e");
 

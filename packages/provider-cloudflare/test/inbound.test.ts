@@ -12,6 +12,7 @@ import {
 } from "@mail-edge/conformance";
 import {
   sha256CanonicalJson,
+  type BlobStageReservation,
   type InboundIngestionServices,
   type MailEdgeError,
   type Result,
@@ -121,13 +122,19 @@ describe("Cloudflare inbound adapter", () => {
     if (!firstEncoded.ok || !finalEncoded.ok) throw new TypeError("Fixture frame encoding failed.");
     const wire = concatenate([firstEncoded.value, finalEncoded.value]);
     const stage = new FixtureBlobStagePort();
+    const stageIds: string[] = [];
     const receipts = new FixtureInboundReceiptCommitPort(fixtures.receiptId);
     const services: InboundIngestionServices = Object.freeze({
       clock: new FixtureClock(observedAt),
       receipts,
       replay: new FixtureReplayNoncePort(),
       secrets: new FixtureSecretResolver({ current: secret }),
-      stages: stage,
+      stages: Object.freeze({
+        reserve: (reservation: BlobStageReservation, signal: AbortSignal) => {
+          stageIds.push(reservation.stageId);
+          return stage.reserve(reservation, signal);
+        },
+      }),
     });
     const lifecycle = new CloudflareAdapterLifecycle();
     await lifecycle.start(new AbortController().signal);
@@ -148,11 +155,12 @@ describe("Cloudflare inbound adapter", () => {
       new FixedBindingResolver(binding),
       lifecycle,
     );
-    const context = Object.freeze({
-      deadline: fixtures.deadline,
-      providerInstanceId: fixtures.providerInstanceId,
-      requestId: "inbound-test",
-    });
+    const context = (requestId: string) =>
+      Object.freeze({
+        deadline: fixtures.deadline,
+        providerInstanceId: fixtures.providerInstanceId,
+        requestId,
+      });
     const request = () =>
       createFixtureHttpRequest(wire, observedAt, {
         chunkBytes: 17,
@@ -161,7 +169,7 @@ describe("Cloudflare inbound adapter", () => {
       });
     const firstResult = await adapter.ingest(
       request(),
-      context,
+      context("018f4f6a-7b2c-7000-8000-000000000530"),
       services,
       new AbortController().signal,
     );
@@ -169,13 +177,17 @@ describe("Cloudflare inbound adapter", () => {
     if (firstResult.ok) expect(firstResult.value.duplicate).toBe(false);
     const duplicate = await adapter.ingest(
       request(),
-      context,
+      context("018f4f6a-7b2c-7000-8000-000000000531"),
       services,
       new AbortController().signal,
     );
     expect(duplicate.ok).toBe(true);
     if (duplicate.ok) expect(duplicate.value.duplicate).toBe(true);
     expect(stage.completed).toHaveLength(2);
+    expect(stageIds).toEqual([
+      "018f4f6a-7b2c-7000-8000-000000000530",
+      "018f4f6a-7b2c-7000-8000-000000000531",
+    ]);
     expect(receipts.commits).toHaveLength(1);
     expect(receipts.commits[0]?.raw.sha256).toBe(fixtures.raw.sha256);
 
@@ -187,7 +199,7 @@ describe("Cloudflare inbound adapter", () => {
         contentType: CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE,
         path: "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/inbound",
       }),
-      context,
+      context("018f4f6a-7b2c-7000-8000-000000000532"),
       services,
       new AbortController().signal,
     );
