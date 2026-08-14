@@ -74,6 +74,10 @@ export const mailEdgeProblemCodes = Object.freeze([
 /** @public */
 export type MailEdgeProblemCode = (typeof mailEdgeProblemCodes)[number];
 
+/** Exact inverse of the frozen error-to-Problem code mapping. @public */
+export const mailEdgeErrorCodeFromProblemCode = (code: MailEdgeProblemCode): MailEdgeErrorCode =>
+  mailEdgeErrorCodes[mailEdgeProblemCodes.indexOf(code)] ?? "INTERNAL";
+
 /** @public */
 export interface MailEdgeErrorOptions {
   readonly code: MailEdgeErrorCode;

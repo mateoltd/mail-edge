@@ -123,8 +123,11 @@ const documentedOperations = Object.values(openapi?.paths ?? {}).flatMap((path) 
 const expectedOperationIds = [
   "applyProviderBindingPlan",
   "createOutboundIntent",
+  "decideInboundQuarantine",
+  "decideOutboundQuarantine",
   "deleteProviderBinding",
   "discoverProviderBinding",
+  "downloadRawMessageByGrant",
   "getDegradedStatus",
   "getInboundReceipt",
   "getLiveness",
@@ -132,10 +135,16 @@ const expectedOperationIds = [
   "getReadiness",
   "ingestProviderFeedback",
   "ingestProviderMessage",
+  "inspectInboundQuarantine",
+  "inspectOutboundQuarantine",
+  "inspectTenantBinding",
+  "issueRawAccessGrant",
   "listProviderInstances",
   "listProviders",
   "planProviderBinding",
+  "revokeRawAccessGrant",
   "storeRawMessage",
+  "transitionBindingLifecycle",
 ].toSorted();
 const documentedOperationIds = documentedOperations
   .map((operation) => operation.operationId)

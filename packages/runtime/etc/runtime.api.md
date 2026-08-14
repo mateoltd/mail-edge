@@ -7,7 +7,7 @@
 import type { ApplicationAckV1 } from '@mail-edge/core';
 import type { ApplicationDeliverySink } from '@mail-edge/core';
 import type { ApplicationDeliveryV1 } from '@mail-edge/contracts';
-import type { ApplicationDestinationV1 } from '@mail-edge/core';
+import type { ApplicationDestinationV1 } from '@mail-edge/contracts';
 import type { AttemptId } from '@mail-edge/contracts';
 import type { BlobStorePort } from '@mail-edge/core';
 import type { Clock } from '@mail-edge/core';
@@ -31,6 +31,7 @@ import { ProviderInstanceId } from '@mail-edge/contracts';
 import type { ProviderReconciliationEvidenceV1 } from '@mail-edge/provider';
 import type { ProviderReconciliationQueryV1 } from '@mail-edge/provider';
 import type { ProviderReplayIdentityV1 } from '@mail-edge/provider';
+import type { RawAccessGrantIssuer } from '@mail-edge/core';
 import type { RawMessageRefV1 } from '@mail-edge/contracts';
 import type { ReceiptId } from '@mail-edge/contracts';
 import type { RecipientRouter } from '@mail-edge/core';
@@ -55,8 +56,6 @@ export interface ActiveTenantSource {
 export interface ApplicationDeliveryClaim {
     // (undocumented)
     readonly delivery: ApplicationDeliveryV1;
-    // (undocumented)
-    readonly destination: ApplicationDestinationV1;
     // (undocumented)
     readonly fence: number;
     // (undocumented)
@@ -106,7 +105,11 @@ export interface CreateOutboundIntentInput {
     // (undocumented)
     readonly raw: RawMessageRefV1;
     // (undocumented)
+    readonly reverseRoutePlanDigest?: string;
+    // (undocumented)
     readonly tenantId: TenantId;
+    // (undocumented)
+    readonly transmissionRaw: RawMessageRefV1;
 }
 
 // @public
@@ -123,6 +126,7 @@ export class DurableApplicationDeliveryWorker {
         readonly limiter: BoundedWorkLimiter;
         readonly locator: WorkflowTenantLocator;
         readonly observability: RuntimeObservabilityPort;
+        readonly rawAccessGrants: RawAccessGrantIssuer;
         readonly sink: ApplicationDeliverySink;
         readonly store: ApplicationDeliveryWriter;
         readonly transactions: TenantUnitOfWorkFactory;
@@ -155,8 +159,10 @@ export class DurableFeedbackWorker {
         readonly limiter: BoundedWorkLimiter;
         readonly locator: WorkflowTenantLocator;
         readonly observability: RuntimeObservabilityPort;
+        readonly sink: ApplicationDeliverySink;
         readonly store: FeedbackWorkflowWriter;
         readonly transactions: TenantUnitOfWorkFactory;
+        readonly wakeups: WakeupScheduler;
     });
     // (undocumented)
     handle(wakeup: WorkflowWakeupV1, signal: AbortSignal): Promise<void>;
@@ -241,12 +247,13 @@ export class DurableOutboundIntentService implements OutboundIntentPort {
         readonly config: DurableRuntimeConfig;
         readonly ids: IdGenerator;
         readonly observability: RuntimeObservabilityPort;
+        readonly reverseRoutes: ReverseRoutePreparationPort;
         readonly store: OutboundIntentWriter;
         readonly transactions: TenantUnitOfWorkFactory;
         readonly wakeups: WakeupScheduler;
     });
     // (undocumented)
-    createIntent(input: CreateOutboundIntentInput, callerSignal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
+    createIntent(input: Parameters<OutboundIntentPort["createIntent"]>[0], callerSignal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
 }
 
 // @public
@@ -384,6 +391,8 @@ export interface FeedbackApplicationClaim {
     // (undocumented)
     readonly event: ProviderFeedbackV1;
     // (undocumented)
+    readonly failureCount: number;
+    // (undocumented)
     readonly fence: number;
     // (undocumented)
     readonly intentId: IntentId;
@@ -404,11 +413,18 @@ export interface FeedbackCommitResult {
 // @public
 export interface FeedbackWorkflowWriter {
     // (undocumented)
-    applyFeedback(claim: FeedbackApplicationClaim, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
-    // (undocumented)
     claimFeedbackApplication(tenantId: TenantId, feedbackEventId: FeedbackEventId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackApplicationClaim | null, MailEdgeError>>;
     // (undocumented)
     commitFeedback(tenantId: TenantId, events: readonly ProviderFeedbackV1[], replay: ProviderReplayIdentityV1 | undefined, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
+    // (undocumented)
+    settleFeedbackApplication(claim: FeedbackApplicationClaim, settlement: {
+        readonly state: "delivered";
+        readonly acknowledgement: ApplicationAckV1;
+    } | {
+        readonly state: "retry_wait" | "dead_letter";
+        readonly nextActionAt: string | null;
+        readonly errorCode: string;
+    }, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
 }
 
 // @public
@@ -658,6 +674,21 @@ export interface RetryPolicyInput {
     readonly now: string;
     // (undocumented)
     readonly stableKey: string;
+}
+
+// @public
+export interface ReverseRoutePreparationPort {
+    // (undocumented)
+    prepare(input: {
+        readonly tenantId: TenantId;
+        readonly raw: RawMessageRefV1;
+        readonly envelope: SmtpEnvelopeV1;
+        readonly opaqueReplyToken: string;
+    }, signal: AbortSignal): Promise<Result<{
+        readonly envelope: SmtpEnvelopeV1;
+        readonly transmissionRaw: RawMessageRefV1;
+        readonly planDigest: string;
+    }, MailEdgeError>>;
 }
 
 // @public

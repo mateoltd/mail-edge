@@ -15,11 +15,11 @@ also include explicit tenant predicates. Never set tenant context at session sco
 queries outside a unit of work.
 
 Grant the application only the required table and sequence privileges. The durable runtime role also
-needs `EXECUTE` on `mail_edge_locate_workflow(text, uuid)` and
-`mail_edge_active_tenants(uuid, integer)`; both return bounded identity-only data and are revoked
-from `PUBLIC`. Grant `EXECUTE` on `mail_edge_due_wakeups` and `mail_edge_ensure_monthly_partitions`
-only to dedicated operational roles that need them. Direct access to partition tables remains
-protected by their own tenant policies.
+needs `EXECUTE` on `mail_edge_locate_workflow(text, uuid)`,
+`mail_edge_active_tenants(uuid, integer)`, and `mail_edge_locate_raw_access_grant(uuid)`; all return
+bounded identity-only data and are revoked from `PUBLIC`. Grant `EXECUTE` on `mail_edge_due_wakeups`
+and `mail_edge_ensure_monthly_partitions` only to dedicated operational roles that need them. Direct
+access to partition tables remains protected by their own tenant policies.
 
 ## Migrations and upgrades
 

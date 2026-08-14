@@ -21,7 +21,7 @@
     "start": "node --enable-source-maps ./dist/main.js",
     "test": "vitest run --exclude test/integration/** --exclude test/e2e/**",
     "test:e2e": "vitest run test/e2e",
-    "test:integration": "vitest run test/integration",
+    "test:integration": "vitest run test/e2e/runtime.test.ts",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
@@ -32,6 +32,7 @@
     "@mail-edge/contracts": "workspace:^",
     "@mail-edge/core": "workspace:^",
     "@mail-edge/mime": "workspace:^",
+    "@mail-edge/observability": "workspace:^",
     "@mail-edge/postgres": "workspace:^",
     "@mail-edge/provider": "workspace:^",
     "@mail-edge/provider-cloudflare": "workspace:^",

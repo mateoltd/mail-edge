@@ -1,0 +1,39 @@
+{
+  "name": "@mail-edge/http-client",
+  "version": "0.1.0",
+  "description": "Typed streaming client for the Mail Edge HTTP API",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": "24.19.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "etc"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "api:check": "api-extractor run",
+    "build": "tsc -b",
+    "lint": "eslint src test --max-warnings 0",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@mail-edge/contracts": "workspace:^",
+    "@sinclair/typebox": "0.34.41"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
+  }
+}

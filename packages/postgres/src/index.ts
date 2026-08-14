@@ -23,11 +23,14 @@ export type {
   ProviderFeedbackEvent,
   ProviderFeedbackEventTable,
   ProviderFeedbackDedupTable,
+  QuarantineControlDecisionTable,
   RecipientDeliveryProjectionTable,
   ReconciliationDecisionTable,
   RawBlob,
+  RawBlobDerivationTable,
   RawBlobTable,
   RawBlobUpdate,
+  RawAccessGrantTable,
   RouteBinding,
   RouteBindingCheckTable,
   RouteBindingTable,
@@ -81,6 +84,23 @@ export {
   HmacSensitiveValueDigester,
 } from "./sensitive-value-cipher.adapter.js";
 export { PostgresDurableRuntimeStore } from "./runtime.repository.js";
+export type {
+  RawAccessAudienceResolver,
+  RawAccessActor,
+  RawAccessAuthorization,
+  SecureTokenGenerator,
+} from "./raw-access.repository.js";
+export { PostgresRawAccessGrantRepository } from "./raw-access.repository.js";
+export { PostgresDerivedBlobProvenanceRepository } from "./derived-blob-provenance.repository.js";
+export type {
+  BindingControlView,
+  BindingLifecycleAction,
+  ControlActor,
+  InboundQuarantineView,
+  OutboundQuarantineAction,
+  OutboundQuarantineView,
+} from "./control.repository.js";
+export { PostgresControlRepository } from "./control.repository.js";
 export {
   availableBlobIdentity,
   createPostgresRepositories,

@@ -330,18 +330,17 @@ describe("Cloudflare send_raw MIME stream", () => {
     ).toBe(false);
   });
 
-  it("uses only documented no-send statuses and quarantines an undocumented response", async () => {
-    const documented = await dispatchStatus(400);
-    expect(documented.boundary.classification.certainty).toBe("not_sent");
-    expect(documented.result.ok).toBe(false);
-    if (!documented.result.ok) expect(documented.result.error.deliveryCertainty).toBe("not_sent");
-
-    const undocumented = await dispatchStatus(401);
-    expect(undocumented.boundary.classification.boundaryCrossed).toBe(true);
-    expect(undocumented.result.ok).toBe(false);
-    if (!undocumented.result.ok) {
-      expect(undocumented.result.error.deliveryCertainty).toBe("unknown");
-      expect(undocumented.result.error.retryable).toBe(false);
-    }
-  });
+  it.each([400, 401, 403, 429, 500])(
+    "quarantines HTTP %i after request-body bytes cross the dispatch boundary",
+    async (status) => {
+      const dispatched = await dispatchStatus(status);
+      expect(dispatched.boundary.classification.boundaryCrossed).toBe(true);
+      expect(dispatched.boundary.classification.certainty).toBe("unknown");
+      expect(dispatched.result.ok).toBe(false);
+      if (!dispatched.result.ok) {
+        expect(dispatched.result.error.deliveryCertainty).toBe("unknown");
+        expect(dispatched.result.error.retryable).toBe(false);
+      }
+    },
+  );
 });

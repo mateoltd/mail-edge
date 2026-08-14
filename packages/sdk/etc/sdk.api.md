@@ -39,6 +39,7 @@ export class MailEdgeSdk {
         readonly raw: RawMessageRefV1;
         readonly envelope: SmtpEnvelopeV1;
         readonly idempotencyKey: IdempotencyKey;
+        readonly opaqueReplyToken?: string;
     }, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
     // (undocumented)
     getInboundReceipt(tenantId: TenantId, receiptId: ReceiptId, signal: AbortSignal): Promise<Result<VerifiedInboundReceiptV1, MailEdgeError>>;

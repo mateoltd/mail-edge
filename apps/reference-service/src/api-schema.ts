@@ -1,7 +1,13 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Ajv, type ValidateFunction } from "ajv";
 
-import type { MailEdgeError, Result } from "@mail-edge/contracts";
+import {
+  BindingLifecycleDecisionV1Schema,
+  InboundQuarantineDecisionV1Schema,
+  OutboundQuarantineDecisionV1Schema,
+  type MailEdgeError,
+  type Result,
+} from "@mail-edge/contracts";
 
 import { hostError } from "./errors.js";
 
@@ -60,6 +66,39 @@ export const TenantReceiptParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const RawAccessGrantParamsSchema = Type.Object(
+  { grantId: UuidV7 },
+  { additionalProperties: false },
+);
+
+export const TenantRawAccessGrantParamsSchema = Type.Object(
+  { grantId: UuidV7, tenantId: UuidV7 },
+  { additionalProperties: false },
+);
+
+export const TenantBindingParamsSchema = Type.Object(
+  {
+    bindingId: UuidV7,
+    bindingVersion: Type.String({ maxLength: 16, minLength: 1, pattern: "^[1-9][0-9]{0,15}$" }),
+    tenantId: UuidV7,
+  },
+  { additionalProperties: false },
+);
+
+export const BindingLifecycleParamsSchema = Type.Object(
+  {
+    action: Type.Union([Type.Literal("activate"), Type.Literal("drain"), Type.Literal("retire")]),
+    bindingId: UuidV7,
+    bindingVersion: Type.String({ maxLength: 16, minLength: 1, pattern: "^[1-9][0-9]{0,15}$" }),
+    tenantId: UuidV7,
+  },
+  { additionalProperties: false },
+);
+
+export const LifecycleDecisionSchema = BindingLifecycleDecisionV1Schema;
+export const OutboundQuarantineDecisionSchema = OutboundQuarantineDecisionV1Schema;
+export const InboundQuarantineDecisionSchema = InboundQuarantineDecisionV1Schema;
+
 const SmtpEnvelopeSchema = Type.Object(
   {
     schemaVersion: Type.Literal("v1"),
@@ -95,8 +134,31 @@ const RawMessageRefSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const RawAccessGrantRequestSchema = Type.Object(
+  {
+    purpose: Type.Union([Type.Literal("operator_review"), Type.Literal("reconciliation")]),
+    raw: RawMessageRefSchema,
+    singleUse: Type.Boolean(),
+    subjectId: Type.String({
+      maxLength: 128,
+      minLength: 1,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+    }),
+  },
+  { additionalProperties: false },
+);
+
+export const RawAccessGrantRevocationSchema = Type.Object(
+  { expectedFence: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 0 }) },
+  { additionalProperties: false },
+);
+
 export const OutboundIntentRequestSchema = Type.Object(
-  { envelope: SmtpEnvelopeSchema, raw: RawMessageRefSchema },
+  {
+    envelope: SmtpEnvelopeSchema,
+    opaqueReplyToken: Type.Optional(Type.String({ maxLength: 2048, minLength: 1 })),
+    raw: RawMessageRefSchema,
+  },
   { additionalProperties: false },
 );
 
@@ -238,6 +300,10 @@ export type ProviderInstanceParams = Static<typeof ProviderInstanceParamsSchema>
 export type TenantParams = Static<typeof TenantParamsSchema>;
 export type TenantIntentParams = Static<typeof TenantIntentParamsSchema>;
 export type TenantReceiptParams = Static<typeof TenantReceiptParamsSchema>;
+export type RawAccessGrantParams = Static<typeof RawAccessGrantParamsSchema>;
+export type TenantRawAccessGrantParams = Static<typeof TenantRawAccessGrantParamsSchema>;
+export type TenantBindingParams = Static<typeof TenantBindingParamsSchema>;
+export type BindingLifecycleParams = Static<typeof BindingLifecycleParamsSchema>;
 export type DesiredBindingInput = Static<typeof DesiredBindingSchema>;
 export type BindingPlanInput = Static<typeof BindingPlanSchema>;
 

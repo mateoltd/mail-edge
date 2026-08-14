@@ -30,10 +30,15 @@ import {
 import {
   AesGcmSensitiveValueCipher,
   HmacSensitiveValueDigester,
+  PostgresControlRepository,
+  PostgresDerivedBlobProvenanceRepository,
   PostgresDurableRuntimeStore,
+  PostgresRawAccessGrantRepository,
   PostgresWakeupRepairRepository,
   type SensitiveValueKeyProvider,
+  type RawAccessAudienceResolver,
 } from "@mail-edge/postgres";
+import { StructuredLogSink, type StructuredLogField } from "@mail-edge/observability";
 import { ProviderAdapterRegistry, type ProviderAdapterRegistration } from "@mail-edge/provider";
 import {
   CloudflareFetchTransport,
@@ -102,6 +107,8 @@ import {
   NativeCloudflareFetch,
 } from "./provider-support.js";
 import { PostgresResendInboundMetadataRepository } from "./resend-inbound.repository.js";
+import { HostReverseRoutePreparationService } from "./reverse-route.service.js";
+import { SecureRandomTokenGenerator } from "./secure-token.service.js";
 
 type ProductionConfig = NonNullable<ReferenceServiceConfig["production"]>;
 
@@ -115,6 +122,21 @@ export interface ProductionProviderProtocolOverrides {
     Pick<ResendProviderDependencies, "httpTransport" | "rawDownloadTransport" | "smtpConnector">
   >;
   readonly cloudflare?: ReadonlyMap<string, CloudflareHttpTransport>;
+}
+
+class ConfiguredRawAccessAudienceResolver implements RawAccessAudienceResolver {
+  readonly #audiences: ReadonlyMap<string, string>;
+
+  constructor(configs: ProductionConfig["hostIntegration"]) {
+    this.#audiences = new Map(configs.map((config) => [config.tenantId, config.audience]));
+  }
+
+  resolve(tenantId: TenantId): Result<string, MailEdgeError> {
+    const audience = this.#audiences.get(tenantId);
+    return audience === undefined
+      ? { error: compositionError("raw_access_audience_missing"), ok: false }
+      : { ok: true, value: audience };
+  }
 }
 
 const compositionError = (reason: string, cause?: unknown): MailEdgeError =>
@@ -214,30 +236,87 @@ class KmsReadinessProbe implements ProductionReadinessProbe {
 }
 
 class JsonRuntimeObservability implements RuntimeObservabilityPort {
-  readonly #write: (line: string) => void;
+  readonly #sink: StructuredLogSink;
 
   constructor(write: (line: string) => void) {
-    this.#write = write;
+    this.#sink = new StructuredLogSink(
+      {
+        allowedFields: [
+          "attempt_ordinal",
+          "certainty",
+          "duration_milliseconds",
+          "error_code",
+          "oldest_age_milliseconds",
+          "operation",
+          "outcome",
+          "ready",
+          "workflow",
+        ],
+        maximumEventBytes: 4096,
+      },
+      write,
+    );
   }
 
   record(observation: RuntimeObservation): void {
-    this.#write(`${JSON.stringify({ event: "runtime.operation", ...observation })}\n`);
+    const fields: StructuredLogField[] = [
+      { key: "duration_milliseconds", value: observation.durationMilliseconds },
+      { key: "operation", value: observation.operation },
+      { key: "outcome", value: observation.outcome },
+      { key: "workflow", value: observation.workflow },
+    ];
+    if (observation.errorCode !== undefined)
+      fields.push({ key: "error_code", value: observation.errorCode });
+    if (observation.certainty !== undefined)
+      fields.push({ key: "certainty", value: observation.certainty });
+    if (observation.attemptOrdinal !== undefined)
+      fields.push({ key: "attempt_ordinal", value: observation.attemptOrdinal });
+    this.#sink.write("runtime.operation", fields);
   }
 
   recordBacklog(input: Parameters<RuntimeObservabilityPort["recordBacklog"]>[0]): void {
-    this.#write(`${JSON.stringify({ event: "runtime.backlog", ...input })}\n`);
+    this.#sink.write("runtime.backlog", [
+      { key: "oldest_age_milliseconds", value: input.oldestAgeMilliseconds },
+      { key: "ready", value: input.ready },
+      { key: "workflow", value: input.workflow },
+    ]);
   }
 }
 
 class SdkTelemetry implements Telemetry {
-  readonly #write: (line: string) => void;
+  readonly #sink: StructuredLogSink;
 
   constructor(write: (line: string) => void) {
-    this.#write = write;
+    this.#sink = new StructuredLogSink(
+      {
+        allowedFields: [
+          "certainty",
+          "duration_milliseconds",
+          "error_code",
+          "provider_id",
+          "size_bucket",
+          "state",
+          "workflow",
+        ],
+        maximumEventBytes: 4096,
+      },
+      write,
+    );
   }
 
   emit(event: TelemetryEvent, fields: TelemetryFields): void {
-    this.#write(`${JSON.stringify({ event, ...fields })}\n`);
+    const output: StructuredLogField[] = [];
+    if (fields.providerId !== undefined)
+      output.push({ key: "provider_id", value: fields.providerId });
+    if (fields.workflow !== undefined) output.push({ key: "workflow", value: fields.workflow });
+    if (fields.state !== undefined) output.push({ key: "state", value: fields.state });
+    if (fields.errorCode !== undefined) output.push({ key: "error_code", value: fields.errorCode });
+    if (fields.certainty !== undefined) output.push({ key: "certainty", value: fields.certainty });
+    if (fields.sizeBucket !== undefined)
+      output.push({ key: "size_bucket", value: fields.sizeBucket });
+    if (fields.durationMilliseconds !== undefined)
+      output.push({ key: "duration_milliseconds", value: fields.durationMilliseconds });
+    this.#sink.write(event, output);
   }
 }
 
@@ -530,6 +609,19 @@ class ProductionComposition implements ReferenceServiceComposition {
     try {
       const ids = new UuidV7Generator();
       const digester = new HmacSensitiveValueDigester(this.#digestKeyProvider);
+      const rawAccess = new PostgresRawAccessGrantRepository({
+        audiences: new ConfiguredRawAccessAudienceResolver(this.#config.hostIntegration),
+        clock: infrastructure.clock,
+        digester,
+        ids,
+        tokens: new SecureRandomTokenGenerator(),
+        unitOfWork: infrastructure.unitOfWork,
+      });
+      const control = new PostgresControlRepository({
+        clock: infrastructure.clock,
+        ids,
+        unitOfWork: infrastructure.unitOfWork,
+      });
       const store = new PostgresDurableRuntimeStore({
         cipher: this.sensitiveValueCipher,
         digester,
@@ -630,6 +722,15 @@ class ProductionComposition implements ReferenceServiceComposition {
         configs: this.#config.hostIntegration,
         secrets: infrastructure.secrets,
       });
+      const reverseRoutes = new HostReverseRoutePreparationService({
+        applier: infrastructure.headerPatchApplier,
+        blobStore: infrastructure.blobStore,
+        clock: infrastructure.clock,
+        ids,
+        provenance: new PostgresDerivedBlobProvenanceRepository(infrastructure.unitOfWork),
+        resolver: hostIntegration,
+        transactions: infrastructure.unitOfWork,
+      });
       const inbound = new DurableInboundFinalizer({
         clock: infrastructure.clock,
         config: runtimeConfig,
@@ -651,6 +752,7 @@ class ProductionComposition implements ReferenceServiceComposition {
         config: runtimeConfig,
         ids,
         observability,
+        reverseRoutes,
         store,
         transactions: infrastructure.unitOfWork,
         wakeups: infrastructure.queue,
@@ -673,6 +775,7 @@ class ProductionComposition implements ReferenceServiceComposition {
         limiter,
         locator: store,
         observability,
+        rawAccessGrants: rawAccess,
         sink: hostIntegration,
         store,
         transactions: infrastructure.unitOfWork,
@@ -698,8 +801,10 @@ class ProductionComposition implements ReferenceServiceComposition {
         limiter,
         locator: store,
         observability,
+        sink: hostIntegration,
         store,
         transactions: infrastructure.unitOfWork,
+        wakeups: infrastructure.queue,
       });
       const recovery = new DurableLeaseRecoveryWorker({
         clock: infrastructure.clock,
@@ -864,7 +969,9 @@ class ProductionComposition implements ReferenceServiceComposition {
         ok: true,
         value: Object.freeze({
           adapters: Object.freeze(registrations),
+          control,
           registry,
+          rawAccess,
           sdk,
           workflow,
         }),

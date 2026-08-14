@@ -1,9 +1,9 @@
 import {
   MailEdgeError,
-  ProviderDispatchError,
   type OutboundProviderAdapter,
   type ProviderAcceptanceV1,
   type ProviderDispatchContext,
+  type ProviderDispatchError,
   type Result,
 } from "@mail-edge/provider";
 
@@ -127,25 +127,6 @@ export const validateCloudflareRecipientPartition = (
   return { ok: true, value: undefined };
 };
 
-const documentedNotSentStatus = (status: number): boolean =>
-  status === 400 || status === 403 || status === 429 || status === 500;
-
-const documentedStatusFailure = (status: number): ProviderDispatchError =>
-  new ProviderDispatchError({
-    code: "PROVIDER_REJECTED",
-    deliveryCertainty: "not_sent",
-    evidenceCode:
-      status === 429
-        ? "cloudflare_quota_rejected"
-        : status === 500
-          ? "cloudflare_no_send_error"
-          : "cloudflare_request_rejected",
-    message: "Cloudflare documented that no email was sent for this response.",
-    phase: "response",
-    retryable: status === 429 || status === 500,
-    safeDetails: { statusCode: status },
-  });
-
 const decodeResponse = (response: CloudflareHttpResponseV1): Result<unknown, MailEdgeError> => {
   try {
     return {
@@ -210,10 +191,6 @@ export class CloudflareOutboundAdapter implements OutboundProviderAdapter {
     }
     context.boundary.enterPhase("response");
     if (response.value.status !== 200) {
-      if (documentedNotSentStatus(response.value.status)) {
-        context.boundary.markAuthenticatedRejection(true);
-        return { error: documentedStatusFailure(response.value.status), ok: false };
-      }
       return {
         error: context.boundary.createFailure("cloudflare_response_inconclusive"),
         ok: false,

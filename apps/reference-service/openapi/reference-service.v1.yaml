@@ -147,6 +147,109 @@ paths:
           $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
+  /v1/raw-access-grants/{grantId}/raw:
+    get:
+      tags: [Tenant]
+      operationId: downloadRawMessageByGrant
+      description:
+        Streams the exact raw object in constant memory. Ranges, redirects, and content encodings
+        are rejected; authorization is audience, subject, operation, expiry, and fence bound.
+      security:
+        - rawGrantAuth: []
+      parameters:
+        - $ref: "#/components/parameters/GrantId"
+        - name: X-Mail-Edge-Signature-Audience
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: X-Mail-Edge-Subject-Id
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: X-Mail-Edge-Operation
+          in: header
+          required: true
+          schema: { const: raw_download }
+      responses:
+        "200":
+          description:
+            Authenticated raw stream; a single-use grant is consumed before the object opens.
+          headers:
+            Accept-Ranges:
+              schema: { const: none }
+            Cache-Control:
+              schema: { const: "no-store, private" }
+          content:
+            message/rfc822:
+              schema: { type: string, format: binary }
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "410":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/raw-access-grants:
+    post:
+      tags: [Tenant]
+      operationId: issueRawAccessGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [purpose, raw, singleUse, subjectId]
+              properties:
+                purpose: { type: string, enum: [operator_review, reconciliation] }
+                raw: { $ref: "#/components/schemas/RawMessageRef" }
+                singleUse: { type: boolean }
+                subjectId: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "201":
+          description: Short-lived, fenced raw access grant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RawAccessGrant" }
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/raw-access-grants/{grantId}/revoke:
+    post:
+      tags: [Tenant]
+      operationId: revokeRawAccessGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/GrantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedFence]
+              properties:
+                expectedFence: { type: integer, minimum: 0 }
+      responses:
+        "204": { description: Grant revoked and fence advanced. }
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
   /v1/tenants/{tenantId}/outbound-intents:
     post:
       tags: [Tenant]
@@ -259,6 +362,163 @@ paths:
         "401":
           $ref: "#/components/responses/Problem"
         "503":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/bindings/{bindingId}/versions/{bindingVersion}:
+    get:
+      tags: [Tenant]
+      operationId: inspectTenantBinding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/BindingId"
+        - $ref: "#/components/parameters/BindingVersion"
+      responses:
+        "200":
+          description: Tenant-scoped binding lifecycle snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/outbound-intents/{intentId}/quarantine:
+    get:
+      tags: [Tenant]
+      operationId: inspectOutboundQuarantine
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/IntentId"
+      responses:
+        "200":
+          description: Tenant-scoped quarantine snapshot without raw content or secrets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/tenants/{tenantId}/inbound-receipts/{receiptId}/quarantine:
+    get:
+      tags: [Tenant]
+      operationId: inspectInboundQuarantine
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/ReceiptId"
+      responses:
+        "200":
+          description: Tenant-scoped quarantine snapshot without raw content or secrets.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/tenants/{tenantId}/bindings/{bindingId}/versions/{bindingVersion}/{action}:
+    post:
+      tags: [Operator]
+      operationId: transitionBindingLifecycle
+      description:
+        Applies activate, drain, or retire under optimistic concurrency. Drain prevents new
+        selection while in-flight work remains fenced to its durable snapshot; retire requires
+        completed drain.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/BindingId"
+        - $ref: "#/components/parameters/BindingVersion"
+        - name: action
+          in: path
+          required: true
+          schema: { type: string, enum: [activate, drain, retire] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LifecycleDecision" }
+      responses:
+        "200":
+          description: Updated binding state and concurrency version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/tenants/{tenantId}/outbound-intents/{intentId}/quarantine-decisions:
+    post:
+      tags: [Operator]
+      operationId: decideOutboundQuarantine
+      description:
+        Records an audited terminal decision or privileged retry authorization. authorize_retry
+        requires the separate privileged operator credential.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/IntentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OutboundQuarantineDecision" }
+      responses:
+        "200":
+          description: Audited decision and resulting snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/tenants/{tenantId}/inbound-receipts/{receiptId}/quarantine-decisions:
+    post:
+      tags: [Operator]
+      operationId: decideInboundQuarantine
+      description:
+        Releases a quarantined receipt once or applies an audited terminal action under version and
+        fence checks.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+        - $ref: "#/components/parameters/ReceiptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InboundQuarantineDecision" }
+      responses:
+        "200":
+          description: Audited decision and resulting snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContractSnapshot" }
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
           $ref: "#/components/responses/Problem"
   /v1/operator/providers:
     get:
@@ -432,6 +692,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque
+    rawGrantAuth:
+      type: apiKey
+      in: header
+      name: Authorization
   parameters:
     ProviderId:
       name: providerId
@@ -487,6 +751,25 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/UuidV7"
+    GrantId:
+      name: grantId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UuidV7"
+    BindingId:
+      name: bindingId
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/UuidV7"
+    BindingVersion:
+      name: bindingVersion
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
   responses:
     Problem:
       description: Versioned privacy-safe Mail Edge problem.
@@ -604,6 +887,70 @@ components:
           $ref: "#/components/schemas/SmtpEnvelope"
         raw:
           $ref: "#/components/schemas/RawMessageRef"
+        opaqueReplyToken:
+          type: string
+          minLength: 1
+          maxLength: 2048
+    RawAccessGrant:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          schemaVersion,
+          grantId,
+          tenantId,
+          raw,
+          audience,
+          operation,
+          subjectId,
+          purpose,
+          singleUse,
+          opaqueToken,
+          downloadPath,
+          issuedAt,
+          expiresAt,
+        ]
+      properties:
+        schemaVersion: { const: v1 }
+        grantId: { $ref: "#/components/schemas/UuidV7" }
+        tenantId: { $ref: "#/components/schemas/UuidV7" }
+        raw: { $ref: "#/components/schemas/RawMessageRef" }
+        audience: { type: string, minLength: 1, maxLength: 128 }
+        operation: { const: raw_download }
+        subjectId: { type: string, minLength: 1, maxLength: 128 }
+        purpose: { type: string, enum: [application_delivery, operator_review, reconciliation] }
+        singleUse: { type: boolean }
+        opaqueToken: { type: string, minLength: 43, maxLength: 128 }
+        downloadPath: { type: string, minLength: 1, maxLength: 256 }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    LifecycleDecision:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reasonCode]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        reasonCode: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+    OutboundQuarantineDecision:
+      type: object
+      additionalProperties: false
+      required: [action, evidence, expectedFence, expectedVersion, reasonCode]
+      properties:
+        action: { type: string, enum: [resolve_accepted, resolve_not_sent, authorize_retry] }
+        evidence: { type: object, maxProperties: 64 }
+        expectedFence: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reasonCode: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+    InboundQuarantineDecision:
+      type: object
+      additionalProperties: false
+      required: [action, evidence, expectedFence, expectedVersion, reasonCode]
+      properties:
+        action: { type: string, enum: [release, terminal] }
+        evidence: { type: object, maxProperties: 64 }
+        expectedFence: { type: integer, minimum: 0 }
+        expectedVersion: { type: integer, minimum: 0 }
+        reasonCode: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
     AdapterIdentity:
       type: object
       additionalProperties: false

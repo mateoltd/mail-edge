@@ -30,6 +30,7 @@ and these two narrow functions:
 ```sql
 GRANT EXECUTE ON FUNCTION mail_edge_locate_workflow(text, uuid) TO mail_edge_runtime;
 GRANT EXECUTE ON FUNCTION mail_edge_active_tenants(uuid, integer) TO mail_edge_runtime;
+GRANT EXECUTE ON FUNCTION mail_edge_locate_raw_access_grant(uuid) TO mail_edge_runtime;
 ```
 
 `mail_edge_locate_workflow` returns only the tenant UUID for one opaque workflow UUID. It does not

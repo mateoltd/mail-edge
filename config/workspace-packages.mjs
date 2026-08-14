@@ -63,6 +63,7 @@ export const workspaceUnits = Object.freeze([
     "contracts",
     "core",
     "mime",
+    "observability",
     "postgres",
     "provider",
     "provider-cloudflare",

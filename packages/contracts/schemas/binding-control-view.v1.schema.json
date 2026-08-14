@@ -1,0 +1,172 @@
+{
+  "$id": "urn:mail-edge:schema:v1:binding-control-view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activatedAt": {
+      "anyOf": [
+        {
+          "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "binding": {
+      "$ref": "urn:mail-edge:schema:v1:route-binding-snapshot"
+    },
+    "checks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "checkKind": {
+            "anyOf": [
+              {
+                "const": "capability",
+                "type": "string"
+              },
+              {
+                "const": "dns",
+                "type": "string"
+              },
+              {
+                "const": "control_plane",
+                "type": "string"
+              },
+              {
+                "const": "live_conformance",
+                "type": "string"
+              },
+              {
+                "const": "drift",
+                "type": "string"
+              }
+            ]
+          },
+          "evidenceAt": {
+            "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+          },
+          "expiresAt": {
+            "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "const": "pass",
+                "type": "string"
+              },
+              {
+                "const": "fail",
+                "type": "string"
+              },
+              {
+                "const": "expired",
+                "type": "string"
+              }
+            ]
+          },
+          "reportDigest": {
+            "$ref": "urn:mail-edge:schema:v1:sha256"
+          }
+        },
+        "required": [
+          "checkKind",
+          "outcome",
+          "evidenceAt",
+          "expiresAt",
+          "reportDigest"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1024,
+      "type": "array"
+    },
+    "drainingAt": {
+      "anyOf": [
+        {
+          "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "optimisticVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "pinnedInbound": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "pinnedOutbound": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "qualifiedAt": {
+      "anyOf": [
+        {
+          "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "retiredAt": {
+      "anyOf": [
+        {
+          "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "state": {
+      "anyOf": [
+        {
+          "const": "draft",
+          "type": "string"
+        },
+        {
+          "const": "testing",
+          "type": "string"
+        },
+        {
+          "const": "active",
+          "type": "string"
+        },
+        {
+          "const": "draining",
+          "type": "string"
+        },
+        {
+          "const": "retired",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "binding",
+    "state",
+    "optimisticVersion",
+    "qualifiedAt",
+    "activatedAt",
+    "drainingAt",
+    "retiredAt",
+    "checks",
+    "pinnedInbound",
+    "pinnedOutbound"
+  ],
+  "type": "object"
+}

@@ -7,13 +7,21 @@
 import { ActiveTenantSource } from '@mail-edge/runtime';
 import { ApplicationAckV1 } from '@mail-edge/core';
 import { ApplicationDeliveryClaim } from '@mail-edge/runtime';
+import { ApplicationDeliveryV1 } from '@mail-edge/contracts';
 import { AttemptId } from '@mail-edge/contracts';
 import { AuditEventV1 } from '@mail-edge/contracts';
 import type { AuditPort } from '@mail-edge/core';
+import { BindingControlViewV1 } from '@mail-edge/contracts';
+import { BindingId } from '@mail-edge/contracts';
+import { BindingLifecycleAction as BindingLifecycleAction_2 } from '@mail-edge/contracts';
+import { CanonicalJsonObject } from '@mail-edge/core';
 import { ClientConfig } from 'pg';
+import { Clock } from '@mail-edge/core';
 import type { ColumnType } from 'kysely';
 import { CreateOutboundIntentInput } from '@mail-edge/runtime';
 import { DeliveryId } from '@mail-edge/contracts';
+import type { DerivedBlobProvenancePort } from '@mail-edge/core';
+import type { DerivedBlobProvenanceV1 } from '@mail-edge/core';
 import { DurableRuntimeStore } from '@mail-edge/runtime';
 import { FeedbackApplicationClaim } from '@mail-edge/runtime';
 import { FeedbackCommitResult } from '@mail-edge/runtime';
@@ -21,8 +29,10 @@ import { FeedbackEventId } from '@mail-edge/contracts';
 import type { Generated } from 'kysely';
 import { IdempotencyRecordV1 } from '@mail-edge/contracts';
 import type { IdempotencyRepository } from '@mail-edge/core';
+import { IdGenerator } from '@mail-edge/core';
 import { InboundDeliveryTarget } from '@mail-edge/runtime';
 import { InboundFinalizationCommit } from '@mail-edge/runtime';
+import { InboundQuarantineViewV1 } from '@mail-edge/contracts';
 import { InboundReceiptCommitInput } from '@mail-edge/provider';
 import type { InboundReceiptRepository } from '@mail-edge/core';
 import { InboundRoutingClaim } from '@mail-edge/runtime';
@@ -39,6 +49,8 @@ import { OutboundDispatchClaim } from '@mail-edge/runtime';
 import { OutboundDispatchSettlement } from '@mail-edge/runtime';
 import type { OutboundIntentRepository } from '@mail-edge/core';
 import { OutboundIntentV1 } from '@mail-edge/contracts';
+import { OutboundQuarantineAction as OutboundQuarantineAction_2 } from '@mail-edge/contracts';
+import { OutboundQuarantineViewV1 } from '@mail-edge/contracts';
 import { Pool } from 'pg';
 import { PoolConfig } from 'pg';
 import { ProviderAdapterRegistration } from '@mail-edge/provider';
@@ -46,6 +58,9 @@ import { ProviderFeedbackV1 } from '@mail-edge/contracts';
 import { ProviderReconciliationEvidenceV1 } from '@mail-edge/provider';
 import { ProviderReplayIdentityV1 } from '@mail-edge/provider';
 import { QueryResultRow } from 'pg';
+import { RawAccessGrantId } from '@mail-edge/contracts';
+import type { RawAccessGrantIssuer } from '@mail-edge/core';
+import { RawAccessGrantV1 } from '@mail-edge/contracts';
 import { RawMessageRefV1 } from '@mail-edge/contracts';
 import { ReceiptId } from '@mail-edge/contracts';
 import { ReconciliationApplication } from '@mail-edge/runtime';
@@ -125,6 +140,12 @@ export const availableBlobIdentity: (tenantId: TenantId, raw: RawMessageRefV1) =
     tenantId: TenantId;
     blobId: string;
 }>;
+
+// @public (undocumented)
+export type BindingControlView = BindingControlViewV1;
+
+// @public (undocumented)
+export type BindingLifecycleAction = BindingLifecycleAction_2;
 
 // @public (undocumented)
 interface BlobDeletionTable {
@@ -325,6 +346,14 @@ export interface BlobStageUpload {
 }
 
 // @public
+export interface ControlActor {
+    // (undocumented)
+    readonly actorIdHash: string;
+    // (undocumented)
+    readonly reasonCode: string;
+}
+
+// @public
 export const createPostgresRepositories: (unitOfWork: PostgresUnitOfWork, cipher: SensitiveValueCipher) => MailEdgeRepositories;
 
 // Warning: (ae-forgotten-export) The symbol "JsonValue" needs to be exported by the entry point index.d.ts
@@ -415,6 +444,9 @@ export interface InboundDeliveryTable {
     // (undocumented)
     readonly updatedAt: Timestamp;
 }
+
+// @public (undocumented)
+export type InboundQuarantineView = InboundQuarantineViewV1;
 
 // @public (undocumented)
 interface InboundReceiptDedupTable {
@@ -565,6 +597,12 @@ export interface MailEdgeDatabase {
     readonly providerFeedbackEvents: ProviderFeedbackEventTable;
     // (undocumented)
     readonly providerInstances: ProviderInstanceTable;
+    // (undocumented)
+    readonly quarantineControlDecisions: QuarantineControlDecisionTable;
+    // (undocumented)
+    readonly rawAccessGrants: RawAccessGrantTable;
+    // (undocumented)
+    readonly rawBlobDerivations: RawBlobDerivationTable;
     // Warning: (ae-forgotten-export) The symbol "RawBlobReferenceSummaryTable" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -759,6 +797,12 @@ export interface OutboundIntentTable {
 }
 
 // @public (undocumented)
+export type OutboundQuarantineAction = OutboundQuarantineAction_2;
+
+// @public (undocumented)
+export type OutboundQuarantineView = OutboundQuarantineViewV1;
+
+// @public (undocumented)
 export interface OutboundSettlement {
     // (undocumented)
     readonly certainty: "accepted" | "not_sent" | "unknown";
@@ -887,6 +931,51 @@ export class PostgresBlobRepository {
 }
 
 // @public
+export class PostgresControlRepository {
+    constructor(input: {
+        readonly clock: Clock;
+        readonly ids: IdGenerator;
+        readonly rollbackWindowMilliseconds?: number;
+        readonly unitOfWork: PostgresUnitOfWork;
+    });
+    // (undocumented)
+    decideInboundQuarantine(input: {
+        readonly tenantId: TenantId;
+        readonly receiptId: ReceiptId;
+        readonly expectedVersion: number;
+        readonly expectedFence: number;
+        readonly action: "release" | "terminal";
+        readonly evidence: CanonicalJsonObject;
+        readonly actor: ControlActor;
+    }, signal: AbortSignal): Promise<Result<InboundQuarantineView, MailEdgeError>>;
+    // (undocumented)
+    decideOutboundQuarantine(input: {
+        readonly tenantId: TenantId;
+        readonly intentId: IntentId;
+        readonly expectedVersion: number;
+        readonly expectedFence: number;
+        readonly action: OutboundQuarantineAction;
+        readonly evidence: CanonicalJsonObject;
+        readonly actor: ControlActor;
+    }, signal: AbortSignal): Promise<Result<OutboundQuarantineView, MailEdgeError>>;
+    // (undocumented)
+    inspectBinding(tenantId: TenantId, bindingId: BindingId, bindingVersion: number, signal: AbortSignal): Promise<Result<BindingControlView, MailEdgeError>>;
+    // (undocumented)
+    inspectInboundQuarantine(tenantId: TenantId, receiptId: ReceiptId, signal: AbortSignal): Promise<Result<InboundQuarantineView, MailEdgeError>>;
+    // (undocumented)
+    inspectOutboundQuarantine(tenantId: TenantId, intentId: IntentId, signal: AbortSignal): Promise<Result<OutboundQuarantineView, MailEdgeError>>;
+    // (undocumented)
+    transitionBinding(input: {
+        readonly tenantId: TenantId;
+        readonly bindingId: BindingId;
+        readonly bindingVersion: number;
+        readonly expectedVersion: number;
+        readonly action: BindingLifecycleAction;
+        readonly actor: ControlActor;
+    }, signal: AbortSignal): Promise<Result<BindingControlView, MailEdgeError>>;
+}
+
+// @public
 export class PostgresDatabase {
     constructor(config: PostgresDatabaseConfig);
     // (undocumented)
@@ -924,14 +1013,19 @@ export interface PostgresDatabaseConfig {
 }
 
 // @public
+export class PostgresDerivedBlobProvenanceRepository implements DerivedBlobProvenancePort {
+    constructor(unitOfWork: PostgresUnitOfWork);
+    // (undocumented)
+    record(provenance: DerivedBlobProvenanceV1, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+}
+
+// @public
 export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveTenantSource {
     constructor(input: {
         readonly unitOfWork: PostgresUnitOfWork;
         readonly cipher: SensitiveValueCipher;
         readonly digester: SensitiveValueDigester;
     });
-    // (undocumented)
-    applyFeedback(claim: FeedbackApplicationClaim, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
     // (undocumented)
     applyReconciliation(claim: ReconciliationClaim, evidence: ProviderReconciliationEvidenceV1, registration: ProviderAdapterRegistration, now: string, maximumEvidenceAgeMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<ReconciliationApplication, MailEdgeError>>;
     // (undocumented)
@@ -964,6 +1058,15 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
     revalidateOutboundDispatch(claim: OutboundDispatchClaim, registration: ProviderAdapterRegistration, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundDispatchAuthorization_2, MailEdgeError>>;
     // (undocumented)
     settleApplicationDelivery(claim: ApplicationDeliveryClaim, settlement: {
+        readonly state: "delivered";
+        readonly acknowledgement: ApplicationAckV1;
+    } | {
+        readonly state: "retry_wait" | "dead_letter";
+        readonly nextActionAt: string | null;
+        readonly errorCode: string;
+    }, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+    // (undocumented)
+    settleFeedbackApplication(claim: FeedbackApplicationClaim, settlement: {
         readonly state: "delivered";
         readonly acknowledgement: ApplicationAckV1;
     } | {
@@ -1045,6 +1148,38 @@ export interface PostgresQueryCanceler {
 }
 
 // @public
+export class PostgresRawAccessGrantRepository implements RawAccessGrantIssuer {
+    constructor(input: {
+        readonly audiences: RawAccessAudienceResolver;
+        readonly clock: Clock;
+        readonly digester: SensitiveValueDigester;
+        readonly ids: IdGenerator;
+        readonly lifetimeMilliseconds?: number;
+        readonly tokens: SecureTokenGenerator;
+        readonly unitOfWork: PostgresUnitOfWork;
+    });
+    // (undocumented)
+    authorize(grantId: RawAccessGrantId, opaqueToken: string, expectation: {
+        readonly audience: string;
+        readonly operation: "raw_download";
+        readonly subjectId: string;
+    }, signal: AbortSignal): Promise<Result<RawAccessAuthorization, MailEdgeError>>;
+    // (undocumented)
+    issueForApplicationDelivery(delivery: ApplicationDeliveryV1, signal: AbortSignal): Promise<Result<RawAccessGrantV1, MailEdgeError>>;
+    // (undocumented)
+    issueForSubject(input: {
+        readonly purpose: RawAccessGrantV1["purpose"];
+        readonly raw: RawMessageRefV1;
+        readonly singleUse: boolean;
+        readonly subjectId: string;
+        readonly tenantId: TenantId;
+        readonly actor: RawAccessActor;
+    }, signal: AbortSignal): Promise<Result<RawAccessGrantV1, MailEdgeError>>;
+    // (undocumented)
+    revoke(tenantId: TenantId, grantId: RawAccessGrantId, expectedFence: number, actor: RawAccessActor, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+}
+
+// @public
 export class PostgresRouteBindingRepository implements RouteBindingRepository {
     constructor(unitOfWork: PostgresUnitOfWork);
     // (undocumented)
@@ -1112,7 +1247,17 @@ export type ProviderFeedbackEvent = Selectable<ProviderFeedbackEventTable>;
 // @public (undocumented)
 export interface ProviderFeedbackEventTable {
     // (undocumented)
+    readonly applicationAcknowledgement: Generated<JsonObject | null>;
+    // (undocumented)
+    readonly applicationFailureCount: Generated<number>;
+    // (undocumented)
     readonly applicationFence: Generated<string>;
+    // (undocumented)
+    readonly applicationLastErrorCode: Generated<string | null>;
+    // (undocumented)
+    readonly applicationNextActionAt: GeneratedNullableTimestamp;
+    // (undocumented)
+    readonly applicationTerminalAt: GeneratedNullableTimestamp;
     // (undocumented)
     readonly attemptId: string | null;
     // (undocumented)
@@ -1174,7 +1319,119 @@ export interface ProviderInstanceTable {
 }
 
 // @public (undocumented)
+export interface QuarantineControlDecisionTable {
+    // (undocumented)
+    readonly action: "release" | "terminal" | "resolve_accepted" | "resolve_not_sent" | "authorize_retry";
+    // (undocumented)
+    readonly actorIdHash: Uint8Array;
+    // (undocumented)
+    readonly attemptId: string | null;
+    // (undocumented)
+    readonly createdAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly decisionId: string;
+    // (undocumented)
+    readonly evidence: JsonObject;
+    // (undocumented)
+    readonly expectedFence: string | null;
+    // (undocumented)
+    readonly expectedVersion: string;
+    // (undocumented)
+    readonly reasonCode: string;
+    // (undocumented)
+    readonly tenantId: string;
+    // (undocumented)
+    readonly workflowId: string;
+    // (undocumented)
+    readonly workflowType: "inbound_receipt" | "outbound_intent";
+}
+
+// @public
+export interface RawAccessActor {
+    // (undocumented)
+    readonly actorIdHash: string;
+    // (undocumented)
+    readonly actorType: "application" | "operator" | "system";
+    // (undocumented)
+    readonly reasonCode: string;
+}
+
+// @public
+export interface RawAccessAudienceResolver {
+    // (undocumented)
+    resolve(tenantId: TenantId): Result<string, MailEdgeError>;
+}
+
+// @public
+export interface RawAccessAuthorization {
+    // (undocumented)
+    readonly fence: number;
+    // (undocumented)
+    readonly grantId: RawAccessGrantId;
+    // (undocumented)
+    readonly raw: RawMessageRefV1;
+    // (undocumented)
+    readonly tenantId: TenantId;
+}
+
+// @public (undocumented)
+export interface RawAccessGrantTable {
+    // (undocumented)
+    readonly audience: string;
+    // (undocumented)
+    readonly blobId: string;
+    // (undocumented)
+    readonly consumedAt: Timestamp | null;
+    // (undocumented)
+    readonly createdAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly expiresAt: Timestamp;
+    // (undocumented)
+    readonly fence: Generated<string>;
+    // (undocumented)
+    readonly grantId: string;
+    // (undocumented)
+    readonly issuedAt: Timestamp;
+    // (undocumented)
+    readonly lastAuthorizedAt: Timestamp | null;
+    // (undocumented)
+    readonly operation: ColumnType<string, "raw_download", "raw_download">;
+    // (undocumented)
+    readonly purpose: "application_delivery" | "operator_review" | "reconciliation";
+    // (undocumented)
+    readonly revokedAt: Timestamp | null;
+    // (undocumented)
+    readonly singleUse: boolean;
+    // (undocumented)
+    readonly state: "active" | "consumed" | "revoked" | "expired";
+    // (undocumented)
+    readonly subjectId: string;
+    // (undocumented)
+    readonly tenantId: string;
+    // (undocumented)
+    readonly tokenHash: Uint8Array;
+    // (undocumented)
+    readonly updatedAt: GeneratedTimestamp;
+}
+
+// @public (undocumented)
 export type RawBlob = Selectable<RawBlobTable>;
+
+// @public (undocumented)
+export interface RawBlobDerivationTable {
+    // (undocumented)
+    readonly createdAt: Timestamp;
+    // (undocumented)
+    readonly derivedBlobId: string;
+    // (undocumented)
+    readonly patchPlan: JsonObject;
+    // (undocumented)
+    readonly patchPlanDigest: Uint8Array;
+    // (undocumented)
+    readonly sourceBlobId: string;
+    // (undocumented)
+    readonly tenantId: string;
+}
 
 // @public (undocumented)
 export interface RawBlobIntegrityClaim {
@@ -1423,6 +1680,12 @@ export interface RouteBindingTable {
 }
 
 // @public
+export interface SecureTokenGenerator {
+    // (undocumented)
+    nextToken(): string;
+}
+
+// @public
 export interface SensitiveValueCipher {
     // (undocumented)
     protect(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id" | "application_destination" | "feedback_event", plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
@@ -1433,7 +1696,7 @@ export interface SensitiveValueCipher {
 // @public
 export interface SensitiveValueDigester {
     // (undocumented)
-    digest(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id" | "application_destination" | "feedback_event", plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
+    digest(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id" | "application_destination" | "feedback_event" | "raw_access_token", plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
 }
 
 // @public (undocumented)

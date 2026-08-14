@@ -1,0 +1,49 @@
+{
+  "$id": "urn:mail-edge:schema:v1:inbound-quarantine-view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "fence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "lastErrorCode": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "receiptId": {
+      "$ref": "urn:mail-edge:schema:v1:receipt-id"
+    },
+    "state": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    },
+    "version": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "tenantId",
+    "receiptId",
+    "state",
+    "version",
+    "fence",
+    "lastErrorCode"
+  ],
+  "type": "object"
+}

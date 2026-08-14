@@ -126,8 +126,14 @@ const runtimeIsComplete = (value: unknown): value is ReferenceServiceRuntimeBind
   "adapters" in value &&
   Array.isArray(value.adapters) &&
   value.adapters.length > 0 &&
+  "control" in value &&
+  typeof value.control === "object" &&
+  value.control !== null &&
   "registry" in value &&
   value.registry instanceof ProviderAdapterRegistry &&
+  "rawAccess" in value &&
+  typeof value.rawAccess === "object" &&
+  value.rawAccess !== null &&
   "sdk" in value &&
   value.sdk instanceof MailEdgeSdk &&
   "workflow" in value &&
@@ -264,15 +270,18 @@ export class ReferenceServiceHost {
     const shutdown = new AbortController();
     const http = new ReferenceHttpServer({
       authenticator,
+      blobStore: infrastructure.value.infrastructure.blobStore,
       catalog,
       clock,
       config,
+      control: runtime.control,
       gate,
       readiness: async (readinessSignal) =>
         hostState === "ready" && lifecycleReference.current !== undefined
           ? lifecycleReference.current.readiness(readinessSignal)
           : { error: hostError("HOST_UNAVAILABLE", "host_not_ready"), ok: false },
       registry,
+      rawAccess: runtime.rawAccess,
       sdk: runtime.sdk,
       shutdownSignal: shutdown.signal,
       tracer,

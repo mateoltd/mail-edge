@@ -21,6 +21,101 @@ import { TUnion } from '@sinclair/typebox';
 import { TUnsafe } from '@sinclair/typebox';
 
 // @public (undocumented)
+export type ApplicationAckV1 = DeepReadonly<Static<typeof ApplicationAckV1Schema>>;
+
+// @public
+export const ApplicationAckV1Schema: TObject<    {
+deliveryId: TUnsafe<DeliveryId>;
+acceptedAt: TUnsafe<string>;
+}>;
+
+// @public (undocumented)
+export type ApplicationDeliveryCallbackV1 = DeepReadonly<Static<typeof ApplicationDeliveryCallbackV1Schema>>;
+
+// @public
+export const ApplicationDeliveryCallbackV1Schema: TObject<    {
+schemaVersion: TLiteral<"v1">;
+delivery: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+occurredAt: string;
+envelope: {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+};
+binding: {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
+schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
+direction: "inbound" | "outbound";
+providerId: ProviderId;
+adapterVersion: string;
+providerInstanceId: ProviderInstanceId;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+};
+receiptId: ReceiptId;
+raw: {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+};
+deliveryId: DeliveryId;
+destination: {
+destinationId: string;
+deliveryMode: "push" | "pull";
+opaqueToken: string;
+};
+attempt: number;
+}>;
+rawAccessGrant: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+expiresAt: string;
+raw: {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+};
+opaqueToken: string;
+grantId: RawAccessGrantId;
+audience: string;
+operation: "raw_download";
+subjectId: string;
+purpose: "reconciliation" | "application_delivery" | "operator_review";
+singleUse: boolean;
+downloadPath: string;
+issuedAt: string;
+}>;
+}>;
+
+// @public (undocumented)
 export type ApplicationDeliveryState = (typeof applicationDeliveryStates)[number];
 
 // @public (undocumented)
@@ -60,6 +155,11 @@ sha256: string;
 size: number;
 mediaType: "message/rfc822";
 }>;
+destination: TUnsafe<    {
+destinationId: string;
+deliveryMode: "push" | "pull";
+opaqueToken: string;
+}>;
 binding: TUnsafe<    {
 adapterMode?: string;
 dispatchTransport?: "http" | "smtp";
@@ -81,6 +181,16 @@ createdAt: string;
 }>;
 attempt: TInteger;
 occurredAt: TUnsafe<string>;
+}>;
+
+// @public (undocumented)
+export type ApplicationDestinationV1 = DeepReadonly<Static<typeof ApplicationDestinationV1Schema>>;
+
+// @public
+export const ApplicationDestinationV1Schema: TObject<    {
+destinationId: TString;
+deliveryMode: TUnion<[TLiteral<"push">, TLiteral<"pull">]>;
+opaqueToken: TString;
 }>;
 
 // @public (undocumented)
@@ -135,11 +245,77 @@ export type AuditId = Opaque<string, "AuditId">;
 // @public (undocumented)
 export const AuditIdSchema: TUnsafe<AuditId>;
 
+// @public
+export interface BindingControlIdentityV1 {
+    // (undocumented)
+    readonly bindingId: Static<typeof BindingIdSchema>;
+    // (undocumented)
+    readonly bindingVersion: number;
+    // (undocumented)
+    readonly tenantId: Static<typeof TenantIdSchema>;
+}
+
+// @public (undocumented)
+export type BindingControlViewV1 = DeepReadonly<Static<typeof BindingControlViewV1Schema>>;
+
+// @public
+export const BindingControlViewV1Schema: TObject<    {
+binding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
+schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
+direction: "inbound" | "outbound";
+providerId: ProviderId;
+adapterVersion: string;
+providerInstanceId: ProviderInstanceId;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+state: TUnion<[TLiteral<"draft">, TLiteral<"testing">, TLiteral<"active">, TLiteral<"draining">, TLiteral<"retired">, TLiteral<"failed">]>;
+optimisticVersion: TInteger;
+qualifiedAt: TUnion<[TUnsafe<string>, TNull]>;
+activatedAt: TUnion<[TUnsafe<string>, TNull]>;
+drainingAt: TUnion<[TUnsafe<string>, TNull]>;
+retiredAt: TUnion<[TUnsafe<string>, TNull]>;
+checks: TArray<TObject<    {
+checkKind: TUnion<[TLiteral<"capability">, TLiteral<"dns">, TLiteral<"control_plane">, TLiteral<"live_conformance">, TLiteral<"drift">]>;
+outcome: TUnion<[TLiteral<"pass">, TLiteral<"fail">, TLiteral<"expired">]>;
+evidenceAt: TUnsafe<string>;
+expiresAt: TUnsafe<string>;
+reportDigest: TUnsafe<string>;
+}>>;
+pinnedInbound: TInteger;
+pinnedOutbound: TInteger;
+}>;
+
 // @public (undocumented)
 export type BindingId = Opaque<string, "BindingId">;
 
 // @public (undocumented)
 export const BindingIdSchema: TUnsafe<BindingId>;
+
+// @public (undocumented)
+export type BindingLifecycleAction = (typeof bindingLifecycleActions)[number];
+
+// @public
+export const bindingLifecycleActions: readonly ["activate", "drain", "retire"];
+
+// @public (undocumented)
+export type BindingLifecycleDecisionV1 = DeepReadonly<Static<typeof BindingLifecycleDecisionV1Schema>>;
+
+// @public (undocumented)
+export const BindingLifecycleDecisionV1Schema: TObject<    {
+expectedVersion: TInteger;
+reasonCode: TString;
+}>;
 
 // @public (undocumented)
 export type BindingState = (typeof bindingStates)[number];
@@ -368,6 +544,60 @@ descriptorDigest: TUnsafe<string>;
 reportDigest: TUnsafe<string>;
 passedChecks: TArray<TString>;
 failedChecks: TArray<TString>;
+}> | TObject<    {
+expectedVersion: TInteger;
+reasonCode: TString;
+}> | TObject<    {
+binding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
+schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
+direction: "inbound" | "outbound";
+providerId: ProviderId;
+adapterVersion: string;
+providerInstanceId: ProviderInstanceId;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+}>;
+state: TUnion<[TLiteral<"draft">, TLiteral<"testing">, TLiteral<"active">, TLiteral<"draining">, TLiteral<"retired">, TLiteral<"failed">]>;
+optimisticVersion: TInteger;
+qualifiedAt: TUnion<[TUnsafe<string>, TNull]>;
+activatedAt: TUnion<[TUnsafe<string>, TNull]>;
+drainingAt: TUnion<[TUnsafe<string>, TNull]>;
+retiredAt: TUnion<[TUnsafe<string>, TNull]>;
+checks: TArray<TObject<    {
+checkKind: TUnion<[TLiteral<"capability">, TLiteral<"dns">, TLiteral<"control_plane">, TLiteral<"live_conformance">, TLiteral<"drift">]>;
+outcome: TUnion<[TLiteral<"pass">, TLiteral<"fail">, TLiteral<"expired">]>;
+evidenceAt: TUnsafe<string>;
+expiresAt: TUnsafe<string>;
+reportDigest: TUnsafe<string>;
+}>>;
+pinnedInbound: TInteger;
+pinnedOutbound: TInteger;
+}> | TObject<    {
+tenantId: TUnsafe<TenantId>;
+intentId: TUnsafe<IntentId>;
+intentState: TString;
+intentVersion: TInteger;
+attemptId: TUnion<[TString, TNull]>;
+attemptState: TUnion<[TString, TNull]>;
+attemptFence: TUnion<[TInteger, TNull]>;
+certainty: TUnion<[TString, TNull]>;
+}> | TObject<    {
+tenantId: TUnsafe<TenantId>;
+receiptId: TUnsafe<ReceiptId>;
+state: TString;
+version: TInteger;
+fence: TInteger;
+lastErrorCode: TUnion<[TString, TNull]>;
 }> | TUnion<[TObject<    {
 op: TLiteral<"insertBeforeBody">;
 rawField: TString;
@@ -404,111 +634,9 @@ sha256: TUnsafe<string>;
 size: TInteger;
 mediaType: TLiteral<"message/rfc822">;
 }> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-receiptId: TUnsafe<ReceiptId>;
-tenantId: TUnsafe<TenantId>;
-providerId: TUnsafe<ProviderId>;
-providerInstanceId: TUnsafe<ProviderInstanceId>;
-providerReceiptKey: TString;
-binding: TUnsafe<    {
-adapterMode?: string;
-dispatchTransport?: "http" | "smtp";
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-envelope: TUnsafe<    {
-dsn?: {
-ret?: "full" | "headers";
-envelopeId?: string;
-};
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
-schemaVersion: "v1";
-mailFrom: string | null;
-rcptTo: {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}[];
-smtpUtf8: boolean;
-}>;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-verificationEvidenceDigest: TUnsafe<string>;
-receivedAt: TUnsafe<string>;
-state: TUnion<TLiteral<"delivered" | "received" | "acquiring" | "stored" | "routing" | "delivering" | "retry_wait" | "quarantined" | "dead_letter" | "purged">[]>;
-version: TInteger;
-}> | TObject<    {
-schemaVersion: TLiteral<"v1">;
-deliveryId: TUnsafe<DeliveryId>;
-receiptId: TUnsafe<ReceiptId>;
-tenantId: TUnsafe<TenantId>;
-envelope: TUnsafe<    {
-dsn?: {
-ret?: "full" | "headers";
-envelopeId?: string;
-};
-body?: "7bit" | "8bitmime" | "binarymime";
-requireTls?: boolean;
-schemaVersion: "v1";
-mailFrom: string | null;
-rcptTo: {
-dsn?: {
-notify?: ["never"] | ("success" | "failure" | "delay")[];
-originalRecipient?: string;
-};
-address: string;
-}[];
-smtpUtf8: boolean;
-}>;
-raw: TUnsafe<    {
-schemaVersion: "v1";
-blobId: BlobId;
-sha256: string;
-size: number;
-mediaType: "message/rfc822";
-}>;
-binding: TUnsafe<    {
-adapterMode?: string;
-dispatchTransport?: "http" | "smtp";
-schemaVersion: "v1";
-bindingId: BindingId;
-bindingVersion: number;
-tenantId: TenantId;
-domainALabel: string;
-direction: "inbound" | "outbound";
-providerId: ProviderId;
-adapterVersion: string;
-providerInstanceId: ProviderInstanceId;
-providerResourceIds: {
-[x: string]: string;
-};
-capabilityDigest: string;
-configRevision: string;
-createdAt: string;
-}>;
-attempt: TInteger;
-occurredAt: TUnsafe<string>;
+destinationId: TString;
+deliveryMode: TUnion<[TLiteral<"push">, TLiteral<"pull">]>;
+opaqueToken: TString;
 }> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 intentId: TUnsafe<IntentId>;
@@ -773,10 +901,94 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 audience: TString;
+operation: TLiteral<"raw_download">;
+subjectId: TString;
 purpose: TUnion<[TLiteral<"application_delivery">, TLiteral<"operator_review">, TLiteral<"reconciliation">]>;
 singleUse: TBoolean;
+opaqueToken: TString;
+downloadPath: TString;
 issuedAt: TUnsafe<string>;
 expiresAt: TUnsafe<string>;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+delivery: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+occurredAt: string;
+envelope: {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+};
+binding: {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
+schemaVersion: "v1";
+bindingId: BindingId;
+bindingVersion: number;
+tenantId: TenantId;
+domainALabel: string;
+direction: "inbound" | "outbound";
+providerId: ProviderId;
+adapterVersion: string;
+providerInstanceId: ProviderInstanceId;
+providerResourceIds: {
+[x: string]: string;
+};
+capabilityDigest: string;
+configRevision: string;
+createdAt: string;
+};
+receiptId: ReceiptId;
+raw: {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+};
+deliveryId: DeliveryId;
+destination: {
+destinationId: string;
+deliveryMode: "push" | "pull";
+opaqueToken: string;
+};
+attempt: number;
+}>;
+rawAccessGrant: TUnsafe<    {
+schemaVersion: "v1";
+tenantId: TenantId;
+expiresAt: string;
+raw: {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+};
+opaqueToken: string;
+grantId: RawAccessGrantId;
+audience: string;
+operation: "raw_download";
+subjectId: string;
+purpose: "reconciliation" | "application_delivery" | "operator_review";
+singleUse: boolean;
+downloadPath: string;
+issuedAt: string;
+}>;
 }> | TObject<    {
 schemaVersion: TLiteral<"v1">;
 tenantId: TUnsafe<TenantId>;
@@ -816,6 +1028,96 @@ metadata: TUnsafe<    {
 [x: string]: string | number | boolean;
 }>;
 occurredAt: TUnsafe<string>;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+tenantId: TUnsafe<TenantId>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+receiptId: TUnsafe<ReceiptId>;
+}> | TObject<    {
+destinations: TArray<TUnsafe<    {
+destinationId: string;
+deliveryMode: "push" | "pull";
+opaqueToken: string;
+}>>;
+}> | TObject<    {
+tenantId: TUnsafe<TenantId>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+opaqueReplyToken: TString;
+}> | TObject<    {
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+visibleHeaderFields: TArray<TString>;
+policyCode: TString;
+}> | TObject<    {
+deliveryId: TUnsafe<DeliveryId>;
+acceptedAt: TUnsafe<string>;
+}> | TObject<    {
+schemaVersion: TLiteral<"v1">;
+algorithm: TLiteral<"hmac-sha256">;
+keyId: TString;
+audience: TString;
+subjectId: TString;
+nonce: TString;
+bodySha256: TUnsafe<string>;
+operation: TUnion<TLiteral<"application_delivery" | "application_feedback" | "recipient_route" | "reverse_route">[]>;
+timestamp: TUnsafe<string>;
 }>)[];
 
 // @public
@@ -946,6 +1248,83 @@ export type HeaderPatchReason = (typeof headerPatchReasons)[number];
 export const headerPatchReasons: readonly ["reverse_alias", "provider_compatibility", "host_policy"];
 
 // @public (undocumented)
+export type HostSignatureClaimsV1 = DeepReadonly<Static<typeof HostSignatureClaimsV1Schema>>;
+
+// @public
+export const HostSignatureClaimsV1Schema: TObject<    {
+schemaVersion: TLiteral<"v1">;
+algorithm: TLiteral<"hmac-sha256">;
+keyId: TString;
+audience: TString;
+subjectId: TString;
+nonce: TString;
+bodySha256: TUnsafe<string>;
+operation: TUnion<TLiteral<"application_delivery" | "application_feedback" | "recipient_route" | "reverse_route">[]>;
+timestamp: TUnsafe<string>;
+}>;
+
+// @public
+export interface HostSignatureHttpHeadersV1 {
+    // (undocumented)
+    readonly "x-mail-edge-body-sha256": string;
+    // (undocumented)
+    readonly "x-mail-edge-key-id": string;
+    // (undocumented)
+    readonly "x-mail-edge-nonce": string;
+    // (undocumented)
+    readonly "x-mail-edge-operation": HostSignedOperation;
+    // (undocumented)
+    readonly "x-mail-edge-signature": string;
+    // (undocumented)
+    readonly "x-mail-edge-signature-algorithm": "hmac-sha256";
+    // (undocumented)
+    readonly "x-mail-edge-signature-audience": string;
+    // (undocumented)
+    readonly "x-mail-edge-signature-version": "v1";
+    // (undocumented)
+    readonly "x-mail-edge-subject-id": string;
+    // (undocumented)
+    readonly "x-mail-edge-timestamp": string;
+}
+
+// @public
+export const hostSignatureHttpHeadersV1: Readonly<{
+    readonly algorithm: "x-mail-edge-signature-algorithm";
+    readonly audience: "x-mail-edge-signature-audience";
+    readonly bodySha256: "x-mail-edge-body-sha256";
+    readonly keyId: "x-mail-edge-key-id";
+    readonly nonce: "x-mail-edge-nonce";
+    readonly operation: "x-mail-edge-operation";
+    readonly schemaVersion: "x-mail-edge-signature-version";
+    readonly signature: "x-mail-edge-signature";
+    readonly subjectId: "x-mail-edge-subject-id";
+    readonly timestamp: "x-mail-edge-timestamp";
+}>;
+
+// @public (undocumented)
+export type HostSignatureV1 = DeepReadonly<Static<typeof HostSignatureV1Schema>>;
+
+// @public
+export const HostSignatureV1Schema: TObject<    {
+signature: TString;
+schemaVersion: TLiteral<"v1">;
+algorithm: TLiteral<"hmac-sha256">;
+keyId: TString;
+audience: TString;
+subjectId: TString;
+nonce: TString;
+bodySha256: TUnsafe<string>;
+operation: TUnion<TLiteral<"application_delivery" | "application_feedback" | "recipient_route" | "reverse_route">[]>;
+timestamp: TUnsafe<string>;
+}>;
+
+// @public (undocumented)
+export type HostSignedOperation = (typeof hostSignedOperations)[number];
+
+// @public
+export const hostSignedOperations: readonly ["application_delivery", "application_feedback", "recipient_route", "reverse_route"];
+
+// @public (undocumented)
 export type IdempotencyKey = Opaque<string, "IdempotencyKey">;
 
 // @public (undocumented)
@@ -969,6 +1348,37 @@ export type InboundAcquisitionMode = (typeof inboundAcquisitionModes)[number];
 
 // @public (undocumented)
 export const inboundAcquisitionModes: readonly ["inline_stream", "signed_reference_stream", "worker_frame_stream"];
+
+// @public (undocumented)
+export type InboundQuarantineAction = (typeof inboundQuarantineActions)[number];
+
+// @public (undocumented)
+export const inboundQuarantineActions: readonly ["release", "terminal"];
+
+// @public (undocumented)
+export type InboundQuarantineDecisionV1 = DeepReadonly<Static<typeof InboundQuarantineDecisionV1Schema>>;
+
+// @public (undocumented)
+export const InboundQuarantineDecisionV1Schema: TObject<    {
+action: TUnion<[TLiteral<"release">, TLiteral<"terminal">]>;
+evidence: TRecord<TString, TUnion<[TString, TNumber, TBoolean]>>;
+expectedFence: TInteger;
+expectedVersion: TInteger;
+reasonCode: TString;
+}>;
+
+// @public (undocumented)
+export type InboundQuarantineViewV1 = DeepReadonly<Static<typeof InboundQuarantineViewV1Schema>>;
+
+// @public (undocumented)
+export const InboundQuarantineViewV1Schema: TObject<    {
+tenantId: TUnsafe<TenantId>;
+receiptId: TUnsafe<ReceiptId>;
+state: TString;
+version: TInteger;
+fence: TInteger;
+lastErrorCode: TUnion<[TString, TNull]>;
+}>;
 
 // @public (undocumented)
 export type InboundReceiptState = (typeof inboundReceiptStates)[number];
@@ -1001,6 +1411,9 @@ export class MailEdgeError extends Error {
 
 // @public (undocumented)
 export type MailEdgeErrorCode = (typeof mailEdgeErrorCodes)[number];
+
+// @public
+export const mailEdgeErrorCodeFromProblemCode: (code: MailEdgeProblemCode) => MailEdgeErrorCode;
 
 // @public (undocumented)
 export const mailEdgeErrorCodes: readonly ["VALIDATION_FAILED", "AUTHENTICATION_FAILED", "AUTHORIZATION_FAILED", "NOT_FOUND", "CONFLICT", "IDEMPOTENCY_CONFLICT", "BINDING_UNAVAILABLE", "CAPABILITY_UNSUPPORTED", "RATE_LIMITED", "INGRESS_LIMIT_EXCEEDED", "INGRESS_FAILED", "STORAGE_UNAVAILABLE", "WORKFLOW_CONFLICT", "STALE_FENCE", "ILLEGAL_TRANSITION", "PROVIDER_NOT_SENT", "PROVIDER_UNKNOWN", "PROVIDER_REJECTED", "HOST_UNAVAILABLE", "INTERNAL"];
@@ -1260,6 +1673,39 @@ fingerprint: TUnsafe<string>;
 state: TUnion<TLiteral<"accepted" | "retry_wait" | "ready" | "dispatching" | "provider_accepted" | "failed_not_sent" | "quarantined_unknown" | "canceled">[]>;
 createdAt: TUnsafe<string>;
 version: TInteger;
+}>;
+
+// @public (undocumented)
+export type OutboundQuarantineAction = (typeof outboundQuarantineActions)[number];
+
+// @public (undocumented)
+export const outboundQuarantineActions: readonly ["resolve_accepted", "resolve_not_sent", "authorize_retry"];
+
+// @public (undocumented)
+export type OutboundQuarantineDecisionV1 = DeepReadonly<Static<typeof OutboundQuarantineDecisionV1Schema>>;
+
+// @public (undocumented)
+export const OutboundQuarantineDecisionV1Schema: TObject<    {
+action: TUnion<[TLiteral<"resolve_accepted">, TLiteral<"resolve_not_sent">, TLiteral<"authorize_retry">]>;
+evidence: TRecord<TString, TUnion<[TString, TNumber, TBoolean]>>;
+expectedFence: TInteger;
+expectedVersion: TInteger;
+reasonCode: TString;
+}>;
+
+// @public (undocumented)
+export type OutboundQuarantineViewV1 = DeepReadonly<Static<typeof OutboundQuarantineViewV1Schema>>;
+
+// @public (undocumented)
+export const OutboundQuarantineViewV1Schema: TObject<    {
+tenantId: TUnsafe<TenantId>;
+intentId: TUnsafe<IntentId>;
+intentState: TString;
+intentVersion: TInteger;
+attemptId: TUnion<[TString, TNull]>;
+attemptState: TUnion<[TString, TNull]>;
+attemptFence: TUnion<[TInteger, TNull]>;
+certainty: TUnion<[TString, TNull]>;
 }>;
 
 // @public (undocumented)
@@ -1594,8 +2040,12 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 audience: TString;
+operation: TLiteral<"raw_download">;
+subjectId: TString;
 purpose: TUnion<[TLiteral<"application_delivery">, TLiteral<"operator_review">, TLiteral<"reconciliation">]>;
 singleUse: TBoolean;
+opaqueToken: TString;
+downloadPath: TString;
 issuedAt: TUnsafe<string>;
 expiresAt: TUnsafe<string>;
 }>;
@@ -1676,6 +2126,46 @@ version: TInteger;
 }>;
 
 // @public (undocumented)
+export type RecipientRouteRequestV1 = DeepReadonly<Static<typeof RecipientRouteRequestV1Schema>>;
+
+// @public
+export const RecipientRouteRequestV1Schema: TObject<    {
+schemaVersion: TLiteral<"v1">;
+tenantId: TUnsafe<TenantId>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+receiptId: TUnsafe<ReceiptId>;
+}>;
+
+// @public (undocumented)
+export type RecipientRouteResponseV1 = DeepReadonly<Static<typeof RecipientRouteResponseV1Schema>>;
+
+// @public
+export const RecipientRouteResponseV1Schema: TObject<    {
+destinations: TArray<TUnsafe<    {
+destinationId: string;
+deliveryMode: "push" | "pull";
+opaqueToken: string;
+}>>;
+}>;
+
+// @public (undocumented)
 export type RecipientTransportState = (typeof recipientTransportStates)[number];
 
 // @public (undocumented)
@@ -1689,6 +2179,67 @@ export type Result<T, E> = {
     readonly ok: false;
     readonly error: E;
 };
+
+// @public (undocumented)
+export type ReverseRouteRequestV1 = DeepReadonly<Static<typeof ReverseRouteRequestV1Schema>>;
+
+// @public
+export const ReverseRouteRequestV1Schema: TObject<    {
+tenantId: TUnsafe<TenantId>;
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+raw: TUnsafe<    {
+schemaVersion: "v1";
+blobId: BlobId;
+sha256: string;
+size: number;
+mediaType: "message/rfc822";
+}>;
+opaqueReplyToken: TString;
+}>;
+
+// @public (undocumented)
+export type ReverseRouteResolutionV1 = DeepReadonly<Static<typeof ReverseRouteResolutionV1Schema>>;
+
+// @public
+export const ReverseRouteResolutionV1Schema: TObject<    {
+envelope: TUnsafe<    {
+dsn?: {
+ret?: "full" | "headers";
+envelopeId?: string;
+};
+body?: "7bit" | "8bitmime" | "binarymime";
+requireTls?: boolean;
+schemaVersion: "v1";
+mailFrom: string | null;
+rcptTo: {
+dsn?: {
+notify?: ["never"] | ("success" | "failure" | "delay")[];
+originalRecipient?: string;
+};
+address: string;
+}[];
+smtpUtf8: boolean;
+}>;
+visibleHeaderFields: TArray<TString>;
+policyCode: TString;
+}>;
 
 // @public (undocumented)
 export const RFC3339_PATTERN = "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$";

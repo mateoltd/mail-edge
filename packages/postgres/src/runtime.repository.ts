@@ -773,6 +773,11 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           attempt: row.attemptCount + 1,
           binding: mapBindingSnapshot(binding),
           deliveryId,
+          destination: Object.freeze({
+            deliveryMode: row.deliveryMode,
+            destinationId: row.destinationId,
+            opaqueToken: Buffer.from(token).toString("utf8"),
+          }),
           envelope: receipt.envelope as ApplicationDeliveryV1["envelope"],
           occurredAt: now,
           raw: {
@@ -790,11 +795,6 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           ok: true,
           value: Object.freeze({
             delivery,
-            destination: Object.freeze({
-              deliveryMode: row.deliveryMode,
-              destinationId: row.destinationId,
-              opaqueToken: Buffer.from(token).toString("utf8"),
-            }),
             fence,
             leaseExpiresAt,
           }),
@@ -954,6 +954,22 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         .forUpdate()
         .executeTakeFirst();
       if (raw === undefined) return { error: notFoundError("available_raw_blob"), ok: false };
+      const transmissionRaw =
+        input.transmissionRaw.blobId === input.raw.blobId
+          ? raw
+          : await transaction
+              .selectFrom("rawBlobs")
+              .selectAll()
+              .where("tenantId", "=", input.tenantId)
+              .where("blobId", "=", input.transmissionRaw.blobId)
+              .where("status", "=", "available")
+              .where("sha256", "=", hexToBytes(input.transmissionRaw.sha256))
+              .where("sizeBytes", "=", String(input.transmissionRaw.size))
+              .forUpdate()
+              .executeTakeFirst();
+      if (transmissionRaw === undefined) {
+        return { error: notFoundError("available_transmission_blob"), ok: false };
+      }
       const binding = await transaction
         .selectFrom("routeBindings")
         .innerJoin("providerInstances", (join) =>
@@ -1005,7 +1021,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         primaryBinding: plan.value.binding,
         publicOptions: {},
         raw: input.raw,
-        transmissionRaw: input.raw,
+        transmissionRaw: input.transmissionRaw,
       });
       if (existing !== undefined) {
         if (!equalBytes(existing.requestFingerprint, hexToBytes(fingerprint))) {
@@ -1019,7 +1035,16 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
             ok: false,
           };
         }
-        return { ok: true, value: mapOutboundIntent(existing, raw, raw) };
+        const existingTransmission = await transaction
+          .selectFrom("rawBlobs")
+          .selectAll()
+          .where("tenantId", "=", input.tenantId)
+          .where("blobId", "=", existing.transmissionBlobId)
+          .executeTakeFirst();
+        if (existingTransmission === undefined) {
+          return { error: notFoundError("existing_transmission_blob"), ok: false };
+        }
+        return { ok: true, value: mapOutboundIntent(existing, raw, existingTransmission) };
       }
       const intent: OutboundIntentV1 = Object.freeze({
         createdAt: now,
@@ -1032,7 +1057,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         schemaVersion: "v1",
         state: "accepted",
         tenantId: input.tenantId,
-        transmissionRaw: input.raw,
+        transmissionRaw: input.transmissionRaw,
         version: 0,
       });
       await transaction
@@ -1052,10 +1077,13 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
             fallbackBindings: [],
             planDigest: plan.value.planDigest,
             primaryBinding: plan.value.binding,
+            ...(input.reverseRoutePlanDigest === undefined
+              ? {}
+              : { reverseRoutePlanDigest: input.reverseRoutePlanDigest }),
           },
           state: "accepted",
           tenantId: input.tenantId,
-          transmissionBlobId: input.raw.blobId,
+          transmissionBlobId: input.transmissionRaw.blobId,
           updatedAt: now,
         })
         .executeTakeFirstOrThrow();
@@ -1767,8 +1795,11 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         .executeTakeFirst();
       if (
         row?.projectedAt !== null ||
+        row.applicationTerminalAt !== null ||
         row.intentId === null ||
         row.eventCiphertext === null ||
+        (row.applicationNextActionAt !== null &&
+          new Date(row.applicationNextActionAt).getTime() > new Date(now).getTime()) ||
         (row.claimedUntil !== null &&
           new Date(row.claimedUntil).getTime() > new Date(now).getTime())
       ) {
@@ -1801,6 +1832,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         ok: true,
         value: Object.freeze({
           event: immutableClone(event),
+          failureCount: row.applicationFailureCount,
           fence,
           intentId: row.intentId as IntentId,
           leaseExpiresAt,
@@ -1812,8 +1844,18 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
     }
   }
 
-  async applyFeedback(
+  async settleFeedbackApplication(
     claim: FeedbackApplicationClaim,
+    settlement:
+      | {
+          readonly state: "delivered";
+          readonly acknowledgement: import("@mail-edge/core").ApplicationAckV1;
+        }
+      | {
+          readonly state: "retry_wait" | "dead_letter";
+          readonly nextActionAt: string | null;
+          readonly errorCode: string;
+        },
     now: string,
     context: UnitOfWorkContext,
     signal: AbortSignal,
@@ -1831,12 +1873,34 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
       if (
         row?.intentId !== claim.intentId ||
         row.projectedAt !== null ||
-        row.recipientKeyHash === null ||
+        row.applicationTerminalAt !== null ||
         safeInteger(row.applicationFence) !== claim.fence ||
         row.claimedUntil === null ||
         new Date(row.claimedUntil).getTime() < new Date(now).getTime()
       ) {
         return { error: staleFenceError(claim.fence), ok: false };
+      }
+      if (settlement.state !== "delivered") {
+        const updated = await transaction
+          .updateTable("providerFeedbackEvents")
+          .set({
+            applicationFailureCount: claim.failureCount + 1,
+            applicationLastErrorCode: settlement.errorCode,
+            applicationNextActionAt: settlement.nextActionAt,
+            applicationTerminalAt: settlement.state === "dead_letter" ? now : null,
+            claimedUntil: null,
+          })
+          .where("tenantId", "=", claim.tenantId)
+          .where("feedbackEventId", "=", claim.event.feedbackEventId)
+          .where("receivedAt", "=", row.receivedAt)
+          .where("applicationFence", "=", String(claim.fence))
+          .executeTakeFirst();
+        return updated.numUpdatedRows === 1n
+          ? { ok: true, value: undefined }
+          : { error: staleFenceError(claim.fence), ok: false };
+      }
+      if (row.recipientKeyHash === null) {
+        return { error: conflict("feedback_recipient_authority"), ok: false };
       }
       const eventRows = await transaction
         .selectFrom("providerFeedbackEvents")
@@ -1912,7 +1976,16 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         .executeTakeFirstOrThrow();
       const updated = await transaction
         .updateTable("providerFeedbackEvents")
-        .set({ claimedUntil: null, projectedAt: now })
+        .set({
+          applicationAcknowledgement: Object.freeze({
+            acceptedAt: settlement.acknowledgement.acceptedAt,
+            deliveryId: settlement.acknowledgement.deliveryId,
+          }),
+          applicationLastErrorCode: null,
+          applicationNextActionAt: null,
+          claimedUntil: null,
+          projectedAt: now,
+        })
         .where("tenantId", "=", claim.tenantId)
         .where("feedbackEventId", "=", claim.event.feedbackEventId)
         .where("receivedAt", "=", row.receivedAt)

@@ -74,7 +74,8 @@ export interface SensitiveValueDigester {
       | "provider_receipt_key"
       | "provider_message_id"
       | "application_destination"
-      | "feedback_event",
+      | "feedback_event"
+      | "raw_access_token",
     plaintext: Uint8Array,
     signal: AbortSignal,
   ): Promise<Uint8Array>;

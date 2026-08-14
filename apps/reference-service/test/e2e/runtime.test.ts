@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { CreateBucketCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
 import {
+  HostSignatureV1Schema,
   MailEdgeError,
   parseBindingId,
   parseProviderId,
@@ -13,8 +14,14 @@ import {
   parseTenantId,
   type Result,
   type RouteBindingV1,
+  validateContract,
 } from "@mail-edge/contracts";
-import { activateExactBinding, reduceBinding, sha256CanonicalJson } from "@mail-edge/core";
+import {
+  activateExactBinding,
+  reduceBinding,
+  sha256CanonicalJson,
+  verifyHostSignature,
+} from "@mail-edge/core";
 import {
   CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE,
   CLOUDFLARE_WORKER_INGRESS_AUDIENCE,
@@ -709,32 +716,64 @@ const startKms = async (): Promise<{ readonly port: number; readonly server: Ser
 
 const startApplication = async (): Promise<{
   readonly calls: string[];
+  readonly errors: string[];
   readonly port: number;
   readonly server: Server;
+  readonly setEdgeBase: (value: string) => void;
 }> => {
   const calls: string[] = [];
-  const signingKey = Buffer.from("reference-e2e-host-signing-key");
+  const errors: string[] = [];
+  let edgeBase: string | undefined;
+  const signingKey = Buffer.from("reference-e2e-host-signing-key-32");
+  const replayNonces = new Set<string>();
   const server = createServer((request, response_) => {
     void (async () => {
       try {
         const body = await readBody(request);
-        const operationId = request.headers["x-mail-edge-id"];
+        const algorithm = request.headers["x-mail-edge-signature-algorithm"];
+        const audience = request.headers["x-mail-edge-signature-audience"];
+        const bodySha256 = request.headers["x-mail-edge-body-sha256"];
+        const keyId = request.headers["x-mail-edge-key-id"];
         const timestamp = request.headers["x-mail-edge-timestamp"];
         const nonce = request.headers["x-mail-edge-nonce"];
+        const operation = request.headers["x-mail-edge-operation"];
         const signature = request.headers["x-mail-edge-signature"];
+        const schemaVersion = request.headers["x-mail-edge-signature-version"];
+        const subjectId = request.headers["x-mail-edge-subject-id"];
         const digest = createHash("sha256").update(body).digest("hex");
-        if (
-          typeof operationId !== "string" ||
-          typeof timestamp !== "string" ||
-          typeof nonce !== "string" ||
-          typeof signature !== "string" ||
-          request.headers["x-mail-edge-body-sha256"] !== digest ||
-          createHmac("sha256", signingKey)
-            .update(`${timestamp}\n${nonce}\n${operationId}\n${digest}`)
-            .digest("hex") !== signature
-        ) {
+        const signed = validateContract(HostSignatureV1Schema, {
+          algorithm,
+          audience,
+          bodySha256,
+          keyId,
+          nonce,
+          operation,
+          schemaVersion,
+          signature,
+          subjectId,
+          timestamp,
+        });
+        if (!signed.ok || bodySha256 !== digest || typeof subjectId !== "string") {
           throw new TypeError("Host integration signature mismatch.");
         }
+        const verified = verifyHostSignature(
+          signed.value,
+          {
+            audience: "simplelogin-host",
+            bodySha256: digest,
+            maxAgeSeconds: 300,
+            maxFutureSkewSeconds: 30,
+            now: new Date().toISOString(),
+            operation: signed.value.operation,
+            subjectId,
+          },
+          signingKey,
+        );
+        const replayIdentity = `${signed.value.keyId}:${signed.value.nonce}`;
+        if (!verified.ok || replayNonces.has(replayIdentity)) {
+          throw new TypeError("Host integration signature replayed.");
+        }
+        replayNonces.add(replayIdentity);
         const input = record(JSON.parse(body.toString("utf8")));
         let output: unknown;
         switch (request.url) {
@@ -746,13 +785,63 @@ const startApplication = async (): Promise<{
             };
             break;
           case "/delivery":
-            output = { acceptedAt: new Date().toISOString(), deliveryId: input?.["deliveryId"] };
+            {
+              const delivery = record(input?.["delivery"]);
+              const destination = record(delivery?.["destination"]);
+              const grant = record(input?.["rawAccessGrant"]);
+              if (
+                edgeBase === undefined ||
+                destination?.["destinationId"] !== "application-primary" ||
+                destination["opaqueToken"] !== "e2e" ||
+                typeof grant?.["downloadPath"] !== "string" ||
+                typeof grant["opaqueToken"] !== "string" ||
+                typeof grant["audience"] !== "string" ||
+                typeof grant["subjectId"] !== "string"
+              ) {
+                throw new TypeError("Application destination or raw grant mismatch.");
+              }
+              const downloaded = await fetch(new URL(grant["downloadPath"], edgeBase), {
+                headers: {
+                  "accept-encoding": "identity",
+                  authorization: `MailEdgeRaw ${grant["opaqueToken"]}`,
+                  "x-mail-edge-operation": "raw_download",
+                  "x-mail-edge-signature-audience": grant["audience"],
+                  "x-mail-edge-subject-id": grant["subjectId"],
+                },
+              });
+              if (downloaded.status !== 200) {
+                throw new TypeError("Authenticated raw download failed.");
+              }
+              const rawMessage = Buffer.from(await downloaded.arrayBuffer());
+              const rawReference = record(delivery?.["raw"]);
+              const observedDigest = createHash("sha256").update(rawMessage).digest("hex");
+              if (
+                rawMessage.byteLength !== rawReference?.["size"] ||
+                observedDigest !== rawReference["sha256"]
+              ) {
+                throw new TypeError(
+                  `Authenticated raw stream integrity mismatch: observed ${String(rawMessage.byteLength)} bytes/${observedDigest}, expected ${String(rawReference?.["size"])} bytes/${String(rawReference?.["sha256"])}.`,
+                );
+              }
+            }
+            output = {
+              acceptedAt: new Date().toISOString(),
+              deliveryId: record(input?.["delivery"])?.["deliveryId"],
+            };
             break;
           case "/reverse-route":
+            if (input?.["opaqueReplyToken"] === "denied-reply-token") {
+              response_.writeHead(403).end();
+              return;
+            }
+            if (input?.["opaqueReplyToken"] === "ambiguous-reply-token") {
+              response_.writeHead(409).end();
+              return;
+            }
             output = {
               envelope: input?.["envelope"],
               policyCode: "e2e",
-              visibleHeaderFields: [],
+              visibleHeaderFields: [`From: reply@${domain}`],
             };
             break;
           case "/feedback":
@@ -773,15 +862,26 @@ const startApplication = async (): Promise<{
         response_.writeHead(200, {
           "content-length": String(encoded.byteLength),
           "content-type": "application/json",
-          "x-mail-edge-id": operationId,
+          "x-mail-edge-subject-id": subjectId,
         });
         response_.end(encoded);
-      } catch {
+      } catch (cause) {
+        errors.push(
+          cause instanceof Error ? cause.message : "unknown application simulation error",
+        );
         response_.writeHead(400).end();
       }
     })();
   });
-  return Object.freeze({ calls, port: await listen(server), server });
+  return Object.freeze({
+    calls,
+    errors,
+    port: await listen(server),
+    server,
+    setEdgeBase: (value: string) => {
+      edgeBase = value;
+    },
+  });
 };
 
 const makeConfig = (
@@ -793,6 +893,7 @@ const makeConfig = (
   parseReferenceServiceConfig({
     authentication: {
       operatorTokenSecrets: ["secret://operator-token"],
+      privilegedOperatorTokenSecrets: ["secret://privileged-operator-token"],
       tenants: [
         { tenantId, tokenSecrets: ["secret://tenant-one-token"] },
         { tenantId: otherTenantId, tokenSecrets: ["secret://tenant-two-token"] },
@@ -879,12 +980,14 @@ const makeConfig = (
         },
       ],
       hostIntegration: [tenantId, otherTenantId].map((configuredTenantId) => ({
+        audience: "simplelogin-host",
         deliveryUrl: `http://127.0.0.1:${String(applicationPort)}/delivery`,
         feedbackUrl: `http://127.0.0.1:${String(applicationPort)}/feedback`,
         maximumResponseBytes: 64 * 1024,
         recipientRouterUrl: `http://127.0.0.1:${String(applicationPort)}/recipients`,
         reverseRouteUrl: `http://127.0.0.1:${String(applicationPort)}/reverse-route`,
         signingSecret: "secret://host-signing-key",
+        signingKeyId: "host-key-2026-08",
         tenantId: configuredTenantId,
         timeoutMilliseconds: 5_000,
       })),
@@ -1199,7 +1302,7 @@ describe("shipped reference-service production composition", { concurrent: false
     secretDirectory = await mkdtemp(join(tmpdir(), "mail-edge-production-e2e-"));
     await Promise.all(
       Object.entries({
-        "host-signing-key": "reference-e2e-host-signing-key",
+        "host-signing-key": "reference-e2e-host-signing-key-32",
         "kms-access-key": "reference-e2e-kms-access-key",
         "kms-secret-key": "reference-e2e-kms-secret-key",
         "mailgun-api-key": "reference-e2e-mailgun-api-key",
@@ -1208,6 +1311,7 @@ describe("shipped reference-service production composition", { concurrent: false
         "cloudflare-api-token": "reference-e2e-cloudflare-api-token",
         "cloudflare-worker-key": cloudflareWorkerSecret,
         "operator-token": "reference-e2e-operator-token-material",
+        "privileged-operator-token": "reference-e2e-privileged-operator-material",
         "postgres-migration": postgres.getConnectionUri(),
         "postgres-runtime": postgres.getConnectionUri(),
         "s3-access-key": minio.getUsername(),
@@ -1292,6 +1396,8 @@ describe("shipped reference-service production composition", { concurrent: false
         `${started.error.code}:${started.error.message}:${JSON.stringify(started.error.safeDetails)}:${String(started.error.cause)}`,
       );
     }
+    if (host.address === undefined) throw new TypeError("Reference host address is unavailable.");
+    application.setEdgeBase(host.address);
 
     const createdAt = "2026-08-14T00:00:00.000Z";
     await owner.query(
@@ -1524,12 +1630,37 @@ describe("shipped reference-service production composition", { concurrent: false
         );
       }
     }
-    await waitFor(async () => {
-      const result = await owner.query<{ count: number }>(
-        "SELECT count(*)::int AS count FROM inbound_deliveries WHERE state = 'delivered'",
+    try {
+      await waitFor(async () => {
+        const result = await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM inbound_deliveries WHERE state = 'delivered'",
+        );
+        return (result.rows[0]?.count ?? 0) >= 1;
+      }, "idempotent inbound application delivery");
+    } catch (cause) {
+      const deliveries = await owner.query<{
+        readonly acknowledgement: unknown;
+        readonly attempt_count: number;
+        readonly fence: string;
+        readonly last_error_code: string | null;
+        readonly state: string;
+      }>(
+        `SELECT acknowledgement, attempt_count, fence, last_error_code, state
+           FROM inbound_deliveries
+          ORDER BY delivery_id`,
       );
-      return result.rows[0]?.count === 1;
-    }, "idempotent inbound application delivery");
+      throw new TypeError(
+        `Inbound delivery did not settle: ${JSON.stringify(deliveries.rows)}; application errors: ${JSON.stringify(application.errors)}.`,
+        { cause },
+      );
+    }
+    expect(
+      (
+        await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM inbound_deliveries WHERE state = 'delivered'",
+        )
+      ).rows[0]?.count,
+    ).toBe(1);
     expect(application.calls).toContain("/recipients");
     expect(application.calls).toContain("/delivery");
     expect(
@@ -1945,6 +2076,78 @@ describe("shipped reference-service production composition", { concurrent: false
       ).rows[0]?.count,
     ).toBeGreaterThanOrEqual(2);
 
+    const replyIntent = await fetch(new URL(`/v1/tenants/${tenantId}/outbound-intents`, base), {
+      body: JSON.stringify({ ...intentBody, opaqueReplyToken: "authorized-reply-token" }),
+      headers: {
+        ...bearer(tenantToken),
+        "content-type": "application/json",
+        "idempotency-key": "e2e-authorized-reply",
+      },
+      method: "POST",
+    });
+    if (replyIntent.status !== 202) {
+      throw new TypeError(
+        `Authorized reverse-route intent failed with ${String(replyIntent.status)}: ${await replyIntent.text()}`,
+      );
+    }
+    expect(replyIntent.status).toBe(202);
+    const replyIntentBody = record(await replyIntent.json());
+    await waitFor(async () => {
+      const result = await owner.query<{ state: string }>(
+        "SELECT state FROM outbound_intents WHERE tenant_id = $1 AND intent_id = $2",
+        [tenantId, replyIntentBody?.["intentId"]],
+      );
+      return result.rows[0]?.state === "provider_accepted";
+    }, "authorized reverse route dispatch");
+    const reverseEvidence = await owner.query<{
+      derived: boolean;
+      provenance_count: number;
+      reverse_digest: string | null;
+    }>(
+      `SELECT i.transmission_blob_id <> i.raw_blob_id AS derived,
+         i.route_plan ->> 'reverseRoutePlanDigest' AS reverse_digest,
+         count(d.derived_blob_id)::int AS provenance_count
+       FROM outbound_intents i
+       LEFT JOIN raw_blob_derivations d
+         ON d.tenant_id = i.tenant_id AND d.derived_blob_id = i.transmission_blob_id
+       WHERE i.tenant_id = $1 AND i.intent_id = $2
+       GROUP BY i.transmission_blob_id, i.raw_blob_id, i.route_plan`,
+      [tenantId, replyIntentBody?.["intentId"]],
+    );
+    expect(reverseEvidence.rows[0]).toMatchObject({ derived: true, provenance_count: 1 });
+    expect(reverseEvidence.rows[0]?.reverse_digest).toMatch(/^[0-9a-f]{64}$/u);
+    expect(application.calls).toContain("/reverse-route");
+    expect(smtp.sessions).toHaveLength(2);
+
+    const intentCountBeforeRejectedRoutes = await owner.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM outbound_intents WHERE tenant_id = $1",
+      [tenantId],
+    );
+    for (const [opaqueReplyToken, idempotencyKey] of [
+      ["denied-reply-token", "e2e-denied-reply"],
+      ["ambiguous-reply-token", "e2e-ambiguous-reply"],
+    ] as const) {
+      const rejectedRoute = await fetch(new URL(`/v1/tenants/${tenantId}/outbound-intents`, base), {
+        body: JSON.stringify({ ...intentBody, opaqueReplyToken }),
+        headers: {
+          ...bearer(tenantToken),
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        method: "POST",
+      });
+      expect(rejectedRoute.status).toBe(400);
+    }
+    expect(
+      (
+        await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM outbound_intents WHERE tenant_id = $1",
+          [tenantId],
+        )
+      ).rows[0]?.count,
+    ).toBe(intentCountBeforeRejectedRoutes.rows[0]?.count);
+    expect(smtp.sessions).toHaveLength(2);
+
     mailgunHttp.setAcceptedEvidence(false);
     const attempt = await owner.query<{ attemptId: string }>(
       'SELECT attempt_id AS "attemptId" FROM outbound_attempts WHERE intent_id = $1',
@@ -2001,7 +2204,7 @@ describe("shipped reference-service production composition", { concurrent: false
       );
       return result.rows[0]?.state === "quarantined_unknown";
     }, "stale outbound lease quarantine");
-    expect(smtp.sessions).toHaveLength(1);
+    expect(smtp.sessions).toHaveLength(2);
     await waitFor(async () => {
       const result = await owner.query<{ count: number }>(
         `SELECT count(*)::int AS count FROM reconciliation_decisions

@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   AesGcmSensitiveValueCipher,
   PostgresBlobRepository,
+  PostgresControlRepository,
   PostgresDatabase,
   PostgresLeaseRepository,
   PostgresMigrationRunner,
@@ -509,6 +510,47 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     expect(rawRlsCounts).toEqual({
       ok: true,
       value: { intentCount: "0", receiptCount: "0" },
+    });
+  });
+
+  test("serializes concurrent quarantine release decisions under version and fence checks", async () => {
+    await owner.query(
+      `UPDATE inbound_receipts
+       SET state = 'quarantined', last_error_code = 'ROUTE_REVIEW_REQUIRED'
+       WHERE tenant_id = $1 AND receipt_id = $2 AND state = 'stored'`,
+      [tenantId, crossTenantReceiptId],
+    );
+    const controls = new PostgresControlRepository({
+      clock: { now: () => "2026-08-14T00:00:00.000Z" },
+      ids: { next: () => "018f4f6a-7b2c-7000-8000-000000000117" },
+      unitOfWork,
+    });
+    const decision = Object.freeze({
+      action: "release" as const,
+      actor: Object.freeze({ actorIdHash: "af".repeat(32), reasonCode: "review_complete" }),
+      evidence: Object.freeze({ reviewed: true }),
+      expectedFence: 0,
+      expectedVersion: 0,
+      receiptId: crossTenantReceiptId,
+      tenantId,
+    });
+    const results = await Promise.all([
+      controls.decideInboundQuarantine(decision, new AbortController().signal),
+      controls.decideInboundQuarantine(decision, new AbortController().signal),
+    ]);
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok)).toMatchObject([
+      { error: { code: "CONFLICT" }, ok: false },
+    ]);
+    await expect(
+      controls.inspectInboundQuarantine(
+        tenantId,
+        crossTenantReceiptId,
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: { fence: 0, lastErrorCode: null, state: "stored", version: 1 },
     });
   });
 
@@ -1292,8 +1334,9 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
        VALUES ($1, $2, $3, decode(repeat('92', 32), 'hex'), 1, 'message/rfc822',
          'raw/damaged', 'object-version-2', 1, decode('11', 'hex'), 'kms://key',
          jsonb_build_object('formatVersion', 1, 'purpose', 'outbound_upload',
-           'headerSha256', repeat('ab', 32)), 'available', now(), now() + interval '30 days')`,
-      [damagedBlobId, tenantId, stageId],
+           'headerSha256', repeat('ab', 32)), 'available', $4::timestamptz,
+         $4::timestamptz + interval '30 days')`,
+      [damagedBlobId, tenantId, stageId, occurredAt],
     );
     await owner.query(
       `INSERT INTO outbound_intents
@@ -1473,7 +1516,7 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
          binding_id, binding_version, state, fence, optimistic_version, next_action_at,
          claimed_until, failure_count, received_at, created_at, updated_at)
        VALUES ($1, $2, $3, decode('11', 'hex'), $4, 1, 'acquiring', 1, 1, NULL,
-         clock_timestamp() - interval '1 minute', 0, $5, $5, $5)`,
+         $5::timestamptz + interval '1 minute', 0, $5, $5, $5)`,
       [expiredAcquisitionReceiptId, tenantId, providerInstanceId, inboundBindingId, occurredAt],
     );
     const scanned = await new PostgresWakeupRepairRepository(unitOfWork).scanDueWakeups(
@@ -1508,5 +1551,55 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       "inbound_receipt",
       "outbound_intent",
     ]);
+  });
+
+  test("drains binding selection immediately and blocks retirement while work is pinned", async () => {
+    const controls = new PostgresControlRepository({
+      clock: { now: () => "2026-08-14T19:00:00.000Z" },
+      ids: { next: () => "018f4f6a-7b2c-7000-8000-000000000160" },
+      rollbackWindowMilliseconds: 0,
+      unitOfWork,
+    });
+    const routes = new PostgresRouteBindingRepository(unitOfWork);
+    const resolve = () =>
+      unitOfWork.executeForTenant(
+        tenantId,
+        (context, signal) =>
+          routes.findExactActive(tenantId, "example.test", "inbound", context, signal),
+        new AbortController().signal,
+      );
+    await expect(resolve()).resolves.toMatchObject({
+      ok: true,
+      value: { bindingId: inboundBindingId },
+    });
+    const drained = await controls.transitionBinding(
+      {
+        action: "drain",
+        actor: { actorIdHash: "b0".repeat(32), reasonCode: "provider_switch" },
+        bindingId: inboundBindingId,
+        bindingVersion: 1,
+        expectedVersion: 0,
+        tenantId,
+      },
+      new AbortController().signal,
+    );
+    expect(drained).toMatchObject({
+      ok: true,
+      value: { optimisticVersion: 1, state: "draining" },
+    });
+    await expect(resolve()).resolves.toEqual({ ok: true, value: null });
+    await expect(
+      controls.transitionBinding(
+        {
+          action: "retire",
+          actor: { actorIdHash: "b0".repeat(32), reasonCode: "provider_switch" },
+          bindingId: inboundBindingId,
+          bindingVersion: 1,
+          expectedVersion: 1,
+          tenantId,
+        },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ error: { code: "CONFLICT" }, ok: false });
   });
 });

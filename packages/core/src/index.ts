@@ -1,4 +1,9 @@
 export type {
+  ApplicationDestinationV1,
+  HostSignatureClaimsV1,
+  HostSignatureHttpHeadersV1,
+  HostSignatureV1,
+  HostSignedOperation,
   RawMessageIntegrityErrorOptions,
   RawMessageIntegrityReason,
 } from "@mail-edge/contracts";
@@ -54,13 +59,12 @@ export {
   providerScopedIdentityDigest,
   resolveIdempotency,
 } from "./fingerprint.js";
-export type {
-  HostSignatureClaimsV1,
-  HostSignatureExpectation,
-  HostSignatureV1,
-  HostSignedOperation,
+export type { HostSignatureExpectation } from "./host-signature.js";
+export {
+  createHostSignature,
+  hostSignatureToHttpHeaders,
+  verifyHostSignature,
 } from "./host-signature.js";
-export { createHostSignature, verifyHostSignature } from "./host-signature.js";
 export { MAX_COLLECTED_BODY_BYTES, StrictBoundedBodyCollector } from "./bounded-body.service.js";
 export { OwnedOneShotBody } from "./one-shot-body.service.js";
 export { validateProviderHttpRequestMetadata } from "./ingress.js";
@@ -68,7 +72,6 @@ export type {
   AuditPort,
   ApplicationAckV1,
   ApplicationDeliverySink,
-  ApplicationDestinationV1,
   BlobStagePort,
   BlobStageReservation,
   BlobStageWriter,
@@ -87,6 +90,7 @@ export type {
   OutboundIntentPort,
   OutboundIntentRepository,
   ProviderRegistryPort,
+  RawAccessGrantIssuer,
   RecipientRouter,
   RegisteredProviderAbstraction,
   ReverseRouteRequestV1,

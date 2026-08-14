@@ -6,6 +6,7 @@ import type {
 } from "@mail-edge/blob-s3";
 import type {
   MailEdgeError,
+  RawAccessGrantId,
   ProviderFeedbackV1,
   ProviderInstanceId,
   Result,
@@ -21,9 +22,12 @@ import type {
 } from "@mail-edge/core";
 import type {
   PostgresBlobRepository,
+  PostgresControlRepository,
   PostgresDatabase,
+  PostgresRawAccessGrantRepository,
   PostgresUnitOfWork,
   SensitiveValueCipher,
+  RawAccessAuthorization,
 } from "@mail-edge/postgres";
 import type {
   AppliedBindingResourcesV1,
@@ -53,8 +57,20 @@ export interface ProviderInstanceBinding {
 export interface AuthenticatedActor {
   readonly actorIdHash: string;
   readonly role: "operator" | "tenant";
+  readonly scopes: readonly AuthScope[];
   readonly tenantId?: TenantId;
 }
+
+export type AuthScope =
+  | "mail.submit"
+  | "mail.status.read"
+  | "raw.read"
+  | "bindings.read"
+  | "bindings.manage"
+  | "providers.read"
+  | "quarantine.read"
+  | "quarantine.decide"
+  | "quarantine.retry";
 
 export interface FeedbackHandoffInput {
   readonly instance: ProviderInstanceBinding;
@@ -128,9 +144,35 @@ export interface ReferenceServiceInfrastructure {
 
 export interface ReferenceServiceRuntimeBindings {
   readonly adapters: readonly ProviderAdapterRegistration[];
+  readonly control: ControlServicePort;
   readonly registry: ProviderAdapterRegistry;
+  readonly rawAccess: RawAccessServicePort;
   readonly sdk: MailEdgeSdk;
   readonly workflow: ReferenceServiceWorkflowPort;
+}
+
+export interface ControlServicePort {
+  inspectBinding: PostgresControlRepository["inspectBinding"];
+  transitionBinding: PostgresControlRepository["transitionBinding"];
+  inspectOutboundQuarantine: PostgresControlRepository["inspectOutboundQuarantine"];
+  decideOutboundQuarantine: PostgresControlRepository["decideOutboundQuarantine"];
+  inspectInboundQuarantine: PostgresControlRepository["inspectInboundQuarantine"];
+  decideInboundQuarantine: PostgresControlRepository["decideInboundQuarantine"];
+}
+
+export interface RawAccessServicePort {
+  issueForSubject: PostgresRawAccessGrantRepository["issueForSubject"];
+  authorize(
+    grantId: RawAccessGrantId,
+    opaqueToken: string,
+    expectation: {
+      readonly audience: string;
+      readonly operation: "raw_download";
+      readonly subjectId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Result<RawAccessAuthorization, MailEdgeError>>;
+  revoke: PostgresRawAccessGrantRepository["revoke"];
 }
 
 export interface ReferenceServiceComposition {

@@ -24,6 +24,10 @@
     {
       "name": "0006_resend_acquisition_repair.sql",
       "sha256": "4dc125d03ceca42a0d15f0ed0f04622a2eb3acecddc0237fe6f109f1d1f297c7"
+    },
+    {
+      "name": "0007_host_bridge_contracts.sql",
+      "sha256": "1446b30c5ddc01e6cf555861bb43d87b9cc83f2b2d2e2a782606821f09420fc4"
     }
   ]
 }

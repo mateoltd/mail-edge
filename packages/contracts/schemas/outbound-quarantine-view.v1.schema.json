@@ -1,0 +1,82 @@
+{
+  "$id": "urn:mail-edge:schema:v1:outbound-quarantine-view",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attemptFence": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attemptId": {
+      "anyOf": [
+        {
+          "maxLength": 36,
+          "minLength": 36,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attemptState": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "certainty": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "intentId": {
+      "$ref": "urn:mail-edge:schema:v1:intent-id"
+    },
+    "intentState": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "intentVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "tenantId",
+    "intentId",
+    "intentState",
+    "intentVersion",
+    "attemptId",
+    "attemptState",
+    "attemptFence",
+    "certainty"
+  ],
+  "type": "object"
+}

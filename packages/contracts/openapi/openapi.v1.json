@@ -1,6 +1,35 @@
 {
   "components": {
+    "responses": {
+      "HostProblem": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/MailEdgeProblemV1"
+            }
+          }
+        },
+        "description": "Bounded RFC 9457 failure with no secrets, raw content, or addresses."
+      }
+    },
     "schemas": {
+      "ApplicationAck": {
+        "$id": "urn:mail-edge:schema:v1:application-ack",
+        "additionalProperties": false,
+        "properties": {
+          "acceptedAt": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "deliveryId": {
+            "$ref": "#/components/schemas/DeliveryId"
+          }
+        },
+        "required": [
+          "deliveryId",
+          "acceptedAt"
+        ],
+        "type": "object"
+      },
       "ApplicationDelivery": {
         "$id": "urn:mail-edge:schema:v1:application-delivery",
         "additionalProperties": false,
@@ -15,6 +44,9 @@
           },
           "deliveryId": {
             "$ref": "#/components/schemas/DeliveryId"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/ApplicationDestination"
           },
           "envelope": {
             "$ref": "#/components/schemas/SmtpEnvelope"
@@ -43,9 +75,66 @@
           "tenantId",
           "envelope",
           "raw",
+          "destination",
           "binding",
           "attempt",
           "occurredAt"
+        ],
+        "type": "object"
+      },
+      "ApplicationDeliveryCallback": {
+        "$id": "urn:mail-edge:schema:v1:application-delivery-callback",
+        "additionalProperties": false,
+        "properties": {
+          "delivery": {
+            "$ref": "#/components/schemas/ApplicationDelivery"
+          },
+          "rawAccessGrant": {
+            "$ref": "#/components/schemas/RawAccessGrant"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "delivery",
+          "rawAccessGrant"
+        ],
+        "type": "object"
+      },
+      "ApplicationDestination": {
+        "$id": "urn:mail-edge:schema:v1:application-destination",
+        "additionalProperties": false,
+        "properties": {
+          "deliveryMode": {
+            "anyOf": [
+              {
+                "const": "push",
+                "type": "string"
+              },
+              {
+                "const": "pull",
+                "type": "string"
+              }
+            ]
+          },
+          "destinationId": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "opaqueToken": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationId",
+          "deliveryMode",
+          "opaqueToken"
         ],
         "type": "object"
       },
@@ -228,12 +317,205 @@
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
         "type": "string"
       },
+      "BindingControlView": {
+        "$id": "urn:mail-edge:schema:v1:binding-control-view",
+        "additionalProperties": false,
+        "properties": {
+          "activatedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "binding": {
+            "$ref": "#/components/schemas/RouteBindingSnapshot"
+          },
+          "checks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "checkKind": {
+                  "anyOf": [
+                    {
+                      "const": "capability",
+                      "type": "string"
+                    },
+                    {
+                      "const": "dns",
+                      "type": "string"
+                    },
+                    {
+                      "const": "control_plane",
+                      "type": "string"
+                    },
+                    {
+                      "const": "live_conformance",
+                      "type": "string"
+                    },
+                    {
+                      "const": "drift",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "evidenceAt": {
+                  "$ref": "#/components/schemas/Rfc3339Timestamp"
+                },
+                "expiresAt": {
+                  "$ref": "#/components/schemas/Rfc3339Timestamp"
+                },
+                "outcome": {
+                  "anyOf": [
+                    {
+                      "const": "pass",
+                      "type": "string"
+                    },
+                    {
+                      "const": "fail",
+                      "type": "string"
+                    },
+                    {
+                      "const": "expired",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "reportDigest": {
+                  "$ref": "#/components/schemas/Sha256"
+                }
+              },
+              "required": [
+                "checkKind",
+                "outcome",
+                "evidenceAt",
+                "expiresAt",
+                "reportDigest"
+              ],
+              "type": "object"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          },
+          "drainingAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "optimisticVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pinnedInbound": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pinnedOutbound": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "qualifiedAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retiredAt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Rfc3339Timestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "anyOf": [
+              {
+                "const": "draft",
+                "type": "string"
+              },
+              {
+                "const": "testing",
+                "type": "string"
+              },
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "const": "draining",
+                "type": "string"
+              },
+              {
+                "const": "retired",
+                "type": "string"
+              },
+              {
+                "const": "failed",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "binding",
+          "state",
+          "optimisticVersion",
+          "qualifiedAt",
+          "activatedAt",
+          "drainingAt",
+          "retiredAt",
+          "checks",
+          "pinnedInbound",
+          "pinnedOutbound"
+        ],
+        "type": "object"
+      },
       "BindingId": {
         "$id": "urn:mail-edge:schema:v1:binding-id",
         "maxLength": 36,
         "minLength": 36,
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
         "type": "string"
+      },
+      "BindingLifecycleDecision": {
+        "$id": "urn:mail-edge:schema:v1:binding-lifecycle-decision",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reasonCode"
+        ],
+        "type": "object"
       },
       "BlobId": {
         "$id": "urn:mail-edge:schema:v1:blob-id",
@@ -585,6 +867,165 @@
         ],
         "type": "object"
       },
+      "HostSignature": {
+        "$id": "urn:mail-edge:schema:v1:host-signature",
+        "additionalProperties": false,
+        "properties": {
+          "algorithm": {
+            "const": "hmac-sha256",
+            "type": "string"
+          },
+          "audience": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "bodySha256": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "keyId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "nonce": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_-]{16,128}$",
+            "type": "string"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "const": "application_delivery",
+                "type": "string"
+              },
+              {
+                "const": "application_feedback",
+                "type": "string"
+              },
+              {
+                "const": "recipient_route",
+                "type": "string"
+              },
+              {
+                "const": "reverse_route",
+                "type": "string"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "subjectId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "algorithm",
+          "keyId",
+          "audience",
+          "subjectId",
+          "nonce",
+          "bodySha256",
+          "operation",
+          "timestamp",
+          "signature"
+        ],
+        "type": "object"
+      },
+      "HostSignatureClaims": {
+        "$id": "urn:mail-edge:schema:v1:host-signature-claims",
+        "additionalProperties": false,
+        "properties": {
+          "algorithm": {
+            "const": "hmac-sha256",
+            "type": "string"
+          },
+          "audience": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "bodySha256": {
+            "$ref": "#/components/schemas/Sha256"
+          },
+          "keyId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "nonce": {
+            "maxLength": 128,
+            "minLength": 16,
+            "pattern": "^[A-Za-z0-9_-]{16,128}$",
+            "type": "string"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "const": "application_delivery",
+                "type": "string"
+              },
+              {
+                "const": "application_feedback",
+                "type": "string"
+              },
+              {
+                "const": "recipient_route",
+                "type": "string"
+              },
+              {
+                "const": "reverse_route",
+                "type": "string"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "subjectId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/Rfc3339Timestamp"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "algorithm",
+          "keyId",
+          "audience",
+          "subjectId",
+          "nonce",
+          "bodySha256",
+          "operation",
+          "timestamp"
+        ],
+        "type": "object"
+      },
       "IdempotencyKey": {
         "$id": "urn:mail-edge:schema:v1:idempotency-key",
         "maxLength": 200,
@@ -623,6 +1064,118 @@
           "requestFingerprint",
           "intentId",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "InboundQuarantineDecision": {
+        "$id": "urn:mail-edge:schema:v1:inbound-quarantine-decision",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "const": "release",
+                "type": "string"
+              },
+              {
+                "const": "terminal",
+                "type": "string"
+              }
+            ]
+          },
+          "evidence": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[A-Za-z][A-Za-z0-9_-]*$": {
+                "anyOf": [
+                  {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "expectedFence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expectedVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "evidence",
+          "expectedFence",
+          "expectedVersion",
+          "reasonCode"
+        ],
+        "type": "object"
+      },
+      "InboundQuarantineView": {
+        "$id": "urn:mail-edge:schema:v1:inbound-quarantine-view",
+        "additionalProperties": false,
+        "properties": {
+          "fence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastErrorCode": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "receiptId": {
+            "$ref": "#/components/schemas/ReceiptId"
+          },
+          "state": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "version": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenantId",
+          "receiptId",
+          "state",
+          "version",
+          "fence",
+          "lastErrorCode"
         ],
         "type": "object"
       },
@@ -997,6 +1550,155 @@
           "state",
           "createdAt",
           "version"
+        ],
+        "type": "object"
+      },
+      "OutboundQuarantineDecision": {
+        "$id": "urn:mail-edge:schema:v1:outbound-quarantine-decision",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "const": "resolve_accepted",
+                "type": "string"
+              },
+              {
+                "const": "resolve_not_sent",
+                "type": "string"
+              },
+              {
+                "const": "authorize_retry",
+                "type": "string"
+              }
+            ]
+          },
+          "evidence": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[A-Za-z][A-Za-z0-9_-]*$": {
+                "anyOf": [
+                  {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "expectedFence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expectedVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "evidence",
+          "expectedFence",
+          "expectedVersion",
+          "reasonCode"
+        ],
+        "type": "object"
+      },
+      "OutboundQuarantineView": {
+        "$id": "urn:mail-edge:schema:v1:outbound-quarantine-view",
+        "additionalProperties": false,
+        "properties": {
+          "attemptFence": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptId": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attemptState": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "certainty": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intentId": {
+            "$ref": "#/components/schemas/IntentId"
+          },
+          "intentState": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "intentVersion": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "tenantId",
+          "intentId",
+          "intentState",
+          "intentVersion",
+          "attemptId",
+          "attemptState",
+          "attemptFence",
+          "certainty"
         ],
         "type": "object"
       },
@@ -1769,6 +2471,12 @@
             "minLength": 1,
             "type": "string"
           },
+          "downloadPath": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^/v1/raw-access-grants/[0-9a-f-]{36}/raw$",
+            "type": "string"
+          },
           "expiresAt": {
             "$ref": "#/components/schemas/Rfc3339Timestamp"
           },
@@ -1777,6 +2485,16 @@
           },
           "issuedAt": {
             "$ref": "#/components/schemas/Rfc3339Timestamp"
+          },
+          "opaqueToken": {
+            "maxLength": 128,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43,128}$",
+            "type": "string"
+          },
+          "operation": {
+            "const": "raw_download",
+            "type": "string"
           },
           "purpose": {
             "anyOf": [
@@ -1804,6 +2522,12 @@
           "singleUse": {
             "type": "boolean"
           },
+          "subjectId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "type": "string"
+          },
           "tenantId": {
             "$ref": "#/components/schemas/TenantId"
           }
@@ -1814,8 +2538,12 @@
           "tenantId",
           "raw",
           "audience",
+          "operation",
+          "subjectId",
           "purpose",
           "singleUse",
+          "opaqueToken",
+          "downloadPath",
           "issuedAt",
           "expiresAt"
         ],
@@ -1964,6 +2692,108 @@
           "unsubscribed",
           "contradictions",
           "version"
+        ],
+        "type": "object"
+      },
+      "RecipientRouteRequest": {
+        "$id": "urn:mail-edge:schema:v1:recipient-route-request",
+        "additionalProperties": false,
+        "properties": {
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "receiptId": {
+            "$ref": "#/components/schemas/ReceiptId"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "type": "string"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "tenantId",
+          "envelope",
+          "receiptId"
+        ],
+        "type": "object"
+      },
+      "RecipientRouteResponse": {
+        "$id": "urn:mail-edge:schema:v1:recipient-route-response",
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationDestination"
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "destinations"
+        ],
+        "type": "object"
+      },
+      "ReverseRouteRequest": {
+        "$id": "urn:mail-edge:schema:v1:reverse-route-request",
+        "additionalProperties": false,
+        "properties": {
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "opaqueReplyToken": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "raw": {
+            "$ref": "#/components/schemas/RawMessageRef"
+          },
+          "tenantId": {
+            "$ref": "#/components/schemas/TenantId"
+          }
+        },
+        "required": [
+          "tenantId",
+          "envelope",
+          "raw",
+          "opaqueReplyToken"
+        ],
+        "type": "object"
+      },
+      "ReverseRouteResolution": {
+        "$id": "urn:mail-edge:schema:v1:reverse-route-resolution",
+        "additionalProperties": false,
+        "properties": {
+          "envelope": {
+            "$ref": "#/components/schemas/SmtpEnvelope"
+          },
+          "policyCode": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "visibleHeaderFields": {
+            "items": {
+              "maxLength": 998,
+              "minLength": 1,
+              "pattern": "^[^\\r\\n]+$",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          }
+        },
+        "required": [
+          "envelope",
+          "visibleHeaderFields",
+          "policyCode"
         ],
         "type": "object"
       },
@@ -2798,5 +3628,765 @@
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "openapi": "3.1.0",
-  "paths": {}
+  "paths": {
+    "/v1/raw-access-grants/{grantId}/raw": {
+      "get": {
+        "description": "Stream the exact raw message under a short-lived tenant, subject, audience, and raw_download-operation grant. Redirects, ranges, and content encodings are rejected; single-use grants are atomically consumed and all grants are fenced and revocable.",
+        "operationId": "downloadRawMessageByGrant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grantId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/RawAccessGrantId"
+            }
+          },
+          {
+            "description": "MailEdgeRaw followed by the opaque grant token.",
+            "in": "header",
+            "name": "Authorization",
+            "required": true,
+            "schema": {
+              "pattern": "^MailEdgeRaw [A-Za-z0-9_-]{43,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact grant audience.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Audience",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact grant subject.",
+            "in": "header",
+            "name": "X-Mail-Edge-Subject-Id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Grant-bound operation.",
+            "in": "header",
+            "name": "X-Mail-Edge-Operation",
+            "required": true,
+            "schema": {
+              "const": "raw_download"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "message/rfc822": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Constant-memory authenticated byte stream with Content-Length.",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "const": "none"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store, private"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "401": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "404": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "409": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "410": {
+            "$ref": "#/components/responses/HostProblem"
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "applicationDelivery": {
+      "post": {
+        "description": "Verify the exact body digest, audience, operation, subject, timestamp, key id, and MAC before atomically consuming the nonce. Active and retiring keys may overlap during rotation. Reject expired, replayed, mismatched, unknown-key, redirected, oversized, or malformed requests without side effects. Return a bounded application/json response and echo X-Mail-Edge-Subject-Id.",
+        "operationId": "receiveApplicationDelivery",
+        "parameters": [
+          {
+            "description": "Frozen protocol version.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Version",
+            "required": true,
+            "schema": {
+              "const": "v1"
+            }
+          },
+          {
+            "description": "Frozen MAC algorithm.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Algorithm",
+            "required": true,
+            "schema": {
+              "const": "hmac-sha256"
+            }
+          },
+          {
+            "description": "Rotation key identifier selected before verification.",
+            "in": "header",
+            "name": "X-Mail-Edge-Key-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact configured receiving service audience.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Audience",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Operation-bound durable workflow subject.",
+            "in": "header",
+            "name": "X-Mail-Edge-Subject-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unique unpadded base64url nonce consumed by the replay store.",
+            "in": "header",
+            "name": "X-Mail-Edge-Nonce",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9_-]{16,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Lowercase SHA-256 of the exact HTTP body bytes.",
+            "in": "header",
+            "name": "X-Mail-Edge-Body-Sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact callback operation; cross-operation replay is forbidden.",
+            "in": "header",
+            "name": "X-Mail-Edge-Operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "application_delivery",
+                "application_feedback",
+                "recipient_route",
+                "reverse_route"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "RFC 3339 signing instant within the receiver's bounded skew.",
+            "in": "header",
+            "name": "X-Mail-Edge-Timestamp",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unpadded base64url HMAC-SHA256 over the canonical HostSignatureV1 domain and claims.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature",
+            "required": true,
+            "schema": {
+              "maxLength": 43,
+              "minLength": 43,
+              "pattern": "^[A-Za-z0-9_-]{43}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationDeliveryCallbackV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationAckV1"
+                }
+              }
+            },
+            "description": "Durably authenticated result; the subject response header must exactly match.",
+            "headers": {
+              "X-Mail-Edge-Subject-Id": {
+                "description": "Exact signed request subject.",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "401": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "409": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "429": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "503": {
+            "$ref": "#/components/responses/HostProblem"
+          }
+        },
+        "x-mail-edge-operation": "application_delivery",
+        "x-mail-edge-replay-semantics": "Nonce consumption is atomic after signature verification and before business side effects; duplicate nonces fail closed."
+      }
+    },
+    "applicationFeedback": {
+      "post": {
+        "description": "Verify the exact body digest, audience, operation, subject, timestamp, key id, and MAC before atomically consuming the nonce. Active and retiring keys may overlap during rotation. Reject expired, replayed, mismatched, unknown-key, redirected, oversized, or malformed requests without side effects. Return a bounded application/json response and echo X-Mail-Edge-Subject-Id.",
+        "operationId": "receiveApplicationFeedback",
+        "parameters": [
+          {
+            "description": "Frozen protocol version.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Version",
+            "required": true,
+            "schema": {
+              "const": "v1"
+            }
+          },
+          {
+            "description": "Frozen MAC algorithm.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Algorithm",
+            "required": true,
+            "schema": {
+              "const": "hmac-sha256"
+            }
+          },
+          {
+            "description": "Rotation key identifier selected before verification.",
+            "in": "header",
+            "name": "X-Mail-Edge-Key-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact configured receiving service audience.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Audience",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Operation-bound durable workflow subject.",
+            "in": "header",
+            "name": "X-Mail-Edge-Subject-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unique unpadded base64url nonce consumed by the replay store.",
+            "in": "header",
+            "name": "X-Mail-Edge-Nonce",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9_-]{16,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Lowercase SHA-256 of the exact HTTP body bytes.",
+            "in": "header",
+            "name": "X-Mail-Edge-Body-Sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact callback operation; cross-operation replay is forbidden.",
+            "in": "header",
+            "name": "X-Mail-Edge-Operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "application_delivery",
+                "application_feedback",
+                "recipient_route",
+                "reverse_route"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "RFC 3339 signing instant within the receiver's bounded skew.",
+            "in": "header",
+            "name": "X-Mail-Edge-Timestamp",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unpadded base64url HMAC-SHA256 over the canonical HostSignatureV1 domain and claims.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature",
+            "required": true,
+            "schema": {
+              "maxLength": 43,
+              "minLength": 43,
+              "pattern": "^[A-Za-z0-9_-]{43}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationFeedbackV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationAckV1"
+                }
+              }
+            },
+            "description": "Durably authenticated result; the subject response header must exactly match.",
+            "headers": {
+              "X-Mail-Edge-Subject-Id": {
+                "description": "Exact signed request subject.",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "401": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "409": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "429": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "503": {
+            "$ref": "#/components/responses/HostProblem"
+          }
+        },
+        "x-mail-edge-operation": "application_feedback",
+        "x-mail-edge-replay-semantics": "Nonce consumption is atomic after signature verification and before business side effects; duplicate nonces fail closed."
+      }
+    },
+    "recipientRoute": {
+      "post": {
+        "description": "Verify the exact body digest, audience, operation, subject, timestamp, key id, and MAC before atomically consuming the nonce. Active and retiring keys may overlap during rotation. Reject expired, replayed, mismatched, unknown-key, redirected, oversized, or malformed requests without side effects. Return a bounded application/json response and echo X-Mail-Edge-Subject-Id.",
+        "operationId": "resolveRecipientRoute",
+        "parameters": [
+          {
+            "description": "Frozen protocol version.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Version",
+            "required": true,
+            "schema": {
+              "const": "v1"
+            }
+          },
+          {
+            "description": "Frozen MAC algorithm.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Algorithm",
+            "required": true,
+            "schema": {
+              "const": "hmac-sha256"
+            }
+          },
+          {
+            "description": "Rotation key identifier selected before verification.",
+            "in": "header",
+            "name": "X-Mail-Edge-Key-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact configured receiving service audience.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Audience",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Operation-bound durable workflow subject.",
+            "in": "header",
+            "name": "X-Mail-Edge-Subject-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unique unpadded base64url nonce consumed by the replay store.",
+            "in": "header",
+            "name": "X-Mail-Edge-Nonce",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9_-]{16,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Lowercase SHA-256 of the exact HTTP body bytes.",
+            "in": "header",
+            "name": "X-Mail-Edge-Body-Sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact callback operation; cross-operation replay is forbidden.",
+            "in": "header",
+            "name": "X-Mail-Edge-Operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "application_delivery",
+                "application_feedback",
+                "recipient_route",
+                "reverse_route"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "RFC 3339 signing instant within the receiver's bounded skew.",
+            "in": "header",
+            "name": "X-Mail-Edge-Timestamp",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unpadded base64url HMAC-SHA256 over the canonical HostSignatureV1 domain and claims.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature",
+            "required": true,
+            "schema": {
+              "maxLength": 43,
+              "minLength": 43,
+              "pattern": "^[A-Za-z0-9_-]{43}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipientRouteRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientRouteResponseV1"
+                }
+              }
+            },
+            "description": "Durably authenticated result; the subject response header must exactly match.",
+            "headers": {
+              "X-Mail-Edge-Subject-Id": {
+                "description": "Exact signed request subject.",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "401": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "409": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "429": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "503": {
+            "$ref": "#/components/responses/HostProblem"
+          }
+        },
+        "x-mail-edge-operation": "recipient_route",
+        "x-mail-edge-replay-semantics": "Nonce consumption is atomic after signature verification and before business side effects; duplicate nonces fail closed."
+      }
+    },
+    "reverseRoute": {
+      "post": {
+        "description": "Verify the exact body digest, audience, operation, subject, timestamp, key id, and MAC before atomically consuming the nonce. Active and retiring keys may overlap during rotation. Reject expired, replayed, mismatched, unknown-key, redirected, oversized, or malformed requests without side effects. Return a bounded application/json response and echo X-Mail-Edge-Subject-Id.",
+        "operationId": "resolveReverseRoute",
+        "parameters": [
+          {
+            "description": "Frozen protocol version.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Version",
+            "required": true,
+            "schema": {
+              "const": "v1"
+            }
+          },
+          {
+            "description": "Frozen MAC algorithm.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Algorithm",
+            "required": true,
+            "schema": {
+              "const": "hmac-sha256"
+            }
+          },
+          {
+            "description": "Rotation key identifier selected before verification.",
+            "in": "header",
+            "name": "X-Mail-Edge-Key-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact configured receiving service audience.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature-Audience",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Operation-bound durable workflow subject.",
+            "in": "header",
+            "name": "X-Mail-Edge-Subject-Id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unique unpadded base64url nonce consumed by the replay store.",
+            "in": "header",
+            "name": "X-Mail-Edge-Nonce",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9_-]{16,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Lowercase SHA-256 of the exact HTTP body bytes.",
+            "in": "header",
+            "name": "X-Mail-Edge-Body-Sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact callback operation; cross-operation replay is forbidden.",
+            "in": "header",
+            "name": "X-Mail-Edge-Operation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "application_delivery",
+                "application_feedback",
+                "recipient_route",
+                "reverse_route"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "RFC 3339 signing instant within the receiver's bounded skew.",
+            "in": "header",
+            "name": "X-Mail-Edge-Timestamp",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unpadded base64url HMAC-SHA256 over the canonical HostSignatureV1 domain and claims.",
+            "in": "header",
+            "name": "X-Mail-Edge-Signature",
+            "required": true,
+            "schema": {
+              "maxLength": 43,
+              "minLength": 43,
+              "pattern": "^[A-Za-z0-9_-]{43}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReverseRouteRequestV1"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReverseRouteResolutionV1"
+                }
+              }
+            },
+            "description": "Durably authenticated result; the subject response header must exactly match.",
+            "headers": {
+              "X-Mail-Edge-Subject-Id": {
+                "description": "Exact signed request subject.",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "401": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "409": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "429": {
+            "$ref": "#/components/responses/HostProblem"
+          },
+          "503": {
+            "$ref": "#/components/responses/HostProblem"
+          }
+        },
+        "x-mail-edge-operation": "reverse_route",
+        "x-mail-edge-replay-semantics": "Nonce consumption is atomic after signature verification and before business side effects; duplicate nonces fail closed."
+      }
+    }
+  }
 }

@@ -145,6 +145,16 @@ const ProductionConfig = Type.Object(
           reverseRouteUrl: Type.String({ maxLength: 2048, minLength: 1 }),
           deliveryUrl: Type.String({ maxLength: 2048, minLength: 1 }),
           feedbackUrl: Type.String({ maxLength: 2048, minLength: 1 }),
+          audience: Type.String({
+            maxLength: 128,
+            minLength: 1,
+            pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          }),
+          signingKeyId: Type.String({
+            maxLength: 128,
+            minLength: 1,
+            pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+          }),
           signingSecret: SecretReference,
           timeoutMilliseconds: PositiveMilliseconds,
           maximumResponseBytes: Type.Integer({ maximum: 1_048_576, minimum: 1 }),
@@ -383,6 +393,7 @@ export const ReferenceServiceConfigSchema = Type.Object(
     authentication: Type.Object(
       {
         operatorTokenSecrets: Type.Array(SecretReference, { maxItems: 32, minItems: 1 }),
+        privilegedOperatorTokenSecrets: Type.Array(SecretReference, { maxItems: 32, minItems: 1 }),
         tenants: Type.Array(
           Type.Object(
             {
@@ -526,6 +537,20 @@ const assertSemanticConfig = (config: ReferenceServiceConfig): readonly string[]
     config.authentication.operatorTokenSecrets.length
   ) {
     issues.push("/authentication/operatorTokenSecrets:duplicate_secret_reference");
+  }
+  if (
+    new Set(config.authentication.privilegedOperatorTokenSecrets).size !==
+    config.authentication.privilegedOperatorTokenSecrets.length
+  ) {
+    issues.push("/authentication/privilegedOperatorTokenSecrets:duplicate_secret_reference");
+  }
+  const authenticationSecretReferences = [
+    ...config.authentication.operatorTokenSecrets,
+    ...config.authentication.privilegedOperatorTokenSecrets,
+    ...config.authentication.tenants.flatMap((tenant) => tenant.tokenSecrets),
+  ];
+  if (new Set(authenticationSecretReferences).size !== authenticationSecretReferences.length) {
+    issues.push("/authentication:secret_reference_reused");
   }
   const instances = new Set<string>();
   for (const instance of config.providerInstances) {
