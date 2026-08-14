@@ -100,4 +100,97 @@ describe("MailEdgeHttpClient", () => {
     expect(request?.headers.get("idempotency-key")).toBe(idempotencyKey);
     await expect(request?.json()).resolves.toMatchObject({ opaqueReplyToken: "opaque-reply" });
   });
+
+  it.each(["unknown", "accepted"] as const)(
+    "preserves a coherent %s problem without exposing its detail",
+    async (deliveryCertainty) => {
+      const body = JSON.stringify({
+        code: "workflow-conflict",
+        deliveryCertainty,
+        detail: "An internal diagnostic that clients must not retain.",
+        retryable: false,
+        schemaVersion: "v1",
+        status: 409,
+        title: "Workflow conflict",
+        type: "https://mail-edge.dev/problems/workflow-conflict",
+      });
+      const client = new MailEdgeHttpClient({
+        config: {
+          baseUrl: "https://edge.example.test",
+          maximumJsonBytes: 1024 * 1024,
+          requestTimeoutMilliseconds: 5000,
+        },
+        fetchImplementation: () =>
+          Promise.resolve(
+            new Response(body, {
+              headers: { "content-type": "application/problem+json; charset=utf-8" },
+              status: 409,
+            }),
+          ),
+        tokens: {
+          resolve: () => Promise.resolve({ ok: true, value: "a".repeat(32) }),
+        },
+      });
+
+      const result = await client.getOutboundIntent(
+        tenantId,
+        intentId,
+        new AbortController().signal,
+      );
+      expect(result).toMatchObject({
+        error: {
+          code: "WORKFLOW_CONFLICT",
+          deliveryCertainty,
+          retryable: false,
+          safeDetails: { problemCode: "workflow-conflict", status: 409 },
+        },
+        ok: false,
+      });
+      if (!result.ok) expect(result.error.message).not.toContain("internal diagnostic");
+    },
+  );
+
+  it.each([
+    ["sent", false],
+    ["unknown", true],
+  ] as const)(
+    "rejects incoherent problem certainty %s retryable=%s",
+    async (deliveryCertainty, retryable) => {
+      const client = new MailEdgeHttpClient({
+        config: {
+          baseUrl: "https://edge.example.test",
+          maximumJsonBytes: 1024 * 1024,
+          requestTimeoutMilliseconds: 5000,
+        },
+        fetchImplementation: () =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                code: "workflow-conflict",
+                deliveryCertainty,
+                retryable,
+                schemaVersion: "v1",
+                status: 409,
+                title: "Workflow conflict",
+                type: "https://mail-edge.dev/problems/workflow-conflict",
+              }),
+              {
+                headers: { "content-type": "application/problem+json" },
+                status: 409,
+              },
+            ),
+          ),
+        tokens: {
+          resolve: () => Promise.resolve({ ok: true, value: "a".repeat(32) }),
+        },
+      });
+
+      await expect(
+        client.getOutboundIntent(tenantId, intentId, new AbortController().signal),
+      ).resolves.toMatchObject({
+        error: { deliveryCertainty: "not_sent", safeDetails: { reason: "problem_response" } },
+        ok: false,
+      });
+    },
+  );
 });

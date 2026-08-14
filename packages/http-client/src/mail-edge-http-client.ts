@@ -28,6 +28,7 @@ import {
   type Result,
   type SmtpEnvelopeV1,
   type TenantId,
+  projectProblem,
   validateContract,
 } from "@mail-edge/contracts";
 import type { TSchema } from "@sinclair/typebox";
@@ -451,18 +452,40 @@ export class MailEdgeHttpClient {
   }
 
   async #problem(response: Response, signal: AbortSignal): Promise<Result<never, MailEdgeError>> {
+    if (
+      response.headers.get("content-encoding") !== null ||
+      response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
+        "application/problem+json"
+    ) {
+      await response.body?.cancel("problem_media_type");
+      return { error: failure("INTERNAL", "problem_response", false), ok: false };
+    }
     const parsed = await boundedJson(response, this.#config.maximumJsonBytes, signal);
     if (parsed.ok) {
       const problem = validateContract(MailEdgeProblemV1Schema, parsed.value);
-      if (problem.ok) {
+      if (
+        problem.ok &&
+        !(problem.value.deliveryCertainty === "unknown" && problem.value.retryable)
+      ) {
+        const code = mailEdgeErrorCodeFromProblemCode(problem.value.code);
+        const error = new MailEdgeError({
+          code,
+          deliveryCertainty: problem.value.deliveryCertainty,
+          message: "Mail Edge returned a validated problem response.",
+          retryable: problem.value.retryable,
+          safeDetails: { problemCode: problem.value.code, status: problem.value.status },
+        });
+        const canonical = projectProblem(error);
+        if (
+          response.status !== problem.value.status ||
+          problem.value.status !== canonical.status ||
+          problem.value.code !== canonical.code ||
+          problem.value.type !== canonical.type
+        ) {
+          return { error: failure("INTERNAL", "problem_response", false), ok: false };
+        }
         return {
-          error: new MailEdgeError({
-            code: mailEdgeErrorCodeFromProblemCode(problem.value.code),
-            deliveryCertainty: problem.value.deliveryCertainty,
-            message: problem.value.detail ?? problem.value.title,
-            retryable: problem.value.retryable,
-            safeDetails: { status: problem.value.status },
-          }),
+          error,
           ok: false,
         };
       }

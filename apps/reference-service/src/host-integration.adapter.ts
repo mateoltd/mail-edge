@@ -2,10 +2,13 @@ import { createHash, randomBytes } from "node:crypto";
 
 import {
   MailEdgeError,
+  MailEdgeProblemV1Schema,
   ApplicationAckV1Schema,
   RecipientRouteResponseV1Schema,
   ReverseRouteResolutionV1Schema,
   parseDeliveryId,
+  mailEdgeErrorCodeFromProblemCode,
+  projectProblem,
   type ApplicationDeliveryCallbackV1,
   type ApplicationDestinationV1,
   type ApplicationFeedbackV1,
@@ -42,30 +45,49 @@ const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =
   return Object.freeze(Object.fromEntries(entries));
 };
 
-const hostFailure = (reason: string, retryable: boolean, cause?: unknown): MailEdgeError =>
+interface HostFailureInput {
+  readonly cause?: unknown;
+  readonly code?: "HOST_UNAVAILABLE" | "VALIDATION_FAILED";
+  readonly deliveryCertainty?: "not_sent" | "unknown";
+  readonly reason: string;
+  readonly retryable: boolean;
+}
+
+const hostFailure = (input: HostFailureInput): MailEdgeError =>
   new MailEdgeError({
-    ...(cause === undefined ? {} : { cause }),
-    code: retryable ? "HOST_UNAVAILABLE" : "VALIDATION_FAILED",
-    deliveryCertainty: "not_sent",
-    message: `Host integration operation failed: ${reason}.`,
-    retryable,
-    safeDetails: { reason },
+    ...(input.cause === undefined ? {} : { cause: input.cause }),
+    code: input.code ?? (input.retryable ? "HOST_UNAVAILABLE" : "VALIDATION_FAILED"),
+    deliveryCertainty: input.deliveryCertainty ?? "not_sent",
+    message: `Host integration operation failed: ${input.reason}.`,
+    retryable: input.retryable,
+    safeDetails: { reason: input.reason },
   });
+
+type HostFailureFactory = (reason: string, cause?: unknown) => MailEdgeError;
+
+const cancelResponse = async (response: Response, reason: string): Promise<void> => {
+  try {
+    await response.body?.cancel(reason);
+  } catch {
+    // The bounded response has already been rejected; cancellation is best effort.
+  }
+};
 
 const collectJson = async (
   response: Response,
   maximumBytes: number,
   signal: AbortSignal,
+  failure: HostFailureFactory,
 ): Promise<Result<Readonly<Record<string, unknown>>, MailEdgeError>> => {
   const declared = response.headers.get("content-length");
   if (declared !== null) {
-    const size = Number(declared);
+    const size = /^\d+$/u.test(declared) ? Number(declared) : Number.NaN;
     if (!Number.isSafeInteger(size) || size < 0 || size > maximumBytes) {
-      return { error: hostFailure("response_size", false), ok: false };
+      await cancelResponse(response, "host_response_limit");
+      return { error: failure("response_size"), ok: false };
     }
   }
-  if (response.body === null)
-    return { error: hostFailure("response_body_missing", false), ok: false };
+  if (response.body === null) return { error: failure("response_body_missing"), ok: false };
   const chunks: Uint8Array[] = [];
   let observed = 0;
   const reader = response.body.getReader();
@@ -81,12 +103,16 @@ const collectJson = async (
       }
       const value = chunk?.["value"];
       if (!(value instanceof Uint8Array)) {
-        return { error: hostFailure("response_stream", false), ok: false };
+        return { error: failure("response_stream"), ok: false };
       }
       observed += value.byteLength;
       if (!Number.isSafeInteger(observed) || observed > maximumBytes) {
-        await reader.cancel("host_response_limit");
-        return { error: hostFailure("response_size", false), ok: false };
+        try {
+          await reader.cancel("host_response_limit");
+        } catch {
+          // The response is already rejected; cancellation is best effort.
+        }
+        return { error: failure("response_size"), ok: false };
       }
       chunks.push(Uint8Array.from(value));
     }
@@ -97,10 +123,10 @@ const collectJson = async (
     const parsed: unknown = JSON.parse(Buffer.concat(chunks, observed).toString("utf8"));
     const value = record(parsed);
     return value === undefined
-      ? { error: hostFailure("response_shape", false), ok: false }
+      ? { error: failure("response_shape"), ok: false }
       : { ok: true, value };
   } catch (cause) {
-    return { error: hostFailure("response_json", false, cause), ok: false };
+    return { error: failure("response_json", cause), ok: false };
   }
 };
 
@@ -108,11 +134,18 @@ const parseDestinations = (
   value: Readonly<Record<string, unknown>>,
 ): Result<readonly ApplicationDestinationV1[], MailEdgeError> => {
   const validated = validateContract(RecipientRouteResponseV1Schema, value);
-  if (!validated.ok) return { error: hostFailure("destination_shape", false), ok: false };
+  if (!validated.ok)
+    return {
+      error: hostFailure({ reason: "destination_shape", retryable: false }),
+      ok: false,
+    };
   const identities = new Set<string>();
   for (const destination of validated.value.destinations) {
     if (identities.has(destination.destinationId)) {
-      return { error: hostFailure("destination_shape", false), ok: false };
+      return {
+        error: hostFailure({ reason: "destination_shape", retryable: false }),
+        ok: false,
+      };
     }
     identities.add(destination.destinationId);
   }
@@ -172,7 +205,10 @@ export class SignedHostIntegrationAdapter
     if (!response.ok) return response;
     const validated = validateContract(ReverseRouteResolutionV1Schema, response.value);
     if (!validated.ok) {
-      return { error: hostFailure("reverse_route_shape", false), ok: false };
+      return {
+        error: hostFailure({ reason: "reverse_route_shape", retryable: false }),
+        ok: false,
+      };
     }
     return validated;
   }
@@ -197,7 +233,11 @@ export class SignedHostIntegrationAdapter
     signal: AbortSignal,
   ): Promise<Result<ApplicationAckV1, MailEdgeError>> {
     const deliveryId = parseDeliveryId(input.feedbackEventId);
-    if (!deliveryId.ok) return { error: hostFailure("feedback_identity", false), ok: false };
+    if (!deliveryId.ok)
+      return {
+        error: hostFailure({ reason: "feedback_identity", retryable: false }),
+        ok: false,
+      };
     const response = await this.#post(
       input.tenantId,
       "feedbackUrl",
@@ -215,7 +255,14 @@ export class SignedHostIntegrationAdapter
   ): Result<ApplicationAckV1, MailEdgeError> {
     const validated = validateContract(ApplicationAckV1Schema, value);
     if (!validated.ok || validated.value.deliveryId !== deliveryId) {
-      return { error: hostFailure("ack_shape", false), ok: false };
+      return {
+        error: hostFailure({
+          deliveryCertainty: "unknown",
+          reason: "ack_shape",
+          retryable: false,
+        }),
+        ok: false,
+      };
     }
     return validated;
   }
@@ -230,7 +277,19 @@ export class SignedHostIntegrationAdapter
   ): Promise<Result<Readonly<Record<string, unknown>>, MailEdgeError>> {
     const config = this.#configs.get(tenantId);
     if (config === undefined)
-      return { error: hostFailure("tenant_not_configured", false), ok: false };
+      return {
+        error: hostFailure({ reason: "tenant_not_configured", retryable: false }),
+        ok: false,
+      };
+    const businessEffectPossible =
+      operation === "application_delivery" || operation === "application_feedback";
+    const rejectedResponse = (reason: string, cause?: unknown): MailEdgeError =>
+      hostFailure({
+        ...(cause === undefined ? {} : { cause }),
+        deliveryCertainty: businessEffectPossible ? "unknown" : "not_sent",
+        reason,
+        retryable: false,
+      });
     const signal = AbortSignal.any([callerSignal, AbortSignal.timeout(config.timeoutMilliseconds)]);
     const body = Buffer.from(JSON.stringify(value), "utf8");
     const bodyDigest = createHash("sha256").update(body).digest("hex");
@@ -264,7 +323,7 @@ export class SignedHostIntegrationAdapter
       const response = await this.#fetch(config[urlField], {
         body,
         headers: {
-          accept: "application/json",
+          accept: "application/json, application/problem+json",
           "content-type": "application/json",
           ...signatureHeaders.value,
         },
@@ -273,32 +332,77 @@ export class SignedHostIntegrationAdapter
         signal,
       });
       if (response.status < 200 || response.status > 299) {
-        await response.body?.cancel("host_status_rejected");
-        return {
-          error: hostFailure(
-            "response_status",
-            response.status === 408 ||
-              response.status === 425 ||
-              response.status === 429 ||
-              response.status >= 500,
-          ),
-          ok: false,
-        };
+        if (
+          response.headers.get("content-encoding") !== null ||
+          response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
+            "application/problem+json"
+        ) {
+          await cancelResponse(response, "host_problem_media_type_mismatch");
+          return { error: rejectedResponse("problem_media_type"), ok: false };
+        }
+        const parsed = await collectJson(
+          response,
+          config.maximumResponseBytes,
+          signal,
+          rejectedResponse,
+        );
+        if (!parsed.ok) return parsed;
+        const validated = validateContract(MailEdgeProblemV1Schema, parsed.value);
+        if (
+          !validated.ok ||
+          (validated.value.deliveryCertainty === "unknown" && validated.value.retryable)
+        ) {
+          return { error: rejectedResponse("problem_shape"), ok: false };
+        }
+        const code = mailEdgeErrorCodeFromProblemCode(validated.value.code);
+        const deliveryCertainty =
+          businessEffectPossible &&
+          code === "INTERNAL" &&
+          validated.value.deliveryCertainty === "not_sent"
+            ? "unknown"
+            : validated.value.deliveryCertainty;
+        const error = new MailEdgeError({
+          code,
+          deliveryCertainty,
+          message: "Host integration returned a validated problem response.",
+          retryable: deliveryCertainty === "unknown" ? false : validated.value.retryable,
+          safeDetails: { hostProblemCode: validated.value.code, status: validated.value.status },
+        });
+        const canonical = projectProblem(error);
+        if (
+          validated.value.status !== response.status ||
+          validated.value.status !== canonical.status ||
+          validated.value.code !== canonical.code ||
+          validated.value.type !== canonical.type
+        ) {
+          return { error: rejectedResponse("problem_semantics"), ok: false };
+        }
+        return { error, ok: false };
       }
       if (response.headers.get("x-mail-edge-subject-id") !== subjectId) {
-        await response.body?.cancel("host_ack_identity_mismatch");
-        return { error: hostFailure("response_identity", false), ok: false };
+        await cancelResponse(response, "host_ack_identity_mismatch");
+        return { error: rejectedResponse("response_identity"), ok: false };
       }
       if (
         response.headers.get("content-encoding") !== null ||
-        response.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
+        response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
+          "application/json"
       ) {
-        await response.body?.cancel("host_ack_media_type_mismatch");
-        return { error: hostFailure("response_media_type", false), ok: false };
+        await cancelResponse(response, "host_ack_media_type_mismatch");
+        return { error: rejectedResponse("response_media_type"), ok: false };
       }
-      return await collectJson(response, config.maximumResponseBytes, signal);
+      return await collectJson(response, config.maximumResponseBytes, signal, rejectedResponse);
     } catch (cause) {
-      return { error: hostFailure("request_failed", true, cause), ok: false };
+      return {
+        error: hostFailure({
+          cause,
+          code: "HOST_UNAVAILABLE",
+          deliveryCertainty: businessEffectPossible ? "unknown" : "not_sent",
+          reason: "request_failed",
+          retryable: !businessEffectPossible,
+        }),
+        ok: false,
+      };
     }
   }
 }
