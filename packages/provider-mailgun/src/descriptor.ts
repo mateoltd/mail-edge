@@ -67,7 +67,7 @@ export const mailgunProviderDescriptor: ProviderCapabilityDescriptorV1 = Object.
       "feedback.transport_and_complaint",
     ),
     officialEvidence(
-      "https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/events/get-v3-domain_name-events",
+      "https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/logs",
       "reconciliation.acceptance_only",
     ),
     officialEvidence(
@@ -122,7 +122,7 @@ export const mailgunProviderDescriptor: ProviderCapabilityDescriptorV1 = Object.
     "Inbound route target is HTTPS and ends in mime or raw-mime.",
     "Webhook and route signing key is available through SecretResolver.",
     "Feedback replay tokens are consumed by a durable atomic replay store.",
-    "Events API access is required for acceptance-only reconciliation.",
+    "Account-level Logs API access is required for acceptance-only reconciliation.",
   ]),
   providerId: MAILGUN_PROVIDER_ID,
   schemaVersion: "v1",

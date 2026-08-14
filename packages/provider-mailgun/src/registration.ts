@@ -24,16 +24,9 @@ export const createMailgunProviderRegistration = (
   const smtpConnector = dependencies.smtpConnector ?? new NodeMailgunSmtpConnector();
   const api = new MailgunApiClient(validated.value, dependencies.secrets, httpTransport);
   const inbound = new MailgunInboundAdapter(validated.value, runtime);
-  const outbound = new MailgunOutboundAdapter(
-    validated.value,
-    smtpConnector,
-    api,
-    dependencies.clock,
-    runtime,
-  );
+  const outbound = new MailgunOutboundAdapter(validated.value, smtpConnector, api, runtime);
   const feedback = new MailgunFeedbackAdapter(validated.value, {
     clock: dependencies.clock,
-    replay: dependencies.webhookReplay,
     runtime,
     secrets: dependencies.secrets,
   });

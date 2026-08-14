@@ -23,7 +23,6 @@ import {
   type MailgunProviderConfig,
   type MailgunProviderDependencies,
   type MailgunSmtpConnector,
-  type MailgunWebhookReplayStore,
 } from "../src/index.js";
 
 export const NOW = "2026-08-14T08:00:00.000Z";
@@ -116,27 +115,6 @@ export class MemorySecrets implements SecretResolver {
 export class FixedClock implements Clock {
   now(): string {
     return NOW;
-  }
-}
-
-export class MemoryWebhookReplay implements MailgunWebhookReplayStore {
-  readonly #seen = new Map<string, string>();
-
-  consume(
-    input: Parameters<MailgunWebhookReplayStore["consume"]>[0],
-    signal: AbortSignal,
-  ): Promise<Result<"conflict" | "duplicate" | "new", MailEdgeError>> {
-    if (signal.aborted) return Promise.resolve({ error: fixtureError("aborted"), ok: false });
-    const key = `${input.providerInstanceId}\0${input.nonceDigest}`;
-    const previous = this.#seen.get(key);
-    if (previous === undefined) {
-      this.#seen.set(key, input.bodyDigest);
-      return Promise.resolve({ ok: true, value: "new" });
-    }
-    return Promise.resolve({
-      ok: true,
-      value: previous === input.bodyDigest ? "duplicate" : "conflict",
-    });
   }
 }
 
@@ -247,7 +225,6 @@ export const createStartedRegistration = async (
   input: {
     readonly config?: MailgunProviderConfig;
     readonly httpTransport?: MailgunHttpTransport;
-    readonly replay?: MailgunWebhookReplayStore;
     readonly secrets?: SecretResolver;
     readonly smtpConnector?: MailgunSmtpConnector;
   } = {},
@@ -257,7 +234,6 @@ export const createStartedRegistration = async (
     httpTransport: input.httpTransport ?? unavailableHttp,
     secrets: input.secrets ?? new MemorySecrets(),
     smtpConnector: input.smtpConnector ?? unavailableSmtp,
-    webhookReplay: input.replay ?? new MemoryWebhookReplay(),
   });
   const registration = createMailgunProviderRegistration(input.config ?? CONFIG, dependencies);
   if (!registration.ok) throw registration.error;

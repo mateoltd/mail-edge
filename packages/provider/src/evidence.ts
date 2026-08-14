@@ -127,6 +127,23 @@ const evidenceError = (
     safeDetails: { reason },
   });
 
+/** Parses an untrusted signed evidence envelope without weakening its public schema. @public */
+export const parseSignedConformanceReport = (
+  input: unknown,
+): Result<SignedConformanceReportV1, MailEdgeError> => {
+  const validate = signedValidator();
+  if (!validate(input)) {
+    return {
+      error: evidenceError(
+        "VALIDATION_FAILED",
+        schemaIssues(validate.errors)[0] ?? "invalid_signed_report",
+      ),
+      ok: false,
+    };
+  }
+  return { ok: true, value: input };
+};
+
 /** Owns one injected evidence signer and its asynchronous side effects. @public */
 export class ConformanceEvidenceSigningService {
   readonly #signer: EvidenceSigner;
@@ -186,16 +203,8 @@ export class ConformanceEvidenceVerificationService {
     signed: SignedConformanceReportV1,
     signal: AbortSignal,
   ): Promise<Result<boolean, MailEdgeError>> {
-    const validate = signedValidator();
-    if (!validate(signed)) {
-      return {
-        error: evidenceError(
-          "VALIDATION_FAILED",
-          schemaIssues(validate.errors)[0] ?? "invalid_signed_report",
-        ),
-        ok: false,
-      };
-    }
+    const parsed = parseSignedConformanceReport(signed);
+    if (!parsed.ok) return parsed;
     const reportValidation = validateConformanceReport(signed.report);
     if (!reportValidation.valid || conformanceReportDigest(signed.report) !== signed.reportDigest) {
       return { ok: true, value: false };

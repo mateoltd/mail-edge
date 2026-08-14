@@ -45,7 +45,9 @@ export {
   parseProviderInstanceId,
   parseReceiptId,
   parseTenantId,
+  ProviderFeedbackV1Schema,
   ProviderDispatchError,
+  validateContractBatch,
 } from "@mail-edge/contracts";
 export type {
   BlobStagePort,
@@ -72,7 +74,7 @@ export type {
 } from "./activation.service.js";
 export { ProviderActivationGate } from "./activation.service.js";
 export type { BindingPlanInspection } from "./control-plane.js";
-export { bindingPlanDigest, inspectBindingPlan } from "./control-plane.js";
+export { bindingPlanDigest, desiredBindingDigest, inspectBindingPlan } from "./control-plane.js";
 export type { CapabilityDescriptorInspection } from "./descriptor.js";
 export {
   baseConformanceCheckIds,
@@ -117,6 +119,7 @@ export {
   conformanceCheckDigest,
   conformanceReportDigest,
   conformanceSignaturePayload,
+  parseSignedConformanceReport,
   projectConformanceEvidence,
   signConformanceReport,
   signedConformanceEvidenceIdentity,
@@ -160,6 +163,7 @@ export type {
   ProviderControlPlaneAdapter,
   ProviderDispatchContext,
   ProviderFeedbackCommit,
+  ProviderFeedbackIngressBatch,
   ProviderRawSource,
   ProviderReconciliationEvidenceV1,
   ProviderReconciliationQueryV1,

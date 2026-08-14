@@ -20,5 +20,6 @@ export type {
 } from "./ports.js";
 export type { ReferenceServiceHostState } from "./host.js";
 export { ReferenceServiceHost } from "./host.js";
+export { createReferenceServiceComposition } from "./production-composition.js";
 export { ProviderInstanceCatalog } from "./instance-catalog.js";
 export { BoundedConcurrencyGate, type ConcurrencyLease } from "./concurrency.js";

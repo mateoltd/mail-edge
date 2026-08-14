@@ -75,6 +75,8 @@ export const validateMailgunProviderConfig = (
   const identities = new Set<string>();
   const descriptorDigest = sha256CanonicalJson(mailgunProviderDescriptor);
   const bindings = [];
+  const firstBinding = config.inboundBindings[0];
+  if (firstBinding === undefined) return invalidConfig("inbound_bindings");
   for (const binding of config.inboundBindings) {
     const identity = `${binding.providerInstanceId}\0${binding.bindingId}`;
     if (
@@ -82,6 +84,8 @@ export const validateMailgunProviderConfig = (
       binding.providerId !== MAILGUN_PROVIDER_ID ||
       binding.adapterVersion !== MAILGUN_ADAPTER_VERSION ||
       binding.direction !== "inbound" ||
+      binding.tenantId !== firstBinding.tenantId ||
+      binding.providerInstanceId !== firstBinding.providerInstanceId ||
       (binding.capabilityDigest !== descriptorDigest && !/^0{64}$/u.test(binding.capabilityDigest))
     ) {
       return invalidConfig("inbound_binding");

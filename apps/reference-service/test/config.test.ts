@@ -23,5 +23,28 @@ describe("reference service configuration", () => {
     expect(() => parseReferenceServiceConfig({ ...base, providerInstances: [] })).toThrow(
       ConfigurationError,
     );
+    expect(() =>
+      parseReferenceServiceConfig({
+        ...base,
+        environment: "production",
+        postgres: { ...base.postgres, tls: "require" },
+        s3: { ...base.s3, endpoint: "https://objects.example.test" },
+        telemetry: {
+          ...base.telemetry,
+          enabled: true,
+          exporterEndpoint: "https://telemetry.example.test/v1/traces",
+        },
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it("keeps decoded raw MIME within the enclosing HTTP request ceiling", () => {
+    const base = testConfig("/tmp/reference-service-secrets");
+    expect(() =>
+      parseReferenceServiceConfig({
+        ...base,
+        s3: { ...base.s3, maximumRawMessageBytes: base.http.maximumIngressBytes + 1 },
+      }),
+    ).toThrow(ConfigurationError);
   });
 });

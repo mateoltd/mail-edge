@@ -1,7 +1,7 @@
 import { Rfc3339TimestampSchema, validateContract } from "@mail-edge/contracts";
-import { sha256CanonicalJson, type CanonicalJsonValue } from "@mail-edge/core";
+import { sha256CanonicalJson, type CanonicalJsonObject } from "@mail-edge/core";
 
-import type { BindingPlanV1, ProviderAdapterIdentity } from "./spi.js";
+import type { BindingPlanV1, DesiredBindingV1, ProviderAdapterIdentity } from "./spi.js";
 
 /** @public */
 export interface BindingPlanInspection {
@@ -10,9 +10,42 @@ export interface BindingPlanInspection {
   readonly issues: readonly string[];
 }
 
+/** The canonical identity of a desired provider binding. @public */
+export const desiredBindingDigest = (desired: DesiredBindingV1): string =>
+  sha256CanonicalJson(
+    Object.freeze({
+      configRevision: desired.configRevision,
+      direction: desired.direction,
+      domainALabel: desired.domainALabel,
+      providerInstanceId: desired.providerInstanceId,
+      requirementsDigest: desired.requirementsDigest,
+      schemaVersion: desired.schemaVersion,
+      tenantId: desired.tenantId,
+    }),
+  );
+
+const canonicalPlanOperation = (
+  operation: BindingPlanV1["operations"][number],
+): CanonicalJsonObject =>
+  Object.freeze({
+    kind: operation.kind,
+    operationId: operation.operationId,
+    parameters: Object.freeze({ ...operation.parameters }),
+    resourceType: operation.resourceType,
+  });
+
 /** The canonical identity of a pure-data binding plan. @public */
 export const bindingPlanDigest = (plan: BindingPlanV1): string =>
-  sha256CanonicalJson(plan as unknown as CanonicalJsonValue);
+  sha256CanonicalJson(
+    Object.freeze({
+      createdAt: plan.createdAt,
+      desiredDigest: plan.desiredDigest,
+      expiresAt: plan.expiresAt,
+      identity: Object.freeze({ ...plan.identity }),
+      operations: Object.freeze(plan.operations.map(canonicalPlanOperation)),
+      schemaVersion: plan.schemaVersion,
+    }),
+  );
 
 /** Validates identity, expiration, deterministic operation order, and duplicate operation IDs. @public */
 export const inspectBindingPlan = (

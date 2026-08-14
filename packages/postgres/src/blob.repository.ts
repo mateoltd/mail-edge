@@ -1689,7 +1689,7 @@ export class PostgresBlobRepository {
     expectedState: "reserved" | "uploading" | "uploaded" | "verified",
     state: "uploading" | "uploaded" | "verified" | "promoting",
     occurredAt: string,
-    values: Readonly<Record<string, unknown>>,
+    values: BlobIngestStageUpdate,
     signal: AbortSignal,
   ): Promise<Result<{ readonly optimisticVersion: number }, MailEdgeError>> {
     return this.#unitOfWork.executeForTenant(
@@ -1705,7 +1705,7 @@ export class PostgresBlobRepository {
               optimisticVersion: String(optimisticVersion),
               state,
               updatedAt: occurredAt,
-            } as unknown as BlobIngestStageUpdate)
+            })
             .where("tenantId", "=", tenantId)
             .where("stageId", "=", stageId)
             .where("state", "=", expectedState)

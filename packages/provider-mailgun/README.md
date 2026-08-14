@@ -17,7 +17,7 @@ identity.
 | Outbound               | TLS-on-connect SMTP on port 465; explicit MAIL FROM and RCPT TO; raw DATA streaming; dot stuffing; multiple recipients; RCPT-level outcomes                                        | SMTPUTF8, null reverse path, DSN, per-recipient DSN, REQUIRETLS parameter, provider idempotency |
 | Dispatch certainty     | Zero confirmed raw bytes means `not_sent`; lost outcome after confirmed raw bytes means non-retryable `unknown`; authenticated SMTP acceptance or rejection is conclusive          | No retry is invented for unknown delivery                                                       |
 | Feedback               | `accepted`, `delivered`, temporary `failed` as `deferred`, permanent `failed` as `bounced`, and `complained`; recipient-specific normalization                                     | Unsubscription and any undocumented event kind                                                  |
-| Reconciliation         | Authenticated Events API lookup by domain, Message-ID, and time window can prove an observed `accepted` event                                                                      | Absence cannot prove `not_sent`; missing or absent evidence remains `unknown`                   |
+| Reconciliation         | Account-level Logs API `POST /v1/analytics/logs` with exact domain and Message-ID filters, bounded time window, and finite pagination can prove one observed `accepted` log        | Absence, ambiguity, truncation, malformed pages, cancellation, and API failure remain `unknown` |
 | Control plane          | Deterministic plan; create domain with SMTP credential; create exact-domain catch-all route; DNS/domain/route discovery; explicitly authorized deletion                            | No silent adoption, update, rollback, or guessed API behavior                                   |
 
 The outbound and decoded inbound MIME ceiling is 25 MiB. The HTTP ingress request ceiling is 80 MiB
@@ -48,7 +48,7 @@ const created = createMailgunProviderRegistration(
     signatureToleranceSeconds: 300,
     networkTimeoutMilliseconds: 30_000,
   },
-  { clock, secrets, webhookReplay },
+  { clock, secrets },
 );
 
 if (!created.ok) throw created.error;
@@ -56,8 +56,9 @@ providerRegistry.register(created.value);
 ```
 
 `inboundBindings` must be immutable inbound snapshots for the exact provider instance. The host must
-route the configured inbound path to the registration's inbound SPI surface and provide the binding
-ID as `bindingHint`. Feedback routing is host-owned as well.
+route the configured inbound path to the registration's inbound SPI surface. The adapter resolves
+one exact recipient domain across a single tenant's configured snapshots; a host-supplied binding
+hint may narrow that selection but is not required. Feedback routing is host-owned as well.
 
 ## Security and operations
 
@@ -67,8 +68,8 @@ ID as `bindingHint`. Feedback routing is host-owned as well.
   the timestamp and token, not the request body, sender, or recipient. Replay conflict detection
   therefore also records a body digest, but it cannot turn the provider's signature into whole-body
   coverage.
-- Back `MailgunWebhookReplayStore` with a durable atomic store scoped by provider instance. Inbound
-  replay remains part of the existing atomic verified-receipt commit.
+- Commit the feedback adapter's replay identity atomically with feedback dedupe, ledger rows, and
+  wakeups. Inbound replay remains part of the atomic verified-receipt commit.
 - Treat `quarantine_unknown` as manual/reconciliation work. Automatic resubmission may duplicate a
   message.
 - Treat RCPT rejection as submission-time evidence only. Delivery, bounce, and complaint truth
@@ -82,8 +83,8 @@ ID as `bindingHint`. Feedback routing is host-owned as well.
 
 Deterministic tests use adversarial chunk boundaries, binary MIME, malformed percent encoding, stale
 and invalid signatures, replay conflicts, bounded streams, partial RCPT acceptance, pre/post
-dispatch-boundary failures, signed feedback, acceptance-only reconciliation, and fake HTTP
-control-plane responses. The package also runs the provider-neutral conformance kit.
+dispatch-boundary failures, signed feedback, acceptance-only reconciliation, and deterministic
+Mailgun protocol responses. The package also runs the provider-neutral conformance kit.
 
 The live lane is opt-in and sends a real message:
 
@@ -108,9 +109,9 @@ live-provider proof.
 - [Mailgun's 25 MiB message ceiling](https://documentation.mailgun.com/docs/mailgun/user-manual/sending-messages/send-http)
 - [Webhook event categories](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhooks)
 - [Webhook payload fields](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhook-payloads)
-- [Events API query](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/events/get-v3-domain_name-events)
+- [Account-level Logs API](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/logs)
 - [Domain creation](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/domains/put-v4-domains--name-)
 - [Route creation](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/routes/post-v3-routes)
 
-The Events API is documented but deprecated in favor of Logs. This adapter keeps the claim narrow:
-an observed accepted event is authoritative; API absence never is.
+The adapter has no production dependency on Mailgun's deprecated Events endpoint. One exact,
+authenticated accepted Logs record is authoritative; a search miss or incomplete evidence never is.

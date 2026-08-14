@@ -39,16 +39,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
-  /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound:
+  /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound/{providerPath}:
     post:
       tags: [Provider ingress]
       operationId: ingestProviderMessage
-      description: The exact provider adapter authenticates and consumes the one-shot byte stream.
+      description:
+        The exact provider adapter authenticates and consumes the one-shot byte stream at its
+        registered provider path.
       parameters:
         - $ref: "#/components/parameters/ProviderId"
         - $ref: "#/components/parameters/AdapterVersion"
         - $ref: "#/components/parameters/Mode"
         - $ref: "#/components/parameters/ProviderInstanceId"
+        - $ref: "#/components/parameters/ProviderPath"
       requestBody:
         required: true
         content:
@@ -421,6 +424,15 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/UuidV7"
+    ProviderPath:
+      name: providerPath
+      in: path
+      required: true
+      description: Adapter-owned ingress path segment, such as raw-mime for Mailgun.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
     TenantId:
       name: tenantId
       in: path

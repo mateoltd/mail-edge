@@ -12,6 +12,8 @@
     { "path": "../../packages/contracts" },
     { "path": "../../packages/core" },
     { "path": "../../packages/provider" },
+    { "path": "../../packages/provider-mailgun" },
+    { "path": "../../packages/runtime" },
     { "path": "../../packages/postgres" },
     { "path": "../../packages/blob-s3" },
     { "path": "../../packages/queue-pg-boss" },

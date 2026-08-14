@@ -9,6 +9,7 @@ import {
 } from "@mail-edge/contracts";
 import type { Clock, TenantUnitOfWorkFactory, WakeupScheduler } from "@mail-edge/core";
 import { validateProviderFeedbackBatch } from "@mail-edge/provider";
+import type { ProviderReplayIdentityV1 } from "@mail-edge/provider";
 
 import { observeSafely, operationSignal } from "./internal.js";
 import { assertDurableRuntimeConfig, type DurableRuntimeConfig } from "./policy.js";
@@ -48,6 +49,7 @@ export class DurableFeedbackService {
     providerInstanceId: ProviderInstanceId,
     descriptor: ProviderCapabilityDescriptorV1,
     events: readonly ProviderFeedbackV1[],
+    replay: ProviderReplayIdentityV1 | undefined,
     callerSignal: AbortSignal,
   ): Promise<Result<FeedbackCommitResult, MailEdgeError>> {
     const started = performance.now();
@@ -60,6 +62,7 @@ export class DurableFeedbackService {
         const committed = await this.#store.commitFeedback(
           tenantId,
           validated.value.events,
+          replay,
           context,
           transactionSignal,
         );

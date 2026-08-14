@@ -6,6 +6,7 @@ import type {
   NormalizedEvidence,
   OneShotProviderHttpRequest,
   ProviderFeedbackV1,
+  ProviderFeedbackIngressBatch,
   ProviderHttpIngressContext,
   Result,
   SecretResolver,
@@ -21,7 +22,7 @@ import {
   feedbackEventId,
   normalizeMessageId,
 } from "./transform.js";
-import type { MailgunProviderConfig, MailgunWebhookReplayStore } from "./types.js";
+import type { MailgunProviderConfig } from "./types.js";
 
 const MAX_FEEDBACK_BODY_BYTES = 1024 * 1024;
 const jsonContentType = /^application\/json(?:\s*;\s*charset=(?:utf-8|UTF-8))?$/u;
@@ -149,7 +150,6 @@ export class MailgunFeedbackAdapter implements FeedbackProviderAdapter {
   readonly descriptor = mailgunProviderDescriptor;
   readonly #config: MailgunProviderConfig;
   readonly #secrets: SecretResolver;
-  readonly #replay: MailgunWebhookReplayStore;
   readonly #clock: { now(): string };
   readonly #runtime: MailgunRuntime;
 
@@ -157,14 +157,12 @@ export class MailgunFeedbackAdapter implements FeedbackProviderAdapter {
     config: MailgunProviderConfig,
     dependencies: {
       readonly secrets: SecretResolver;
-      readonly replay: MailgunWebhookReplayStore;
       readonly clock: { now(): string };
       readonly runtime: MailgunRuntime;
     },
   ) {
     this.#config = config;
     this.#secrets = dependencies.secrets;
-    this.#replay = dependencies.replay;
     this.#clock = dependencies.clock;
     this.#runtime = dependencies.runtime;
   }
@@ -174,7 +172,7 @@ export class MailgunFeedbackAdapter implements FeedbackProviderAdapter {
     context: ProviderHttpIngressContext,
     collector: BoundedBodyCollector,
     signal: AbortSignal,
-  ): Promise<Result<readonly ProviderFeedbackV1[], MailEdgeError>> {
+  ): Promise<Result<ProviderFeedbackIngressBatch, MailEdgeError>> {
     const available = this.#runtime.available();
     if (!available.ok) return available;
     if (request.contentType === null || !jsonContentType.test(request.contentType)) {
@@ -199,21 +197,21 @@ export class MailgunFeedbackAdapter implements FeedbackProviderAdapter {
       signal,
     );
     if (!verified.ok) return verified;
-    const replay = await this.#replay.consume(
-      Object.freeze({
-        bodyDigest: verified.value.bodyDigest,
-        expiresAt: verified.value.expiresAt,
-        nonceDigest: verified.value.nonceDigest,
-        providerInstanceId: context.providerInstanceId,
-      }),
-      signal,
-    );
-    if (!replay.ok) return replay;
-    if (replay.value === "conflict") {
-      return { error: mailgunError("CONFLICT", "feedback_token_conflict"), ok: false };
-    }
     const normalized = this.#normalize(envelope.eventData, context, request.receivedAt);
-    return normalized.ok ? { ok: true, value: Object.freeze([normalized.value]) } : normalized;
+    return normalized.ok
+      ? {
+          ok: true,
+          value: Object.freeze({
+            events: Object.freeze([normalized.value]),
+            replay: Object.freeze({
+              bodyDigest: verified.value.bodyDigest,
+              expiresAt: verified.value.expiresAt,
+              nonceDigest: verified.value.nonceDigest,
+              providerInstanceId: context.providerInstanceId,
+            }),
+          }),
+        }
+      : normalized;
   }
 
   #normalize(

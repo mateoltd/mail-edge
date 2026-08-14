@@ -338,6 +338,9 @@ export class DurableOutboundWorker {
         certainty: "unknown",
         errorCode: execution.result.error.code,
         evidence,
+        ...(execution.result.error.providerMessageId === undefined
+          ? {}
+          : { providerMessageId: execution.result.error.providerMessageId }),
         state: "quarantined_unknown",
       });
     }

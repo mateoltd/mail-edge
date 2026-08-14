@@ -1,6 +1,11 @@
 import { type ConstructorOptions, type Db, type Job, PgBoss } from "pg-boss";
 
-import type { UnitOfWorkContext, Wakeup, WakeupScheduler } from "@mail-edge/core";
+import {
+  parseWorkflowWakeup,
+  type UnitOfWorkContext,
+  type Wakeup,
+  type WakeupScheduler,
+} from "@mail-edge/core";
 
 import type {
   QueueErrorFactory,
@@ -105,7 +110,7 @@ const opaquePayload = (wakeup: Wakeup): Readonly<Record<string, string>> => {
 const parseOpaquePayload = (type: WakeupType, data: object): Wakeup => {
   const keys = Object.keys(data);
   const key = keys[0];
-  const value = key === undefined ? undefined : (data as Record<string, unknown>)[key];
+  const value: unknown = key === undefined ? undefined : Reflect.get(data, key);
   if (keys.length !== 1 || key === undefined || typeof value !== "string") {
     throw new TypeError("pg-boss wakeup payload is not one opaque identifier.");
   }
@@ -115,17 +120,20 @@ const parseOpaquePayload = (type: WakeupType, data: object): Wakeup => {
   switch (type) {
     case "application_delivery":
       if (key !== "deliveryId") throw new TypeError("Wakeup payload key is invalid.");
-      return { deliveryId: value as never, schemaVersion: "v1", type };
+      break;
     case "feedback_event":
       if (key !== "feedbackEventId") throw new TypeError("Wakeup payload key is invalid.");
-      return { feedbackEventId: value as never, schemaVersion: "v1", type };
+      break;
     case "inbound_receipt":
       if (key !== "receiptId") throw new TypeError("Wakeup payload key is invalid.");
-      return { receiptId: value as never, schemaVersion: "v1", type };
+      break;
     case "outbound_intent":
       if (key !== "intentId") throw new TypeError("Wakeup payload key is invalid.");
-      return { intentId: value as never, schemaVersion: "v1", type };
+      break;
   }
+  const parsed = parseWorkflowWakeup(Object.freeze({ [key]: value, schemaVersion: "v1", type }));
+  if (!parsed.ok) throw new TypeError("pg-boss wakeup payload failed its public schema.");
+  return parsed.value;
 };
 
 const transactionDatabase = (

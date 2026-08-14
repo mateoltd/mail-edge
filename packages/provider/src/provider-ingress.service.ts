@@ -4,7 +4,6 @@ import {
   type BoundedBodyCollector,
   type OneShotBody,
   type OneShotProviderHttpRequest,
-  type ProviderFeedbackV1,
   type ProviderHttpIngressContext,
   type Result,
   validateContract,
@@ -18,6 +17,7 @@ import type {
   InboundIngressCommit,
   InboundIngestionServices,
   InboundProviderAdapter,
+  ProviderFeedbackIngressBatch,
 } from "./spi.js";
 
 const ingressFailure = (reason: string, cause?: unknown): MailEdgeError =>
@@ -222,7 +222,7 @@ export class ProviderFeedbackIngressService {
     request: OneShotProviderHttpRequest,
     context: ProviderHttpIngressContext,
     signal: AbortSignal,
-  ): Promise<Result<readonly ProviderFeedbackV1[], MailEdgeError>> {
+  ): Promise<Result<ProviderFeedbackIngressBatch, MailEdgeError>> {
     const metadata = validateProviderHttpRequestMetadata(request);
     if (!metadata.ok) {
       await releaseIncompleteBody(request, "invalid_feedback_metadata");
@@ -240,7 +240,7 @@ export class ProviderFeedbackIngressService {
       };
     }
     const boundedRequest = withStreamLimit(request, MAX_COLLECTED_BODY_BYTES);
-    let result: Result<readonly ProviderFeedbackV1[], MailEdgeError>;
+    let result: Result<ProviderFeedbackIngressBatch, MailEdgeError>;
     try {
       result = await this.#adapter.ingestFeedback(boundedRequest, context, this.#collector, signal);
     } catch (cause) {
@@ -259,13 +259,26 @@ export class ProviderFeedbackIngressService {
       return { error: ingressFailure("body_incomplete"), ok: false };
     }
     const validated = validateProviderFeedbackBatch(
-      result.value,
+      result.value.events,
       this.#adapter.descriptor,
       context.providerInstanceId,
     );
-    return validated.ok
-      ? { ok: true, value: validated.value.events }
-      : { error: validated.error, ok: false };
+    if (!validated.ok) return { error: validated.error, ok: false };
+    if (
+      result.value.replay !== undefined &&
+      result.value.replay.providerInstanceId !== context.providerInstanceId
+    ) {
+      return { error: ingressFailure("feedback_replay_identity_mismatch"), ok: false };
+    }
+    return {
+      ok: true,
+      value: Object.freeze({
+        events: validated.value.events,
+        ...(result.value.replay === undefined
+          ? {}
+          : { replay: Object.freeze({ ...result.value.replay }) }),
+      }),
+    };
   }
 }
 
@@ -276,5 +289,5 @@ export const executeFeedbackIngress = (
   context: ProviderHttpIngressContext,
   collector: BoundedBodyCollector,
   signal: AbortSignal,
-): Promise<Result<readonly ProviderFeedbackV1[], MailEdgeError>> =>
+): Promise<Result<ProviderFeedbackIngressBatch, MailEdgeError>> =>
   new ProviderFeedbackIngressService(adapter, collector).execute(request, context, signal);

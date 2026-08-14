@@ -1,17 +1,18 @@
-import { randomUUID } from "node:crypto";
-
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import {
   MailEdgeError,
+  DomainALabelSchema,
   parseIdempotencyKey,
   parseIntentId,
+  parseProviderId,
+  parseProviderInstanceId,
   parseReceiptId,
   parseTenantId,
   projectProblem,
   RawMessageRefV1Schema,
+  RouteBindingSnapshotV1Schema,
   SmtpEnvelopeV1Schema,
   type Result,
-  type ProviderFeedbackV1,
   validateContract,
 } from "@mail-edge/contracts";
 import {
@@ -22,6 +23,7 @@ import {
   type ControlPlaneOperationContext,
   type DesiredBindingV1,
   type ProviderAdapterRegistration,
+  type ProviderFeedbackIngressBatch,
   type InboundIngressCommit,
   type ProviderAdapterRegistry,
   type RouteBindingSnapshotV1,
@@ -54,6 +56,8 @@ import {
   TenantReceiptParamsSchema,
   type ProviderInstanceParams,
   type ProviderRouteParams,
+  type BindingPlanInput,
+  type DesiredBindingInput,
   type TenantIntentParams,
   type TenantParams,
   type TenantReceiptParams,
@@ -79,6 +83,7 @@ import {
   RequestAbortScope,
   requestContentLength,
 } from "./request-body.js";
+import { UuidV7Generator } from "./uuid-v7.service.js";
 import type { HostTracer } from "./telemetry.js";
 import type { Clock } from "@mail-edge/core";
 
@@ -113,6 +118,44 @@ const exactBinding = (
   binding.adapterVersion === instance.identity.adapterVersion &&
   binding.providerInstanceId === instance.providerInstanceId;
 
+const invalidControlInput = <T>(): Result<T, MailEdgeError> => ({
+  error: hostError("VALIDATION_FAILED", "control_input_invalid", { retryable: false }),
+  ok: false,
+});
+
+const desiredBinding = (input: DesiredBindingInput): Result<DesiredBindingV1, MailEdgeError> => {
+  const tenant = parseTenantId(input.tenantId);
+  const providerInstance = parseProviderInstanceId(input.providerInstanceId);
+  const domain = validateContract(DomainALabelSchema, input.domainALabel);
+  if (!tenant.ok || !providerInstance.ok || !domain.ok) return invalidControlInput();
+  return {
+    ok: true,
+    value: Object.freeze({
+      ...input,
+      domainALabel: domain.value,
+      providerInstanceId: providerInstance.value,
+      tenantId: tenant.value,
+    }),
+  };
+};
+
+const bindingPlan = (input: BindingPlanInput): Result<BindingPlanV1, MailEdgeError> => {
+  const providerId = parseProviderId(input.identity.providerId);
+  if (!providerId.ok) return invalidControlInput();
+  return {
+    ok: true,
+    value: Object.freeze({
+      ...input,
+      identity: Object.freeze({ ...input.identity, providerId: providerId.value }),
+      operations: Object.freeze(
+        input.operations.map((operation) =>
+          Object.freeze({ ...operation, parameters: Object.freeze({ ...operation.parameters }) }),
+        ),
+      ),
+    }),
+  };
+};
+
 const isMailEdgeResult = <T>(value: unknown): value is Result<T, MailEdgeError> => {
   if (typeof value !== "object" || value === null || !("ok" in value)) return false;
   if (value.ok === true) return "value" in value;
@@ -131,10 +174,11 @@ export class ReferenceHttpServer implements LifecycleComponent {
 
   constructor(dependencies: HttpDependencies) {
     this.#dependencies = dependencies;
+    const requestIds = new UuidV7Generator();
     const server = fastify({
       bodyLimit: dependencies.config.http.maximumIngressBytes,
       forceCloseConnections: "idle",
-      genReqId: () => randomUUID(),
+      genReqId: () => requestIds.next(),
       keepAliveTimeout: dependencies.config.http.keepAliveTimeoutMilliseconds,
       logger: {
         level: "info",
@@ -253,62 +297,71 @@ export class ReferenceHttpServer implements LifecycleComponent {
 
   #registerProviderIngress(): void {
     const base = "/v1/providers/:providerId/:adapterVersion/:mode/instances/:providerInstanceId";
+    const inbound = async (
+      request: FastifyRequest<{ Params: ProviderRouteParams }>,
+      reply: FastifyReply,
+    ) =>
+      this.#run(
+        request,
+        reply,
+        "provider.inbound",
+        this.#dependencies.config.http.requestTimeoutMilliseconds,
+        async (signal, requestId) => {
+          const resolved = this.#dependencies.catalog.resolve(request.params);
+          if (!resolved.ok) return resolved;
+          const registration = this.#registration(resolved.value);
+          if (!registration.ok) return registration;
+          if (registration.value.inbound === undefined) {
+            return { error: hostError("NOT_FOUND", "inbound_surface_not_found"), ok: false };
+          }
+          const body = asReadableBody(request.body);
+          if (!body.ok) return body;
+          const services = await this.#dependencies.workflow.inboundServices(
+            resolved.value,
+            signal,
+          );
+          if (!isMailEdgeResult(services) || !services.ok) {
+            return isMailEdgeResult(services)
+              ? services
+              : { error: hostError("INTERNAL", "inbound_services_result_invalid"), ok: false };
+          }
+          const context = Object.freeze({
+            deadline: deadline(
+              this.#dependencies.clock,
+              this.#dependencies.config.http.requestTimeoutMilliseconds,
+            ),
+            providerInstanceId: resolved.value.providerInstanceId,
+            requestId,
+          });
+          const result: unknown = await new ProviderInboundIngressService(
+            registration.value.inbound,
+            bindInboundServices(resolved.value, services.value),
+          ).execute(
+            providerHttpRequest({
+              body: body.value,
+              path: request.raw.url?.split("?", 1)[0] ?? "/",
+              raw: request.raw,
+              receivedAt: this.#dependencies.clock.now(),
+            }),
+            context,
+            signal,
+          );
+          if (!isMailEdgeResult<InboundIngressCommit>(result)) {
+            return { error: hostError("INTERNAL", "adapter_result_invalid"), ok: false };
+          }
+          if (result.ok) reply.code(result.value.response.statusCode).send();
+          return result;
+        },
+      );
     this.#server.post<{ Params: ProviderRouteParams }>(
       `${base}/inbound`,
       { schema: { params: ProviderRouteParamsSchema } },
-      async (request, reply) =>
-        this.#run(
-          request,
-          reply,
-          "provider.inbound",
-          this.#dependencies.config.http.requestTimeoutMilliseconds,
-          async (signal, requestId) => {
-            const resolved = this.#dependencies.catalog.resolve(request.params);
-            if (!resolved.ok) return resolved;
-            const registration = this.#registration(resolved.value);
-            if (!registration.ok) return registration;
-            if (registration.value.inbound === undefined) {
-              return { error: hostError("NOT_FOUND", "inbound_surface_not_found"), ok: false };
-            }
-            const body = asReadableBody(request.body);
-            if (!body.ok) return body;
-            const services = await this.#dependencies.workflow.inboundServices(
-              resolved.value,
-              signal,
-            );
-            if (!isMailEdgeResult(services) || !services.ok) {
-              return isMailEdgeResult(services)
-                ? services
-                : { error: hostError("INTERNAL", "inbound_services_result_invalid"), ok: false };
-            }
-            const context = Object.freeze({
-              deadline: deadline(
-                this.#dependencies.clock,
-                this.#dependencies.config.http.requestTimeoutMilliseconds,
-              ),
-              providerInstanceId: resolved.value.providerInstanceId,
-              requestId,
-            });
-            const result: unknown = await new ProviderInboundIngressService(
-              registration.value.inbound,
-              bindInboundServices(resolved.value, services.value),
-            ).execute(
-              providerHttpRequest({
-                body: body.value,
-                path: request.raw.url?.split("?", 1)[0] ?? "/",
-                raw: request.raw,
-                receivedAt: this.#dependencies.clock.now(),
-              }),
-              context,
-              signal,
-            );
-            if (!isMailEdgeResult<InboundIngressCommit>(result)) {
-              return { error: hostError("INTERNAL", "adapter_result_invalid"), ok: false };
-            }
-            if (result.ok) reply.code(result.value.response.statusCode).send();
-            return result;
-          },
-        ),
+      inbound,
+    );
+    this.#server.post<{ Params: ProviderRouteParams }>(
+      `${base}/inbound/*`,
+      { schema: { params: ProviderRouteParamsSchema } },
+      inbound,
     );
 
     this.#server.post<{ Params: ProviderRouteParams }>(
@@ -350,16 +403,17 @@ export class ReferenceHttpServer implements LifecycleComponent {
               }),
               signal,
             );
-            if (!isMailEdgeResult<readonly ProviderFeedbackV1[]>(result)) {
+            if (!isMailEdgeResult<ProviderFeedbackIngressBatch>(result)) {
               return { error: hostError("INTERNAL", "adapter_result_invalid"), ok: false };
             }
             if (!result.ok) return result;
             const handoff: unknown = await this.#dependencies.workflow.commitFeedback(
               {
-                events: result.value,
+                events: result.value.events,
                 instance: resolved.value,
                 receivedAt: this.#dependencies.clock.now(),
                 requestId,
+                ...(result.value.replay === undefined ? {} : { replay: result.value.replay }),
               },
               signal,
             );
@@ -401,7 +455,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
               {
                 body: readableByteSource(body.value),
                 contentLength: requestContentLength(request.raw),
-                maximumBytes: this.#dependencies.config.http.maximumIngressBytes,
+                maximumBytes: this.#dependencies.config.s3.maximumRawMessageBytes,
                 purpose: "outbound_upload",
                 tenantId: tenant.value.tenantId,
               },
@@ -549,7 +603,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
             if (!body.ok) return body;
             const desired = this.#validator.validate(DesiredBindingSchema, body.value);
             if (!desired.ok) return desired;
-            const input = desired.value as unknown as DesiredBindingV1;
+            const parsed = desiredBinding(desired.value);
+            if (!parsed.ok) return parsed;
+            const input = parsed.value;
             if (
               input.tenantId !== instance.tenantId ||
               input.providerInstanceId !== instance.providerInstanceId
@@ -583,7 +639,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
             if (!body.ok) return body;
             const payload = this.#validator.validate(ApplyPlanRequestSchema, body.value);
             if (!payload.ok) return payload;
-            const plan = payload.value.plan as unknown as BindingPlanV1;
+            const parsed = bindingPlan(payload.value.plan);
+            if (!parsed.ok) return parsed;
+            const plan = parsed.value;
             if (
               plan.identity.providerId !== instance.identity.providerId ||
               plan.identity.adapterVersion !== instance.identity.adapterVersion ||
@@ -620,7 +678,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
             if (!body.ok) return body;
             const payload = this.#validator.validate(BindingDiscoveryRequestSchema, body.value);
             if (!payload.ok) return payload;
-            const binding = payload.value.binding as unknown as RouteBindingSnapshotV1;
+            const parsed = validateContract(RouteBindingSnapshotV1Schema, payload.value.binding);
+            if (!parsed.ok) return invalidControlInput();
+            const binding = parsed.value;
             if (!exactBinding(binding, instance)) {
               return {
                 error: hostError("AUTHORIZATION_FAILED", "control_instance_mismatch"),
@@ -656,7 +716,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
             if (!body.ok) return body;
             const payload = this.#validator.validate(BindingOperationRequestSchema, body.value);
             if (!payload.ok) return payload;
-            const binding = payload.value.binding as unknown as RouteBindingSnapshotV1;
+            const parsed = validateContract(RouteBindingSnapshotV1Schema, payload.value.binding);
+            if (!parsed.ok) return invalidControlInput();
+            const binding = parsed.value;
             if (!exactBinding(binding, instance)) {
               return {
                 error: hostError("AUTHORIZATION_FAILED", "control_instance_mismatch"),

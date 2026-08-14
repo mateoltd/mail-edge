@@ -1,20 +1,16 @@
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { createReferenceServiceComposition as containerProbeComposition } from "../test/container/composition.mjs";
-
 const execute = promisify(execFile);
-if (typeof containerProbeComposition !== "function") {
-  throw new TypeError("Container probe composition export is missing.");
-}
 const applicationRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(applicationRoot, "../..");
 const composeFile = join(applicationRoot, "compose.yaml");
-const compositionFile = join(applicationRoot, "test/container/composition.mjs");
 const suffix = `${String(process.pid)}-${Date.now().toString(36)}`;
 const project = `mail_edge_reference_verify_${suffix.replaceAll("-", "_")}`;
 const image = `mail-edge-reference-verify:${suffix}`;
@@ -22,6 +18,72 @@ const container = `mail-edge-reference-verify-${suffix}`;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mail-edge-reference-container-"));
 const secretDirectory = join(temporaryDirectory, "secrets");
 const configFile = join(temporaryDirectory, "config.json");
+const kmsKeyReference = "arn:aws:kms:us-east-1:000000000000:key/mail-edge-container";
+
+const kms = createServer(async (request, response) => {
+  try {
+    if (request.method !== "POST" || request.headers.authorization === undefined) {
+      response.writeHead(403).end();
+      return;
+    }
+    const chunks = [];
+    let observed = 0;
+    for await (const chunk of request) {
+      observed += chunk.byteLength;
+      if (observed > 64 * 1024) throw new TypeError("KMS request exceeded the protocol limit.");
+      chunks.push(chunk);
+    }
+    const input = JSON.parse(Buffer.concat(chunks, observed).toString("utf8"));
+    const target = request.headers["x-amz-target"];
+    if (
+      input.KeyId !== kmsKeyReference ||
+      typeof input.EncryptionContext !== "object" ||
+      input.EncryptionContext === null ||
+      Object.keys(input.EncryptionContext).length !== 4
+    ) {
+      throw new TypeError("KMS request identity or encryption context is invalid.");
+    }
+    let output;
+    if (target === "TrentService.GenerateDataKey" && input.KeySpec === "AES_256") {
+      const plaintext = randomBytes(32);
+      output = {
+        CiphertextBlob: Buffer.concat([Buffer.from("MES1", "ascii"), plaintext]).toString("base64"),
+        KeyId: kmsKeyReference,
+        Plaintext: plaintext.toString("base64"),
+      };
+      plaintext.fill(0);
+    } else if (
+      target === "TrentService.Decrypt" &&
+      input.EncryptionAlgorithm === "SYMMETRIC_DEFAULT"
+    ) {
+      const wrapped = Buffer.from(input.CiphertextBlob, "base64");
+      if (wrapped.byteLength !== 36 || wrapped.subarray(0, 4).toString("ascii") !== "MES1") {
+        throw new TypeError("KMS ciphertext is invalid.");
+      }
+      output = { KeyId: kmsKeyReference, Plaintext: wrapped.subarray(4).toString("base64") };
+    } else {
+      throw new TypeError("KMS operation is unsupported.");
+    }
+    const body = Buffer.from(JSON.stringify(output));
+    response.writeHead(200, {
+      "content-length": String(body.byteLength),
+      "content-type": "application/x-amz-json-1.1",
+      "x-amzn-requestid": randomBytes(16).toString("hex"),
+    });
+    response.end(body);
+  } catch {
+    response.writeHead(400, { "content-type": "application/x-amz-json-1.1" });
+    response.end(JSON.stringify({ __type: "ValidationException" }));
+  }
+});
+await new Promise((resolvePromise, reject) => {
+  kms.once("error", reject);
+  kms.listen(0, "0.0.0.0", resolvePromise);
+});
+const kmsAddress = kms.address();
+if (kmsAddress === null || typeof kmsAddress === "string") {
+  throw new TypeError("KMS protocol simulator did not bind a TCP port.");
+}
 
 const run = async (file, arguments_, options = {}) =>
   execute(file, arguments_, {
@@ -43,7 +105,7 @@ const config = {
       },
     ],
   },
-  compositionModule: "/srv/reference-service/composition.mjs",
+  compositionModule: "/srv/reference-service/dist/production-composition.js",
   environment: "test",
   http: {
     controlPlaneTimeoutMilliseconds: 10_000,
@@ -51,7 +113,7 @@ const config = {
     host: "0.0.0.0",
     keepAliveTimeoutMilliseconds: 5_000,
     maximumConcurrentRequests: 8,
-    maximumIngressBytes: 1_048_576,
+    maximumIngressBytes: 83_886_080,
     maximumJsonBytes: 65_536,
     maximumPendingRequests: 8,
     port: 8080,
@@ -74,13 +136,103 @@ const config = {
   },
   providerInstances: [
     {
-      adapterVersion: "1.0.0",
-      mode: "http",
-      providerId: "container-probe",
+      adapterVersion: "0.1.0",
+      mode: "smtp_raw",
+      providerId: "mailgun",
       providerInstanceId: "018f4f6a-7b2c-7000-8000-000000000902",
       tenantId: "018f4f6a-7b2c-7000-8000-000000000901",
     },
   ],
+  production: {
+    hostIntegration: [
+      {
+        deliveryUrl: "https://host.invalid/delivery",
+        feedbackUrl: "https://host.invalid/feedback",
+        maximumResponseBytes: 65536,
+        recipientRouterUrl: "https://host.invalid/recipients",
+        reverseRouteUrl: "https://host.invalid/reverse-route",
+        signingSecret: "secret://host-signing-key",
+        tenantId: "018f4f6a-7b2c-7000-8000-000000000901",
+        timeoutMilliseconds: 5000,
+      },
+    ],
+    kms: {
+      accessKeyIdSecret: "secret://kms-access-key",
+      endpoint: `http://host.docker.internal:${String(kmsAddress.port)}`,
+      keyReference: kmsKeyReference,
+      operationTimeoutMilliseconds: 5000,
+      region: "us-east-1",
+      secretAccessKeySecret: "secret://kms-secret-key",
+    },
+    mailgun: [
+      {
+        apiKeySecretReference: "secret://mailgun-api-key",
+        inboundBindings: [
+          {
+            adapterMode: "smtp_raw",
+            adapterVersion: "0.1.0",
+            bindingId: "018f4f6a-7b2c-7000-8000-000000000903",
+            bindingVersion: 1,
+            capabilityDigest: "39d580d631efbccb4b8f214a6977df83f8c50213e750fdb4042bb2e942cf4ce7",
+            configRevision: "container-v1",
+            createdAt: "2026-08-14T00:00:00.000Z",
+            direction: "inbound",
+            dispatchTransport: "smtp",
+            domainALabel: "container.example.test",
+            providerId: "mailgun",
+            providerInstanceId: "018f4f6a-7b2c-7000-8000-000000000902",
+            providerResourceIds: { route: "container-route" },
+            schemaVersion: "v1",
+            tenantId: "018f4f6a-7b2c-7000-8000-000000000901",
+          },
+        ],
+        inboundForwardUrl:
+          "https://edge.example.test/v1/providers/mailgun/0.1.0/smtp_raw/instances/018f4f6a-7b2c-7000-8000-000000000902/inbound/raw-mime",
+        networkTimeoutMilliseconds: 5000,
+        providerInstanceId: "018f4f6a-7b2c-7000-8000-000000000902",
+        region: "us",
+        routePriority: 10,
+        signatureToleranceSeconds: 300,
+        smtpPasswordSecretReference: "secret://mailgun-smtp-password",
+        smtpUsernameLocalPart: "postmaster",
+        tenantId: "018f4f6a-7b2c-7000-8000-000000000901",
+        webhookSigningKeySecretReference: "secret://mailgun-webhook-key",
+      },
+    ],
+    maintenance: {
+      blobBatchSize: 10,
+      intervalMilliseconds: 1000,
+      orphanGraceMilliseconds: 60000,
+      orphanObservationIntervalMilliseconds: 60000,
+      purgeLeaseMilliseconds: 5000,
+      stageCleanupMaximumPages: 5,
+      tenantBatchSize: 10,
+    },
+    runtime: {
+      applicationDeliveryLeaseMilliseconds: 10000,
+      feedbackLeaseMilliseconds: 10000,
+      gracefulStopMilliseconds: 10000,
+      inboundLeaseMilliseconds: 10000,
+      maximumConcurrentWork: 4,
+      operationTimeoutMilliseconds: 5000,
+      outboundLeaseMilliseconds: 10000,
+      reconciliationEvidenceMaximumAgeMilliseconds: 3600000,
+      reconciliationLeaseMilliseconds: 10000,
+      reconciliationWindowMilliseconds: 3600000,
+      recoveryBatchSize: 10,
+      retry: {
+        deterministicJitterRatio: 0,
+        initialDelayMilliseconds: 1000,
+        maximumAttempts: 3,
+        maximumDelayMilliseconds: 10000,
+        multiplier: 2,
+      },
+    },
+    sensitiveValues: {
+      digestKeySecret: "secret://sensitive-digest-key",
+      encryptionKeySecret: "secret://sensitive-encryption-key",
+    },
+  },
   queue: {
     applicationName: "reference-container-queue",
     connectionTimeoutMilliseconds: 5_000,
@@ -104,6 +256,7 @@ const config = {
     keyPrefix: "mail-edge",
     multipartPartBytes: 5_242_880,
     multipartQueueSize: 1,
+    maximumRawMessageBytes: 26_214_400,
     operationTimeoutMilliseconds: 10_000,
     rawRetentionMilliseconds: 86_400_000,
     region: "us-east-1",
@@ -168,6 +321,22 @@ try {
     writeFile(join(secretDirectory, "tenant-token"), "container-tenant-token-at-least-32-bytes", {
       mode: 0o600,
     }),
+    writeFile(join(secretDirectory, "host-signing-key"), "container-host-signing-key-material", {
+      mode: 0o600,
+    }),
+    writeFile(join(secretDirectory, "kms-access-key"), "container-kms-access-key", { mode: 0o600 }),
+    writeFile(join(secretDirectory, "kms-secret-key"), "container-kms-secret-key", { mode: 0o600 }),
+    writeFile(join(secretDirectory, "mailgun-api-key"), "container-mailgun-api-key", {
+      mode: 0o600,
+    }),
+    writeFile(join(secretDirectory, "mailgun-smtp-password"), "container-mailgun-smtp-password", {
+      mode: 0o600,
+    }),
+    writeFile(join(secretDirectory, "mailgun-webhook-key"), "container-mailgun-webhook-key", {
+      mode: 0o600,
+    }),
+    writeFile(join(secretDirectory, "sensitive-digest-key"), "d".repeat(32), { mode: 0o600 }),
+    writeFile(join(secretDirectory, "sensitive-encryption-key"), "e".repeat(32), { mode: 0o600 }),
   ]);
 
   await compose("up", "--detach", "--wait", "postgres", "minio");
@@ -199,6 +368,8 @@ try {
     container,
     "--network",
     `${project}_default`,
+    "--add-host",
+    "host.docker.internal:host-gateway",
     "--read-only",
     "--security-opt",
     "no-new-privileges",
@@ -212,8 +383,6 @@ try {
     `${configFile}:/run/mail-edge/config.json:ro`,
     "--volume",
     `${secretDirectory}:/run/mail-edge/secrets:ro`,
-    "--volume",
-    `${compositionFile}:/srv/reference-service/composition.mjs:ro`,
     image,
   ]);
   let port = await publishedPort();
@@ -244,4 +413,5 @@ try {
   await compose("down", "--volumes", "--remove-orphans").catch(() => undefined);
   await run("docker", ["image", "rm", "--force", image]).catch(() => undefined);
   await rm(temporaryDirectory, { force: true, recursive: true });
+  await new Promise((resolvePromise) => kms.close(resolvePromise));
 }

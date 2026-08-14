@@ -885,12 +885,42 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       sequenceHint: 1,
     });
     const signal = new AbortController().signal;
+    const replay = Object.freeze({
+      bodyDigest: "42".repeat(32),
+      expiresAt: "2026-08-15T03:00:01.000Z",
+      nonceDigest: "41".repeat(32),
+      providerInstanceId,
+    });
+    const rejectedReplay = Object.freeze({
+      ...replay,
+      nonceDigest: "43".repeat(32),
+    });
+    const rejected = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.commitFeedback(
+          tenantId,
+          [{ ...event, providerId: must(parseProviderId("unregistered-provider")) }],
+          rejectedReplay,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(rejected).toMatchObject({ error: { code: "BINDING_UNAVAILABLE" }, ok: false });
+    const rolledBackReplay = await owner.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+       FROM webhook_replay_nonces
+       WHERE tenant_id = $1 AND provider_instance_id = $2 AND nonce_hash = decode($3, 'hex')`,
+      [tenantId, providerInstanceId, rejectedReplay.nonceDigest],
+    );
+    expect(rolledBackReplay.rows[0]?.count).toBe("0");
     const concurrentFeedback = await Promise.all(
       [0, 1].map(() =>
         unitOfWork.executeForTenant(
           tenantId,
           (context, transactionSignal) =>
-            store.commitFeedback(tenantId, [event], context, transactionSignal),
+            store.commitFeedback(tenantId, [event], replay, context, transactionSignal),
           signal,
         ),
       ),
@@ -905,10 +935,37 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
         (result) => result.ok && result.value.duplicates[0] === feedbackEventId,
       ),
     ).toHaveLength(1);
+    const committedReplay = await owner.query<{ body_digest: string; count: string }>(
+      `SELECT encode(body_digest, 'hex') AS body_digest, count(*)::text AS count
+       FROM webhook_replay_nonces
+       WHERE tenant_id = $1 AND provider_instance_id = $2 AND nonce_hash = decode($3, 'hex')
+       GROUP BY body_digest`,
+      [tenantId, providerInstanceId, replay.nonceDigest],
+    );
+    expect(committedReplay.rows[0]).toEqual({ body_digest: replay.bodyDigest, count: "1" });
+    const replayConflict = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.commitFeedback(
+          tenantId,
+          [event],
+          { ...replay, bodyDigest: "44".repeat(32) },
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(replayConflict).toMatchObject({ error: { code: "WORKFLOW_CONFLICT" }, ok: false });
     const contradiction = await unitOfWork.executeForTenant(
       tenantId,
       (context, transactionSignal) =>
-        store.commitFeedback(tenantId, [{ ...event, kind: "bounced" }], context, transactionSignal),
+        store.commitFeedback(
+          tenantId,
+          [{ ...event, kind: "bounced" }],
+          undefined,
+          context,
+          transactionSignal,
+        ),
       signal,
     );
     expect(contradiction).toMatchObject({ error: { code: "WORKFLOW_CONFLICT" }, ok: false });
@@ -948,7 +1005,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       optimistic_version: "1",
       transport_state: "delivered",
     });
-    const replay = await unitOfWork.executeForTenant(
+    const exhaustedClaim = await unitOfWork.executeForTenant(
       tenantId,
       (context, transactionSignal) =>
         store.claimFeedbackApplication(
@@ -961,6 +1018,6 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
         ),
       signal,
     );
-    expect(replay).toEqual({ ok: true, value: null });
+    expect(exhaustedClaim).toEqual({ ok: true, value: null });
   });
 });

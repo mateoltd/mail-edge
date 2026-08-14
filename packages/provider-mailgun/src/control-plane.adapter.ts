@@ -1,7 +1,7 @@
 import {
   bindingPlanDigest,
+  desiredBindingDigest,
   inspectBindingPlan,
-  sha256CanonicalJson,
   type AppliedBindingResourcesV1,
   type BindingPlanOperationV1,
   type BindingPlanV1,
@@ -151,9 +151,7 @@ export class MailgunControlPlaneAdapter implements ProviderControlPlaneAdapter {
       ok: true,
       value: Object.freeze({
         createdAt,
-        desiredDigest: sha256CanonicalJson(
-          desired as unknown as import("@mail-edge/provider").CanonicalJsonValue,
-        ),
+        desiredDigest: desiredBindingDigest(desired),
         expiresAt: new Date(createdMilliseconds + 15 * 60 * 1000).toISOString(),
         identity: mailgunAdapterIdentity,
         operations: Object.freeze(operations),

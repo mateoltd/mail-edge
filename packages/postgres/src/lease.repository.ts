@@ -13,6 +13,27 @@ import type { PostgresUnitOfWork } from "./database.service.js";
 import { postgresError, staleFenceError } from "./errors.js";
 import { immutableClone, safeInteger } from "./mapping.js";
 
+const routeSnapshotJson = (
+  route: OutboundAttemptV1["routeBinding"],
+): Readonly<Record<string, unknown>> =>
+  Object.freeze({
+    adapterVersion: route.adapterVersion,
+    bindingId: route.bindingId,
+    bindingVersion: route.bindingVersion,
+    capabilityDigest: route.capabilityDigest,
+    configRevision: route.configRevision,
+    createdAt: route.createdAt,
+    direction: route.direction,
+    dispatchTransport: route.dispatchTransport,
+    domainALabel: route.domainALabel,
+    providerId: route.providerId,
+    providerInstanceId: route.providerInstanceId,
+    providerResourceIds: Object.freeze({ ...route.providerResourceIds }),
+    schemaVersion: route.schemaVersion,
+    tenantId: route.tenantId,
+    ...(route.adapterMode === undefined ? {} : { adapterMode: route.adapterMode }),
+  });
+
 /** @public */
 export interface InboundDeliveryLease {
   readonly deliveryId: string;
@@ -279,7 +300,7 @@ export class PostgresLeaseRepository {
           providerMessageIdHash: null,
           recipientGroup: group,
           recipientGroupDigest: groupDigest,
-          routeSnapshot: attempt.routeBinding as unknown as Readonly<Record<string, unknown>>,
+          routeSnapshot: routeSnapshotJson(attempt.routeBinding),
           responseEvidence: null,
           state: "dispatching",
           tenantId: attempt.tenantId,

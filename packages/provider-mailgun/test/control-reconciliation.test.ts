@@ -4,8 +4,7 @@ import {
 } from "@mail-edge/conformance";
 import {
   bindingPlanDigest,
-  sha256CanonicalJson,
-  type CanonicalJsonValue,
+  desiredBindingDigest,
   type DesiredBindingV1,
   type MailEdgeError,
   type ProviderReconciliationQueryV1,
@@ -85,18 +84,24 @@ class RecordingHttpTransport implements MailgunHttpTransport {
       this.revision += 1;
       return Promise.resolve(jsonResponse(200, { message: "deleted" }));
     }
-    if (request.method === "GET" && request.url.pathname === "/v3/example.test/events") {
+    if (request.method === "POST" && request.url.pathname === "/v1/analytics/logs") {
       return Promise.resolve(
         jsonResponse(200, {
           items:
             this.reconciliation === "accepted"
               ? [
                   {
+                    "@timestamp": NOW,
+                    domain: { name: "example.test" },
+                    envelope: { transport: "smtp" },
                     event: "accepted",
+                    flags: { "is-authenticated": true, "is-routed": false },
+                    id: "accepted-log-1",
                     message: { headers: { "message-id": "<mailgun-fixture@example.test>" } },
                   },
                 ]
               : [],
+          pagination: { total: this.reconciliation === "accepted" ? 1 : 0 },
         }),
       );
     }
@@ -134,9 +139,7 @@ describe("Mailgun control plane", () => {
     expect(transport.requests).toEqual([]);
     expect(first).toEqual(second);
     if (!first.ok) throw first.error;
-    expect(first.value.desiredDigest).toBe(
-      sha256CanonicalJson(desired as unknown as CanonicalJsonValue),
-    );
+    expect(first.value.desiredDigest).toBe(desiredBindingDigest(desired));
     const applied = await control.applyBindingPlan(
       first.value,
       operation,
@@ -234,8 +237,26 @@ describe("Mailgun acceptance-only reconciliation", () => {
     expect(result.value.authoritative).toBe(true);
     expect(result.value.certainty).toBe("accepted");
     const request = required(transport.requests[0], "reconciliation request");
-    expect(request.url.searchParams.get("event")).toBe("accepted");
-    expect(request.url.searchParams.get("message-id")).toBe("mailgun-fixture@example.test");
+    expect(request.method).toBe("POST");
+    expect(request.url.pathname).toBe("/v1/analytics/logs");
+    expect(request.url.search).toBe("");
+    const body: unknown = JSON.parse(
+      Buffer.from(required(request.body, "logs request body")).toString("utf8"),
+    );
+    expect(body).toMatchObject({
+      events: ["accepted"],
+      filter: {
+        AND: [
+          { attribute: "domain", comparator: "=", values: [{ value: "example.test" }] },
+          {
+            attribute: "message_id",
+            comparator: "=",
+            values: [{ value: "mailgun-fixture@example.test" }],
+          },
+        ],
+      },
+      pagination: { limit: 100, sort: "timestamp:asc" },
+    });
     await registration.lifecycle.close(new AbortController().signal);
   });
 

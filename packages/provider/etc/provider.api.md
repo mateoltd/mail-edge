@@ -49,6 +49,7 @@ import { ProviderCapabilityDescriptorV1 } from '@mail-edge/contracts';
 import { ProviderDispatchError } from '@mail-edge/contracts';
 import { ProviderDispatchPhase } from '@mail-edge/contracts';
 import { ProviderFeedbackV1 } from '@mail-edge/contracts';
+import { ProviderFeedbackV1Schema } from '@mail-edge/contracts';
 import { ProviderHttpIngressContext } from '@mail-edge/contracts';
 import { ProviderId } from '@mail-edge/contracts';
 import { ProviderInstanceId } from '@mail-edge/contracts';
@@ -75,6 +76,7 @@ import { TRecord } from '@sinclair/typebox';
 import { TString } from '@sinclair/typebox';
 import { TUnion } from '@sinclair/typebox';
 import { TUnsafe } from '@sinclair/typebox';
+import { validateContractBatch } from '@mail-edge/contracts';
 
 // @public
 export interface AppliedBindingResourcesV1 {
@@ -250,6 +252,9 @@ export interface DeletionEvidenceV1 {
 export { DeliveryCertainty }
 
 // @public
+export const desiredBindingDigest: (desired: DesiredBindingV1) => string;
+
+// @public
 export interface DesiredBindingV1 {
     // (undocumented)
     readonly configRevision: string;
@@ -353,7 +358,7 @@ export interface EvidenceVerifier {
 }
 
 // @public
-export const executeFeedbackIngress: (adapter: FeedbackProviderAdapter, request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, collector: BoundedBodyCollector, signal: AbortSignal) => Promise<Result<readonly ProviderFeedbackV1[], MailEdgeError>>;
+export const executeFeedbackIngress: (adapter: FeedbackProviderAdapter, request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, collector: BoundedBodyCollector, signal: AbortSignal) => Promise<Result<ProviderFeedbackIngressBatch, MailEdgeError>>;
 
 // @public
 export const executeInboundIngress: (adapter: InboundProviderAdapter, request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, services: InboundIngestionServices, signal: AbortSignal) => Promise<Result<InboundIngressCommit, MailEdgeError>>;
@@ -373,7 +378,7 @@ export interface FeedbackProviderAdapter {
     // (undocumented)
     readonly descriptor: ProviderCapabilityDescriptorV1;
     // (undocumented)
-    ingestFeedback(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, collector: BoundedBodyCollector, signal: AbortSignal): Promise<Result<readonly ProviderFeedbackV1[], FeedbackIngressError>>;
+    ingestFeedback(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, collector: BoundedBodyCollector, signal: AbortSignal): Promise<Result<ProviderFeedbackIngressBatch, FeedbackIngressError>>;
 }
 
 export { HeaderField }
@@ -508,6 +513,9 @@ export { parseProviderId }
 export { parseProviderInstanceId }
 
 export { parseReceiptId }
+
+// @public
+export const parseSignedConformanceReport: (input: unknown) => Result<SignedConformanceReportV1, MailEdgeError>;
 
 export { parseTenantId }
 
@@ -826,13 +834,23 @@ export interface ProviderFeedbackCommit {
 }
 
 // @public
+export interface ProviderFeedbackIngressBatch {
+    // (undocumented)
+    readonly events: readonly ProviderFeedbackV1[];
+    // (undocumented)
+    readonly replay?: ProviderReplayIdentityV1;
+}
+
+// @public
 export class ProviderFeedbackIngressService {
     constructor(adapter: FeedbackProviderAdapter, collector: BoundedBodyCollector);
     // (undocumented)
-    execute(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, signal: AbortSignal): Promise<Result<readonly ProviderFeedbackV1[], MailEdgeError>>;
+    execute(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, signal: AbortSignal): Promise<Result<ProviderFeedbackIngressBatch, MailEdgeError>>;
 }
 
 export { ProviderFeedbackV1 }
+
+export { ProviderFeedbackV1Schema }
 
 export { ProviderHttpIngressContext }
 
@@ -996,6 +1014,8 @@ export { TenantId }
 
 // @public
 export const validateConformanceReport: (report: ProviderConformanceReportV1) => EvidenceDocumentValidation;
+
+export { validateContractBatch }
 
 // @public (undocumented)
 export interface ValidatedProviderFeedbackBatch {

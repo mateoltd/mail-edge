@@ -4,6 +4,8 @@ import {
   MailEdgeError,
   parseFeedbackEventId,
   parseTenantId,
+  ProviderFeedbackV1Schema,
+  RouteBindingSnapshotV1Schema,
   type ApplicationDeliveryV1,
   type AttemptId,
   type DeliveryId,
@@ -16,6 +18,7 @@ import {
   type Result,
   type TenantId,
   type WorkflowWakeupV1,
+  validateContract,
 } from "@mail-edge/contracts";
 import {
   canonicalJson,
@@ -28,12 +31,14 @@ import {
   reduceOutboundAttempt,
   reduceOutboundWorkflow,
   sha256CanonicalJson,
+  type CanonicalJsonObject,
   type UnitOfWorkContext,
 } from "@mail-edge/core";
 import {
   evaluateReconciliationEvidence,
   type InboundReceiptCommitInput,
   type ProviderAdapterRegistration,
+  type ProviderReplayIdentityV1,
   type ProviderReconciliationEvidenceV1,
 } from "@mail-edge/provider";
 import {
@@ -121,6 +126,58 @@ const feedbackOrderKey = (event: ProviderFeedbackV1): string =>
         .update(`${event.providerInstanceId}\0${event.providerEventKey}`)
         .digest("hex")}`
     : `sequence:${String(event.sequenceHint).padStart(16, "0")}`;
+
+const canonicalFeedbackEvent = (event: ProviderFeedbackV1): CanonicalJsonObject =>
+  Object.freeze({
+    ...(event.attemptId === undefined ? {} : { attemptId: event.attemptId }),
+    feedbackEventId: event.feedbackEventId,
+    kind: event.kind,
+    normalizedEvidence: Object.freeze({ ...event.normalizedEvidence }),
+    occurredAt: event.occurredAt,
+    providerEventKey: event.providerEventKey,
+    providerId: event.providerId,
+    providerInstanceId: event.providerInstanceId,
+    receivedAt: event.receivedAt,
+    schemaVersion: event.schemaVersion,
+    ...(event.providerMessageId === undefined
+      ? {}
+      : { providerMessageId: event.providerMessageId }),
+    ...(event.recipient === undefined ? {} : { recipient: event.recipient }),
+    ...(event.sequenceHint === undefined ? {} : { sequenceHint: event.sequenceHint }),
+  });
+
+const feedbackEventDigest = (event: ProviderFeedbackV1): string =>
+  sha256CanonicalJson(
+    Object.freeze({
+      ...(event.attemptId === undefined ? {} : { attemptId: event.attemptId }),
+      feedbackEventId: event.feedbackEventId,
+      kind: event.kind,
+      normalizedEvidence: Object.freeze({ ...event.normalizedEvidence }),
+      occurredAt: event.occurredAt,
+      providerEventKey: event.providerEventKey,
+      providerId: event.providerId,
+      providerInstanceId: event.providerInstanceId,
+      schemaVersion: event.schemaVersion,
+      ...(event.providerMessageId === undefined
+        ? {}
+        : { providerMessageId: event.providerMessageId }),
+      ...(event.recipient === undefined ? {} : { recipient: event.recipient }),
+      ...(event.sequenceHint === undefined ? {} : { sequenceHint: event.sequenceHint }),
+    }),
+  );
+
+const parseFeedbackPlaintext = (
+  plaintext: Uint8Array,
+): Result<ProviderFeedbackV1, MailEdgeError> => {
+  let input: unknown;
+  try {
+    input = JSON.parse(Buffer.from(plaintext).toString("utf8"));
+  } catch {
+    return { error: invalid("feedback_ciphertext_json"), ok: false };
+  }
+  const parsed = validateContract(ProviderFeedbackV1Schema, input);
+  return parsed.ok ? parsed : { error: invalid("feedback_ciphertext_schema"), ok: false };
+};
 
 const wakeupIdentity = (
   wakeup: WorkflowWakeupV1,
@@ -878,6 +935,13 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${bytesToHex(keyDigest)}, 0))`.execute(
         transaction,
       );
+      const existing = await transaction
+        .selectFrom("outboundIntents")
+        .selectAll()
+        .where("tenantId", "=", input.tenantId)
+        .where("idempotencyKeyHash", "=", keyDigest)
+        .forUpdate()
+        .executeTakeFirst();
       const raw = await transaction
         .selectFrom("rawBlobs")
         .selectAll()
@@ -943,6 +1007,20 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         raw: input.raw,
         transmissionRaw: input.raw,
       });
+      if (existing !== undefined) {
+        if (!equalBytes(existing.requestFingerprint, hexToBytes(fingerprint))) {
+          return {
+            error: new MailEdgeError({
+              code: "IDEMPOTENCY_CONFLICT",
+              deliveryCertainty: "not_sent",
+              message: "The idempotency key was previously used for another outbound request.",
+              retryable: false,
+            }),
+            ok: false,
+          };
+        }
+        return { ok: true, value: mapOutboundIntent(existing, raw, raw) };
+      }
       const intent: OutboundIntentV1 = Object.freeze({
         createdAt: now,
         envelope: plan.value.envelope,
@@ -957,7 +1035,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         transmissionRaw: input.raw,
         version: 0,
       });
-      const inserted = await transaction
+      await transaction
         .insertInto("outboundIntents")
         .values({
           createdAt: now,
@@ -980,30 +1058,8 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           transmissionBlobId: input.raw.blobId,
           updatedAt: now,
         })
-        .onConflict((candidate) =>
-          candidate.columns(["tenantId", "idempotencyKeyHash"]).doNothing(),
-        )
-        .returning("intentId")
-        .executeTakeFirst();
-      if (inserted !== undefined) return { ok: true, value: intent };
-      const existing = await transaction
-        .selectFrom("outboundIntents")
-        .selectAll()
-        .where("tenantId", "=", input.tenantId)
-        .where("idempotencyKeyHash", "=", keyDigest)
         .executeTakeFirstOrThrow();
-      if (!equalBytes(existing.requestFingerprint, hexToBytes(fingerprint))) {
-        return {
-          error: new MailEdgeError({
-            code: "IDEMPOTENCY_CONFLICT",
-            deliveryCertainty: "not_sent",
-            message: "The idempotency key was previously used for another outbound request.",
-            retryable: false,
-          }),
-          ok: false,
-        };
-      }
-      return { ok: true, value: mapOutboundIntent(existing, raw, raw) };
+      return { ok: true, value: intent };
     } catch (cause) {
       return resultError(cause, "runtime_create_outbound_intent");
     }
@@ -1259,6 +1315,10 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           .executeTakeFirst(),
       ]);
       const identity = registration.identity;
+      const persistedRoute =
+        attempt === undefined
+          ? undefined
+          : validateContract(RouteBindingSnapshotV1Schema, attempt.routeSnapshot);
       if (
         attempt === undefined ||
         intent === undefined ||
@@ -1277,7 +1337,8 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         blob.blobId !== claim.attempt.transmissionRaw.blobId ||
         bytesToHex(blob.sha256) !== claim.attempt.transmissionRaw.sha256 ||
         safeInteger(blob.sizeBytes) !== claim.attempt.transmissionRaw.size ||
-        sha256CanonicalJson(attempt.routeSnapshot as never) !==
+        persistedRoute?.ok !== true ||
+        sha256CanonicalJson(persistedRoute.value) !==
           sha256CanonicalJson(claim.attempt.routeBinding) ||
         !exactBinding(claim.attempt.routeBinding, binding) ||
         sha256CanonicalJson(registration.descriptor) !== bytesToHex(binding.capabilityDigest) ||
@@ -1381,7 +1442,8 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
       if (!workflowDecision.ok) return workflowDecision;
       let providerMessageIdCiphertext: Uint8Array | null = null;
       let providerMessageIdHash: Uint8Array | null = null;
-      const providerMessageId = settlement.acceptance?.providerMessageId;
+      const providerMessageId =
+        settlement.acceptance?.providerMessageId ?? settlement.providerMessageId;
       if (providerMessageId !== undefined) {
         [providerMessageIdHash, providerMessageIdCiphertext] = await Promise.all([
           this.#digester.digest(
@@ -1478,6 +1540,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
   async commitFeedback(
     tenantId: TenantId,
     events: readonly ProviderFeedbackV1[],
+    replay: ProviderReplayIdentityV1 | undefined,
     context: UnitOfWorkContext,
     signal: AbortSignal,
   ): Promise<Result<FeedbackCommitResult, MailEdgeError>> {
@@ -1486,18 +1549,68 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
     }
     try {
       const preparedEvents = await Promise.all(
-        events.map(async (event) => ({
-          event,
-          eventDigest: hexToBytes(sha256CanonicalJson(event)),
-          eventKeyDigest: await this.#digester.digest(
-            tenantId,
-            "feedback_event",
-            Buffer.from(`${event.providerInstanceId}\0${event.providerEventKey}`, "utf8"),
-            signal,
-          ),
-        })),
+        events.map(async (event) => {
+          return {
+            event,
+            eventDigest: hexToBytes(feedbackEventDigest(event)),
+            eventKeyDigest: await this.#digester.digest(
+              tenantId,
+              "feedback_event",
+              Buffer.from(`${event.providerInstanceId}\0${event.providerEventKey}`, "utf8"),
+              signal,
+            ),
+          };
+        }),
       );
       const transaction = await this.#unitOfWork.transaction(context, tenantId);
+      if (replay !== undefined) {
+        const providerInstance = await transaction
+          .selectFrom("providerInstances")
+          .select("providerInstanceId")
+          .where("tenantId", "=", tenantId)
+          .where("providerInstanceId", "=", replay.providerInstanceId)
+          .forShare()
+          .executeTakeFirst();
+        if (
+          providerInstance === undefined ||
+          events.some((event) => event.providerInstanceId !== replay.providerInstanceId)
+        ) {
+          return { error: conflict("feedback_replay_authority"), ok: false };
+        }
+        const nonceDigest = hexToBytes(replay.nonceDigest);
+        const bodyDigest = replay.bodyDigest === undefined ? null : hexToBytes(replay.bodyDigest);
+        const inserted = await transaction
+          .insertInto("webhookReplayNonces")
+          .values({
+            bodyDigest,
+            expiresAt: replay.expiresAt,
+            nonceHash: nonceDigest,
+            providerInstanceId: replay.providerInstanceId,
+            receiptId: null,
+            tenantId,
+          })
+          .onConflict((candidate) =>
+            candidate.columns(["tenantId", "providerInstanceId", "nonceHash"]).doNothing(),
+          )
+          .returning("nonceHash")
+          .executeTakeFirst();
+        if (inserted === undefined) {
+          const existing = await transaction
+            .selectFrom("webhookReplayNonces")
+            .select(["bodyDigest", "receiptId"])
+            .where("tenantId", "=", tenantId)
+            .where("providerInstanceId", "=", replay.providerInstanceId)
+            .where("nonceHash", "=", nonceDigest)
+            .forUpdate()
+            .executeTakeFirstOrThrow();
+          if (
+            existing.receiptId !== null ||
+            !equalBytes(existing.bodyDigest ?? new Uint8Array(), bodyDigest ?? new Uint8Array())
+          ) {
+            return { error: conflict("feedback_replay_nonce_conflict"), ok: false };
+          }
+        }
+      }
       const lockKeys = [
         ...new Set(preparedEvents.map(({ eventKeyDigest }) => bytesToHex(eventKeyDigest))),
       ].sort();
@@ -1582,7 +1695,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         const ciphertext = await this.#cipher.protect(
           tenantId,
           "feedback_event",
-          Buffer.from(canonicalJson(event as never), "utf8"),
+          Buffer.from(canonicalJson(canonicalFeedbackEvent(event)), "utf8"),
           signal,
         );
         await transaction
@@ -1667,12 +1780,14 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         row.eventCiphertext,
         signal,
       );
-      let event: ProviderFeedbackV1;
+      let parsedEvent: Result<ProviderFeedbackV1, MailEdgeError>;
       try {
-        event = JSON.parse(Buffer.from(plaintext).toString("utf8")) as ProviderFeedbackV1;
+        parsedEvent = parseFeedbackPlaintext(plaintext);
       } finally {
         plaintext.fill(0);
       }
+      if (!parsedEvent.ok) return parsedEvent;
+      const event = parsedEvent.value;
       const fence = safeInteger(row.applicationFence) + 1;
       const leaseExpiresAt = isoAfter(now, leaseMilliseconds);
       await transaction
@@ -1745,7 +1860,9 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           signal,
         );
         try {
-          events.push(JSON.parse(Buffer.from(plaintext).toString("utf8")) as ProviderFeedbackV1);
+          const parsed = parseFeedbackPlaintext(plaintext);
+          if (!parsed.ok) return parsed;
+          events.push(parsed.value);
         } finally {
           plaintext.fill(0);
         }
@@ -1977,6 +2094,10 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           .executeTakeFirst(),
       ]);
       const identity = registration.identity;
+      const persistedRoute =
+        attempt === undefined
+          ? undefined
+          : validateContract(RouteBindingSnapshotV1Schema, attempt.routeSnapshot);
       if (
         attempt === undefined ||
         intent === undefined ||
@@ -1995,7 +2116,8 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         new Date(attempt.reconciliationClaimedUntil).getTime() < new Date(now).getTime() ||
         dateToIso(attempt.reconciliationWindowFrom ?? "") !== claim.query.window.from ||
         dateToIso(attempt.reconciliationWindowTo ?? "") !== claim.query.window.to ||
-        sha256CanonicalJson(attempt.routeSnapshot as never) !==
+        persistedRoute?.ok !== true ||
+        sha256CanonicalJson(persistedRoute.value) !==
           sha256CanonicalJson(claim.query.routeBinding) ||
         !exactBinding(claim.query.routeBinding, binding) ||
         provider.state !== "enabled" ||
@@ -2057,14 +2179,24 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
           completedAt: transition.resolved ? now : attempt.completedAt,
           reconciliationClaimedUntil: null,
           responseEvidence: evidence.normalizedEvidence,
-          state: transition.nextState,
+          ...(transition.nextState === "quarantined_unknown"
+            ? {}
+            : { state: transition.nextState }),
         })
         .where("tenantId", "=", claim.tenantId)
         .where("attemptId", "=", claim.attemptId)
         .where("fence", "=", String(claim.attemptFence))
         .where("reconciliationFence", "=", String(claim.claimFence))
         .executeTakeFirstOrThrow();
-      const evidenceDigest = hexToBytes(sha256CanonicalJson(evidence as never));
+      const evidenceRecord: CanonicalJsonObject = Object.freeze({
+        authoritative: evidence.authoritative,
+        certainty: evidence.certainty,
+        evidenceCode: evidence.evidenceCode,
+        normalizedEvidence: Object.freeze({ ...evidence.normalizedEvidence }),
+        observedAt: evidence.observedAt,
+        schemaVersion: evidence.schemaVersion,
+      });
+      const evidenceDigest = hexToBytes(sha256CanonicalJson(evidenceRecord));
       await transaction
         .insertInto("reconciliationDecisions")
         .values({
@@ -2084,7 +2216,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
                 ? "failed_not_sent"
                 : "quarantined_unknown",
           decisionId: randomUUID(),
-          evidence: evidence as unknown as Readonly<Record<string, unknown>>,
+          evidence: evidenceRecord,
           evidenceDigest,
           expectedIntentVersion: String(claim.expectedWorkflowVersion),
           intentId: claim.intentId,

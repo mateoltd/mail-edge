@@ -14,7 +14,7 @@ import {
   mailgunProviderDescriptor,
   validateMailgunProviderConfig,
 } from "../src/index.js";
-import { CONFIG, FixedClock, MemorySecrets, MemoryWebhookReplay } from "./helpers.js";
+import { CONFIG, FixedClock, MemorySecrets } from "./helpers.js";
 
 describe("Mailgun registration and capability truth", () => {
   it("publishes one valid exact-mode descriptor with unsupported claims disabled", () => {
@@ -75,7 +75,6 @@ describe("Mailgun registration and capability truth", () => {
     const created = createMailgunProviderRegistration(CONFIG, {
       clock: new FixedClock(),
       secrets: new MemorySecrets(),
-      webhookReplay: new MemoryWebhookReplay(),
     });
     if (!created.ok) throw created.error;
     expect(Object.isFrozen(created.value)).toBe(true);

@@ -32,7 +32,6 @@ import {
   CONFIG,
   FixedClock,
   MemorySecrets,
-  MemoryWebhookReplay,
   NOW,
   feedbackBody,
   routeForm,
@@ -125,20 +124,26 @@ class ConformanceHttpTransport implements MailgunHttpTransport {
         }),
       );
     }
-    if (request.method === "GET" && request.url.pathname === "/v3/example.test/events") {
+    if (request.method === "POST" && request.url.pathname === "/v1/analytics/logs") {
       return Promise.resolve(
         this.#json(200, {
           items:
             this.reconciliation === "accepted"
               ? [
                   {
+                    "@timestamp": NOW,
+                    domain: { name: "example.test" },
+                    envelope: { transport: "smtp" },
                     event: "accepted",
+                    flags: { "is-authenticated": true, "is-routed": false },
+                    id: "provider-conformance-accepted-log",
                     message: {
                       headers: { "message-id": "<provider-conformance-message>" },
                     },
                   },
                 ]
               : [],
+          pagination: { total: this.reconciliation === "accepted" ? 1 : 0 },
         }),
       );
     }
@@ -192,7 +197,6 @@ describe("Mailgun provider conformance", () => {
       httpTransport,
       secrets,
       smtpConnector,
-      webhookReplay: new MemoryWebhookReplay(),
     });
     if (!created.ok) throw created.error;
     const run = await new ProviderConformanceKit({

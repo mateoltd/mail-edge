@@ -59,6 +59,12 @@ export interface ProviderReplayIdentityV1 {
   readonly expiresAt: string;
 }
 
+/** Verified feedback values whose replay identity commits with the feedback ledger. @public */
+export interface ProviderFeedbackIngressBatch {
+  readonly events: readonly ProviderFeedbackV1[];
+  readonly replay?: ProviderReplayIdentityV1;
+}
+
 /** Verified values that the persistence implementation commits atomically. @public */
 export interface InboundReceiptCommitInput {
   readonly tenantId: TenantId;
@@ -181,7 +187,7 @@ export interface FeedbackProviderAdapter {
     context: ProviderHttpIngressContext,
     collector: BoundedBodyCollector,
     signal: AbortSignal,
-  ): Promise<Result<readonly ProviderFeedbackV1[], FeedbackIngressError>>;
+  ): Promise<Result<ProviderFeedbackIngressBatch, FeedbackIngressError>>;
 }
 
 /** Desired provider resource state. It contains no secret values. @public */

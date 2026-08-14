@@ -42,8 +42,8 @@ file beneath `secretDirectory` with `O_NOFOLLOW`, caps it at 64 KiB, removes one
 and wipes the byte buffer after use. Mount the directory read-only. Do not rely on cloud SDK
 credential discovery, instance metadata, shared credential files, or ambient tenant state.
 
-The composition module must export `createReferenceServiceComposition(context, signal)` and return a
-successful `Result` containing:
+The image includes `/srv/reference-service/dist/production-composition.js`. It exports
+`createReferenceServiceComposition(context, signal)` and returns a successful `Result` containing:
 
 - an envelope-key service and sensitive-value cipher backed by production key management;
 - a non-empty set of provider registrations whose exact IDs, versions, modes, and surfaces match
@@ -52,10 +52,18 @@ successful `Result` containing:
 - a complete workflow port for inbound service binding, replay/idempotency handoff, verified receipt
   and feedback commits, control-plane operations, lifecycle, and readiness.
 
-The future runtime-orchestration layer is expected to implement that workflow port. It must keep the
-same transaction, replay, delivery-certainty, fencing, and cancellation rules. The reference host
-does not schedule workflow decisions itself and does not retry a provider send whose delivery
-certainty is unknown.
+The production workflow facade delegates to durable inbound finalization, application delivery,
+outbound dispatch, feedback projection, reconciliation, lease recovery, wakeup repair, retention,
+orphan reaping, promotion repair, and stage cleanup services. PostgreSQL remains workflow truth;
+pg-boss carries opaque wakeup identifiers only. Replay nonces are committed in the same transaction
+as feedback dedupe and ledger rows. The reference host does not retry or fall back after a provider
+send whose delivery certainty is unknown.
+
+The production configuration must provide one host-integration entry for every authenticated tenant
+and one exact Mailgun registration for every configured provider instance. The current registry key
+is adapter identity, so one process supports one Mailgun credential instance while that instance may
+serve multiple exact inbound domains for its tenant. Run separate processes for independent Mailgun
+credential instances until instance-keyed registry dispatch is available.
 
 ## Migration and startup policy
 
@@ -100,27 +108,46 @@ body stream. Tenant and operator endpoints require `Authorization: Bearer <token
 are bound to exactly one path tenant. Authentication failures intentionally do not disclose whether
 a tenant, instance, adapter, or token exists.
 
-| Method | Path                                                                                         | Principal              | Body and outcome                                                   |
-| ------ | -------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------ |
-| GET    | `/livez`                                                                                     | none                   | 200 while the process can serve HTTP                               |
-| GET    | `/readyz`                                                                                    | none                   | 200 only in ready state, otherwise 503                             |
-| POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound`  | exact provider adapter | streamed bytes; adapter-selected safe success status               |
-| POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/feedback` | exact provider adapter | streamed bytes; 202 after durable workflow handoff                 |
-| POST   | `/v1/tenants/{tenantId}/raw-messages`                                                        | matching tenant        | streamed `message/rfc822`; 201 with durable raw reference          |
-| POST   | `/v1/tenants/{tenantId}/outbound-intents`                                                    | matching tenant        | bounded JSON plus `Idempotency-Key`; 202 accepted or 200 duplicate |
-| GET    | `/v1/tenants/{tenantId}/outbound-intents/{intentId}`                                         | matching tenant        | durable intent snapshot                                            |
-| GET    | `/v1/tenants/{tenantId}/inbound-receipts/{receiptId}`                                        | matching tenant        | verified receipt snapshot                                          |
-| GET    | `/v1/operator/providers`                                                                     | operator               | registered identities and capability descriptors                   |
-| POST   | `/v1/operator/provider-instances/{providerInstanceId}/bindings/plan`                         | operator               | bounded desired binding; validated plan                            |
-| POST   | `/v1/operator/provider-instances/{providerInstanceId}/plans/apply`                           | operator               | bounded plan and audited operation context                         |
-| POST   | `/v1/operator/provider-instances/{providerInstanceId}/bindings/discover`                     | operator               | bounded exact binding snapshot                                     |
-| POST   | `/v1/operator/provider-instances/{providerInstanceId}/bindings/delete`                       | operator               | bounded exact binding and audited operation context                |
+| Method | Path                                                                                                       | Principal              | Body and outcome                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------ |
+| GET    | `/livez`                                                                                                   | none                   | 200 while the process can serve HTTP                               |
+| GET    | `/readyz`                                                                                                  | none                   | 200 only in ready state, otherwise 503                             |
+| POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound/{providerPath}` | exact provider adapter | streamed bytes; adapter-selected safe success status               |
+| POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/feedback`               | exact provider adapter | streamed bytes; 202 after durable workflow handoff                 |
+| POST   | `/v1/tenants/{tenantId}/raw-messages`                                                                      | matching tenant        | streamed `message/rfc822`; 201 with durable raw reference          |
+| POST   | `/v1/tenants/{tenantId}/outbound-intents`                                                                  | matching tenant        | bounded JSON plus `Idempotency-Key`; 202 accepted or 200 duplicate |
+| GET    | `/v1/tenants/{tenantId}/outbound-intents/{intentId}`                                                       | matching tenant        | durable intent snapshot                                            |
+| GET    | `/v1/tenants/{tenantId}/inbound-receipts/{receiptId}`                                                      | matching tenant        | verified receipt snapshot                                          |
+| GET    | `/v1/operator/providers`                                                                                   | operator               | registered identities and capability descriptors                   |
+| POST   | `/v1/operator/provider-instances/{providerInstanceId}/bindings/plan`                                       | operator               | bounded desired binding; validated plan                            |
+| POST   | `/v1/operator/provider-instances/{providerInstanceId}/plans/apply`                                         | operator               | bounded plan and audited operation context                         |
+| POST   | `/v1/operator/provider-instances/{providerInstanceId}/bindings/discover`                                   | operator               | bounded exact binding snapshot                                     |
+| POST   | `/v1/operator/provider-instances/{providerInstanceId}/bindings/delete`                                     | operator               | bounded exact binding and audited operation context                |
 
 The authoritative wire description is
 [`apps/reference-service/openapi/reference-service.v1.yaml`](../../apps/reference-service/openapi/reference-service.v1.yaml).
 JSON routes require `application/json` and enforce the configured JSON limit. Stream routes retain
 the original body and enforce both declared and observed ingress limits. All request work is bounded
 by active and pending concurrency limits; overflow returns 429.
+
+For Mailgun `smtp_raw`, configure `providerPath` as `raw-mime`. The HTTP request limit may be up to
+80 MiB to accommodate bounded URL-encoding overhead, while the decoded raw MIME limit remains 25 MiB
+and is enforced by the stage writer.
+
+## Mailgun uncertainty and reconciliation
+
+SMTP response loss after the first confirmed raw octet is quarantined as `unknown`; it is never
+automatically retried. The adapter preserves the exact RFC Message-ID from the bounded header prefix
+as a stable reconciliation key. Maintenance queries the account-level Mailgun Logs API with
+`POST /v1/analytics/logs`, a finite time window, exact domain and Message-ID filters, ascending
+pagination, and fixed page and item ceilings. Only one authenticated, non-routed SMTP `accepted`
+record whose identity and timestamp match can prove acceptance.
+
+A search miss, more than one matching record, a malformed item or page, a repeated or missing page
+token, inconsistent totals, a page/item ceiling, cancellation, timeout, or API failure remains
+`unknown` and quarantined. The deprecated domain Events endpoint is not used. Mailgun log retention
+and account-plan availability limit how long acceptance can be proven, so page before evidence ages
+past the configured reconciliation window.
 
 ## Observability and privacy
 

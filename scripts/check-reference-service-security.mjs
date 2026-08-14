@@ -15,6 +15,11 @@ const sourceFiles = readdirSync(sourceRoot)
   .toSorted();
 const sources = sourceFiles.map((name) => [name, readFileSync(resolve(sourceRoot, name), "utf8")]);
 const allSources = sources.map(([, source]) => source).join("\n");
+const compositionOnlySources = new Set(["config.ts", "production-composition.ts"]);
+const providerNeutralSources = sources
+  .filter(([name]) => !compositionOnlySources.has(name))
+  .map(([, source]) => source)
+  .join("\n");
 
 const requireMatch = (source, expression, label) => {
   if (!expression.test(source)) errors.push(`${label} is missing.`);
@@ -24,9 +29,21 @@ const forbidMatch = (source, expression, label) => {
   if (expression.test(source)) errors.push(`${label} is forbidden.`);
 };
 
-forbidMatch(allSources, /mailgun/iu, "Provider-specific Mailgun logic in the reference host");
+forbidMatch(
+  providerNeutralSources,
+  /mailgun/iu,
+  "Provider-specific Mailgun logic outside the application composition root",
+);
 forbidMatch(allSources, /AsyncLocalStorage/u, "Ambient tenant context in the reference host");
-forbidMatch(allSources, /@mail-edge\/provider-[a-z]/u, "Concrete provider package imports");
+for (const [name, source] of sources) {
+  if (name !== "production-composition.ts") {
+    forbidMatch(
+      source,
+      /@mail-edge\/provider-[a-z]/u,
+      `Concrete provider package import in ${name}`,
+    );
+  }
+}
 forbidMatch(allSources, /\b(?:TODO|FIXME|stub|noop)\b/iu, "Unfinished production behavior");
 
 for (const [name, source] of sources) {
@@ -45,6 +62,35 @@ const config = read("apps/reference-service/src/config.ts");
 requireMatch(config, /additionalProperties: false/u, "Closed configuration schemas");
 requireMatch(config, /secret:\/\//u, "Secret-reference-only configuration");
 requireMatch(config, /Object\.freeze/u, "Immutable configuration snapshots");
+
+const productionComposition = read("apps/reference-service/src/production-composition.ts");
+requireMatch(
+  productionComposition,
+  /export const createReferenceServiceComposition/u,
+  "Shipped production composition export",
+);
+requireMatch(
+  productionComposition,
+  /@mail-edge\/provider-mailgun/u,
+  "Explicit Mailgun registration at the application composition root",
+);
+requireMatch(productionComposition, /DurableRuntimeHost/u, "Durable runtime lifecycle composition");
+
+const mailgunOutbound = read("packages/provider-mailgun/src/outbound.adapter.ts");
+requireMatch(mailgunOutbound, /POST/u, "Mailgun Logs API POST method");
+requireMatch(mailgunOutbound, /\/v1\/analytics\/logs/u, "Current Mailgun Logs API path");
+forbidMatch(
+  mailgunOutbound,
+  /\/v3\/[^\s"']+\/events\b/u,
+  "Deprecated Mailgun Events API dependency",
+);
+
+const exampleConfig = read("apps/reference-service/local/config.example.json");
+requireMatch(
+  exampleConfig,
+  /\/srv\/reference-service\/dist\/production-composition\.js/u,
+  "Shipped production composition in the deployable configuration",
+);
 
 const dockerfile = read("apps/reference-service/Dockerfile");
 requireMatch(

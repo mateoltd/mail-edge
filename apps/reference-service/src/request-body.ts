@@ -52,7 +52,8 @@ export const providerHttpRequest = (input: {
   Object.freeze({
     body: new OwnedOneShotBody(readableByteSource(input.body), (reason) => {
       if (!input.body.destroyed) {
-        input.body.destroy(reason instanceof Error ? reason : undefined);
+        if (reason instanceof Error) input.body.destroy(reason);
+        else input.body.resume();
       }
       return Promise.resolve();
     }),

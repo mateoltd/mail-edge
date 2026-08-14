@@ -8,8 +8,7 @@ import { pathToFileURL } from "node:url";
 import {
   canonicalJson,
   ConformanceEvidenceVerificationService,
-  type CanonicalJsonValue,
-  type SignedConformanceReportV1,
+  parseSignedConformanceReport,
 } from "@mail-edge/provider";
 
 import { SignedProviderConformanceService } from "./signed-conformance.service.js";
@@ -60,26 +59,42 @@ const validateExactOptions = (arguments_: ParsedArguments, expected: readonly st
     throw new TypeError(usage);
 };
 
+const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.freeze(Object.fromEntries(Object.entries(value)))
+    : undefined;
+
+const isConformanceTarget = (value: unknown): value is ProviderConformanceTarget => {
+  const target = record(value);
+  return (
+    target !== undefined &&
+    record(target["registration"]) !== undefined &&
+    record(target["driver"]) !== undefined &&
+    typeof target["region"] === "string" &&
+    record(target["environment"]) !== undefined
+  );
+};
+
 const loadTarget = async (
   modulePath: string,
   signal: AbortSignal,
 ): Promise<ProviderConformanceTarget> => {
   signal.throwIfAborted();
-  const loaded = (await import(pathToFileURL(absolute(modulePath)).href)) as {
-    readonly conformanceTarget?: unknown;
-  };
-  if (
-    loaded.conformanceTarget === null ||
-    typeof loaded.conformanceTarget !== "object" ||
-    !("registration" in loaded.conformanceTarget) ||
-    !("driver" in loaded.conformanceTarget) ||
-    !("region" in loaded.conformanceTarget) ||
-    !("environment" in loaded.conformanceTarget)
-  ) {
+  const loaded: unknown = await import(pathToFileURL(absolute(modulePath)).href);
+  const target = record(loaded)?.["conformanceTarget"];
+  if (!isConformanceTarget(target)) {
     throw new TypeError("Adapter module must export a public conformanceTarget object.");
   }
-  return loaded.conformanceTarget as ProviderConformanceTarget;
+  return target;
 };
+
+const serializedError = (error: {
+  toJSON(): {
+    readonly code: string;
+    readonly deliveryCertainty: string;
+    readonly retryable: boolean;
+  };
+}): Readonly<Record<string, string | boolean>> => Object.freeze({ ...error.toJSON() });
 
 const runCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Promise<number> => {
   validateExactOptions(arguments_, [
@@ -100,9 +115,7 @@ const runCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Pro
     signal,
   );
   if (!result.ok) {
-    process.stderr.write(
-      `${canonicalJson(result.error.toJSON() as unknown as CanonicalJsonValue)}\n`,
-    );
+    process.stderr.write(`${canonicalJson(serializedError(result.error))}\n`);
     return 2;
   }
   await writeFile(
@@ -122,9 +135,12 @@ const runCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Pro
 
 const verifyCommand = async (arguments_: ParsedArguments, signal: AbortSignal): Promise<number> => {
   validateExactOptions(arguments_, ["--report", "--public-key", "--key-id"]);
-  const report = JSON.parse(
+  const input: unknown = JSON.parse(
     await readFile(absolute(required(arguments_, "--report")), { encoding: "utf8", signal }),
-  ) as SignedConformanceReportV1;
+  );
+  const parsed = parseSignedConformanceReport(input);
+  if (!parsed.ok) throw new TypeError("Signed conformance report failed its public schema.");
+  const report = parsed.value;
   const verifier = new Ed25519EvidenceVerifier({
     [required(arguments_, "--key-id")]: await readFile(
       absolute(required(arguments_, "--public-key")),
@@ -136,9 +152,7 @@ const verifyCommand = async (arguments_: ParsedArguments, signal: AbortSignal): 
     signal,
   );
   if (!verified.ok) {
-    process.stderr.write(
-      `${canonicalJson(verified.error.toJSON() as unknown as CanonicalJsonValue)}\n`,
-    );
+    process.stderr.write(`${canonicalJson(serializedError(verified.error))}\n`);
     return 2;
   }
   process.stdout.write(

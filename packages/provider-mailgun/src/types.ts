@@ -1,7 +1,6 @@
 import type {
   Clock,
   MailEdgeError,
-  ProviderInstanceId,
   Result,
   RouteBindingSnapshotV1,
   SecretResolver,
@@ -34,23 +33,6 @@ export interface MailgunProviderConfig {
   readonly signatureToleranceSeconds: number;
   /** Finite timeout applied to each provider network operation. */
   readonly networkTimeoutMilliseconds: number;
-}
-
-/** Atomic replay outcome for one verified Mailgun webhook token. @public */
-export type MailgunReplayOutcome = "new" | "duplicate" | "conflict";
-
-/** Durable, provider-instance-scoped token consumption required by feedback ingress. @public */
-export interface MailgunWebhookReplayStore {
-  /** Atomically records or compares one provider-instance-scoped signed token. */
-  consume(
-    input: {
-      readonly providerInstanceId: ProviderInstanceId;
-      readonly nonceDigest: string;
-      readonly bodyDigest: string;
-      readonly expiresAt: string;
-    },
-    signal: AbortSignal,
-  ): Promise<Result<MailgunReplayOutcome, MailEdgeError>>;
 }
 
 /** Bounded HTTP request owned by the Mailgun package. @public */
@@ -127,8 +109,6 @@ export interface MailgunProviderDependencies {
   readonly secrets: SecretResolver;
   /** Host clock used for signature windows, evidence, and control plans. */
   readonly clock: Clock;
-  /** Durable atomic replay store for feedback webhook tokens. */
-  readonly webhookReplay: MailgunWebhookReplayStore;
   /** Optional deterministic or host-specific HTTP transport. */
   readonly httpTransport?: MailgunHttpTransport;
   /** Optional deterministic or host-specific SMTP connector. */

@@ -4,9 +4,9 @@
 
 ```ts
 
-import type { UnitOfWorkContext } from '@mail-edge/core';
-import type { Wakeup } from '@mail-edge/core';
-import type { WakeupScheduler } from '@mail-edge/core';
+import { UnitOfWorkContext } from '@mail-edge/core';
+import { Wakeup } from '@mail-edge/core';
+import { WakeupScheduler } from '@mail-edge/core';
 
 // @public (undocumented)
 export const defaultPgBossWakeupConfig: (connectionString: string) => PgBossWakeupConfig;

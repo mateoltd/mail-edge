@@ -1,420 +1,603 @@
-import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CreateBucketCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
-import type { EnvelopeKeyService } from "@mail-edge/blob-s3";
+import { MailEdgeError, type Result } from "@mail-edge/contracts";
+import { sha256CanonicalJson } from "@mail-edge/core";
 import {
-  parseProviderInstanceId,
-  parseTenantId,
-  type MailEdgeError,
-  type ProviderCapabilityDescriptorV1,
-  type Result,
-  type TenantId,
-  type VerifiedInboundReceiptV1,
-} from "@mail-edge/contracts";
-import type {
-  ApplicationDeliverySink,
-  OutboundIntentPort,
-  ProviderRegistryPort,
-  RecipientRouter,
-  ReverseRouteResolver,
-} from "@mail-edge/core";
-import { PostgresInboundReceiptRepository, type SensitiveValueCipher } from "@mail-edge/postgres";
-import type {
-  InboundIngestionServices,
-  InboundReceiptCommitInput,
-  ProviderAdapterRegistration,
-} from "@mail-edge/provider";
-import { MailEdgeSdk } from "@mail-edge/sdk";
+  mailgunProviderDescriptor,
+  type MailgunHttpRequest,
+  type MailgunHttpResponse,
+  type MailgunHttpTransport,
+  type MailgunSmtpConnector,
+  type MailgunSmtpResponse,
+  type MailgunSmtpSession,
+} from "@mail-edge/provider-mailgun";
 import { MinioContainer, type StartedMinioContainer } from "@testcontainers/minio";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { Pool } from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import type { ReferenceServiceConfig } from "../../src/config.js";
-import { hostError } from "../../src/errors.js";
+import { parseReferenceServiceConfig, type ReferenceServiceConfig } from "../../src/config.js";
 import { ReferenceServiceHost } from "../../src/host.js";
-import type {
-  ReferenceServiceComposition,
-  ReferenceServiceInfrastructure,
-  ReferenceServiceRuntimeBindings,
-  ReferenceServiceWorkflowPort,
-} from "../../src/ports.js";
-import { descriptor as fixtureDescriptor, operatorToken, tenantToken } from "../fixtures.js";
+import { createReferenceServiceQualificationComposition } from "../../src/production-composition.js";
+import { DirectorySecretResolver } from "../../src/secrets.js";
 
-const tenantId = parseTenantId("018f4f6a-7b2c-7000-8000-000000000501");
-const providerInstanceId = parseProviderInstanceId("018f4f6a-7b2c-7000-8000-000000000502");
-if (!tenantId.ok || !providerInstanceId.ok) throw new Error("Invalid E2E identifiers.");
+const tenantId = "018f4f6a-7b2c-7000-8000-000000000501";
+const otherTenantId = "018f4f6a-7b2c-7000-8000-000000000502";
+const providerInstanceId = "018f4f6a-7b2c-7000-8000-000000000503";
+const inboundBindingId = "018f4f6a-7b2c-7000-8000-000000000504";
+const outboundBindingId = "018f4f6a-7b2c-7000-8000-000000000505";
+const domain = "e2e.example.test";
+const tenantToken = "reference-e2e-tenant-one-token-material";
+const otherTenantToken = "reference-e2e-tenant-two-token-material";
+const webhookKey = "reference-e2e-mailgun-webhook-key";
+const capabilityDigest = sha256CanonicalJson(mailgunProviderDescriptor);
+const kmsKeyReference = "arn:aws:kms:us-east-1:000000000000:key/mail-edge-e2e";
+const mailgunToken = (label: string): string =>
+  createHash("sha384").update(label).digest("base64url").slice(0, 50);
 
-const bindingId = "018f4f6a-7b2c-7000-8000-000000000503";
-const capabilityDigest = createHash("sha256")
-  .update(JSON.stringify(fixtureDescriptor))
-  .digest("hex");
-let lastIngressError: MailEdgeError | undefined;
-
-class XorKeyMaterial implements EnvelopeKeyService, SensitiveValueCipher {
-  readonly #master = randomBytes(32);
-
-  generate(): Promise<{
-    readonly keyReference: string;
-    readonly plaintextKey: Uint8Array;
-    readonly wrappedKey: Uint8Array;
-  }> {
-    const plaintextKey = randomBytes(32);
-    return Promise.resolve({
-      keyReference: "e2e-master-v1",
-      plaintextKey: Uint8Array.from(plaintextKey),
-      wrappedKey: this.#xor(plaintextKey),
-    });
-  }
-
-  unwrap(wrappedKey: Uint8Array): Promise<Uint8Array> {
-    return Promise.resolve(this.#xor(wrappedKey));
-  }
-
-  protect(
-    _tenantId: TenantId,
-    _purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id",
-    plaintext: Uint8Array,
-  ): Promise<Uint8Array> {
-    return Promise.resolve(this.#xor(plaintext));
-  }
-
-  unprotect(
-    _tenantId: TenantId,
-    _purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id",
-    ciphertext: Uint8Array,
-  ): Promise<Uint8Array> {
-    return Promise.resolve(this.#xor(ciphertext));
-  }
-
-  #xor(value: Uint8Array): Uint8Array {
-    return Uint8Array.from(value, (byte, index) => byte ^ (this.#master[index % 32] ?? 0));
-  }
-}
-
-const unavailable = <T>(): Promise<Result<T, MailEdgeError>> =>
-  Promise.resolve({ error: hostError("HOST_UNAVAILABLE", "e2e_unused_port"), ok: false });
-
-let identifierCounter = 510;
-const nextIdentifier = (): string => {
-  identifierCounter += 1;
-  return `018f4f6a-7b2c-7000-8000-${String(identifierCounter).padStart(12, "0")}`;
-};
-
-const binding = Object.freeze({
-  adapterVersion: "1.0.0",
-  bindingId: bindingId as never,
-  bindingVersion: 1,
-  capabilityDigest,
-  configRevision: "e2e-v1",
-  createdAt: "2026-08-14T10:00:00.000Z",
-  direction: "inbound" as const,
-  domainALabel: "e2e.example.test" as never,
-  providerId: fixtureDescriptor.providerId,
-  providerInstanceId: providerInstanceId.value,
-  providerResourceIds: Object.freeze({ route: "e2e" }),
-  schemaVersion: "v1" as const,
-  tenantId: tenantId.value,
-});
-
-const descriptor: ProviderCapabilityDescriptorV1 = Object.freeze({
-  ...fixtureDescriptor,
-  inbound: Object.freeze({ ...fixtureDescriptor.inbound, maxBytes: 1024 * 1024 }),
-});
-
-const adapter = (): ProviderAdapterRegistration => ({
-  descriptor,
-  feedback: {
-    descriptor,
-    ingestFeedback: () => unavailable(),
-  },
-  identity: { adapterVersion: "1.0.0", mode: "http", providerId: descriptor.providerId },
-  inbound: {
-    descriptor,
-    async ingest(request, context, services, signal) {
-      const stageId = nextIdentifier();
-      const stage = await services.stages.reserve(
-        {
-          maximumBytes: descriptor.inbound.maxBytes ?? 0,
-          purpose: "inbound",
-          stageId,
-          tenantId: tenantId.value,
-        },
-        signal,
-      );
-      if (!stage.ok) {
-        lastIngressError = stage.error;
-        return stage;
-      }
-      for await (const chunk of request.body) {
-        const written = await stage.value.write(chunk, signal);
-        if (!written.ok) {
-          lastIngressError = written.error;
-          return written;
-        }
-      }
-      const raw = await stage.value.complete(signal);
-      if (!raw.ok) {
-        lastIngressError = raw.error;
-        return raw;
-      }
-      const committed = await services.receipts.commitVerified(
-        {
-          binding,
-          envelope: {
-            mailFrom: "sender@example.test",
-            rcptTo: [{ address: "recipient@example.test" }],
-            schemaVersion: "v1",
-            smtpUtf8: false,
-          },
-          providerId: descriptor.providerId,
-          providerInstanceId: context.providerInstanceId,
-          providerReceiptKey: "provider-event-e2e-1",
-          raw: raw.value,
-          receivedAt: "2026-08-14T10:00:00.000Z",
-          replay: {
-            expiresAt: "2026-08-14T11:00:00.000Z",
-            nonceDigest: "a".repeat(64),
-            providerInstanceId: context.providerInstanceId,
-          },
-          tenantId: tenantId.value,
-          verificationEvidenceDigest: "b".repeat(64),
-        },
-        signal,
-      );
-      if (!committed.ok) lastIngressError = committed.error;
-      return committed;
-    },
-  },
-  lifecycle: {
-    close: () => Promise.resolve({ ok: true, value: undefined }),
-    start: () => Promise.resolve({ ok: true, value: undefined }),
-  },
-});
-
-const makeSdk = (infrastructure: ReferenceServiceInfrastructure): MailEdgeSdk => {
-  const applicationDeliverySink: ApplicationDeliverySink = {
-    deliver: () => unavailable(),
-    deliverFeedback: () => unavailable(),
-  };
-  const outboundIntents: OutboundIntentPort = { createIntent: () => unavailable() };
-  const providerRegistry: ProviderRegistryPort = { get: () => undefined };
-  const recipientRouter: RecipientRouter = { resolveRecipients: () => unavailable() };
-  const reverseRouteResolver: ReverseRouteResolver = { resolveReverseRoute: () => unavailable() };
-  return new MailEdgeSdk({
-    applicationDeliverySink,
-    blobStore: infrastructure.blobStore,
-    clock: infrastructure.clock,
-    idGenerator: { next: () => nextIdentifier() },
-    outboundIntents,
-    providerRegistry,
-    recipientRouter,
-    repositories: infrastructure.repositories,
-    reverseRouteResolver,
-    stageCleanupTimeoutMilliseconds: 5_000,
-    telemetry: { emit: () => undefined },
-    tenantUnitOfWorkFactory: infrastructure.unitOfWork,
-    wakeupScheduler: infrastructure.queue,
+const simulationFailure = (reason: string): MailEdgeError =>
+  new MailEdgeError({
+    code: "HOST_UNAVAILABLE",
+    deliveryCertainty: "not_sent",
+    message: `Protocol simulation failed: ${reason}.`,
+    retryable: true,
+    safeDetails: { reason },
   });
-};
 
-const workflow = (
-  infrastructure: ReferenceServiceInfrastructure,
-  keys: SensitiveValueCipher,
-): ReferenceServiceWorkflowPort => {
-  const receipts = new PostgresInboundReceiptRepository(infrastructure.unitOfWork, keys);
-  const services: InboundIngestionServices = {
-    clock: infrastructure.clock,
-    receipts: {
-      commitVerified: (input: InboundReceiptCommitInput, signal: AbortSignal) => {
-        const receiptId = nextIdentifier() as VerifiedInboundReceiptV1["receiptId"];
-        const receipt: VerifiedInboundReceiptV1 = Object.freeze({
-          ...input,
-          receiptId,
-          schemaVersion: "v1",
-          state: "stored",
-          version: 0,
-        });
-        const keyDigest = createHash("sha256").update(input.providerReceiptKey).digest("hex");
-        return infrastructure.unitOfWork.executeForTenant(
-          input.tenantId,
-          async (context, transactionSignal) => {
-            const committed = await receipts.commitStored(
-              receipt,
-              keyDigest,
-              context,
-              transactionSignal,
-            );
-            if (!committed.ok) return committed;
-            if (!committed.value.duplicate) {
-              const scheduled = await infrastructure.queue.schedule(
-                {
-                  receiptId: committed.value.receiptId,
-                  schemaVersion: "v1",
-                  type: "inbound_receipt",
-                },
-                context,
-                transactionSignal,
-              );
-              if (!scheduled.ok) return scheduled;
-            }
-            return {
-              ok: true,
-              value: {
-                duplicate: committed.value.duplicate,
-                receiptId: committed.value.receiptId,
-                response: { class: "success", statusCode: 202 },
-              },
-            };
-          },
-          signal,
-        );
-      },
-    },
-    replay: { inspect: () => Promise.resolve({ ok: true, value: "new" }) },
-    secrets: infrastructure.secrets,
-    stages: infrastructure.blobStore.stages,
-  };
-  return {
-    applyBindingPlan: () => unavailable(),
-    close: () => Promise.resolve({ ok: true, value: undefined }),
-    commitFeedback: () => unavailable(),
-    deleteBindingResources: () => unavailable(),
-    discoverBinding: () => unavailable(),
-    inboundServices: () => Promise.resolve({ ok: true, value: services }),
-    planBinding: () => unavailable(),
-    readiness: async (signal) => {
-      try {
-        signal.throwIfAborted();
-        await infrastructure.database.pool.query("SELECT 1");
-        return { ok: true, value: undefined };
-      } catch (cause) {
-        return { error: hostError("STORAGE_UNAVAILABLE", "e2e_readiness", { cause }), ok: false };
-      }
-    },
-    start: () => Promise.resolve({ ok: true, value: undefined }),
-  };
-};
+const response = (code: number, ...lines: readonly string[]): MailgunSmtpResponse =>
+  Object.freeze({ code, lines: Object.freeze(lines) });
 
-class E2eComposition implements ReferenceServiceComposition {
-  readonly envelopeKeys: EnvelopeKeyService;
-  readonly sensitiveValueCipher: SensitiveValueCipher;
-  readonly #keys: XorKeyMaterial;
+class SimulatedSmtpSession implements MailgunSmtpSession {
+  readonly #mode: "accepted" | "unknown";
+  readonly commands: string[] = [];
+  readonly data: Uint8Array[] = [];
+  #responseIndex = 0;
 
-  constructor(keys: XorKeyMaterial) {
-    this.#keys = keys;
-    this.envelopeKeys = keys;
-    this.sensitiveValueCipher = keys;
+  constructor(mode: "accepted" | "unknown") {
+    this.#mode = mode;
   }
 
-  createRuntime(
-    infrastructure: ReferenceServiceInfrastructure,
-  ): Promise<Result<ReferenceServiceRuntimeBindings, MailEdgeError>> {
-    return Promise.resolve({
-      ok: true,
-      value: {
-        adapters: [adapter()],
-        sdk: makeSdk(infrastructure),
-        workflow: workflow(infrastructure, this.#keys),
-      },
-    });
+  readResponse(signal: AbortSignal): Promise<Result<MailgunSmtpResponse, MailEdgeError>> {
+    signal.throwIfAborted();
+    const index = this.#responseIndex;
+    this.#responseIndex += 1;
+    if (index === 6 && this.#mode === "unknown") {
+      return Promise.resolve({ error: simulationFailure("smtp_response_lost"), ok: false });
+    }
+    const value = [
+      response(220, "mailgun protocol simulator"),
+      response(250, "AUTH PLAIN"),
+      response(235, "2.7.0 authenticated"),
+      response(250, "2.1.0 sender accepted"),
+      response(250, "2.1.5 recipient accepted"),
+      response(354, "send message"),
+      response(250, "2.0.0 queued"),
+    ][index];
+    return Promise.resolve(
+      value === undefined
+        ? { error: simulationFailure("smtp_response_exhausted"), ok: false }
+        : { ok: true, value },
+    );
   }
 
-  close(): Promise<Result<void, MailEdgeError>> {
+  writeCommand(command: string, signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+    signal.throwIfAborted();
+    this.commands.push(command);
     return Promise.resolve({ ok: true, value: undefined });
   }
+
+  writeData(chunk: Uint8Array, signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+    signal.throwIfAborted();
+    this.data.push(Uint8Array.from(chunk));
+    return Promise.resolve({ ok: true, value: undefined });
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
-const config = (directory: string, minio: StartedMinioContainer): ReferenceServiceConfig => ({
-  authentication: {
-    operatorTokenSecrets: ["secret://operator"],
-    tenants: [{ tenantId: tenantId.value, tokenSecrets: ["secret://tenant"] }],
-  },
-  compositionModule: "/tmp/not-used.mjs",
-  environment: "test",
-  http: {
-    controlPlaneTimeoutMilliseconds: 10_000,
-    headersTimeoutMilliseconds: 11_000,
-    host: "127.0.0.1",
-    keepAliveTimeoutMilliseconds: 10_000,
-    maximumConcurrentRequests: 8,
-    maximumIngressBytes: 1024 * 1024,
-    maximumJsonBytes: 64 * 1024,
-    maximumPendingRequests: 8,
-    port: 0,
-    requestTimeoutMilliseconds: 10_000,
-    shutdownTimeoutMilliseconds: 10_000,
-  },
-  postgres: {
-    applicationName: "reference-e2e",
-    connectionTimeoutMilliseconds: 5_000,
-    idleTimeoutMilliseconds: 5_000,
-    maximumPoolSize: 4,
-    maximumSchemaEpoch: 1,
-    migrationConnectionSecret: "secret://postgres-migration",
-    migrationLockTimeoutMilliseconds: 5_000,
-    migrationPolicy: "apply",
-    minimumSchemaEpoch: 1,
-    runtimeConnectionSecret: "secret://postgres-runtime",
-    statementTimeoutMilliseconds: 10_000,
-    tls: "disable",
-  },
-  providerInstances: [
-    {
-      adapterVersion: "1.0.0",
-      mode: "http",
-      providerId: descriptor.providerId,
-      providerInstanceId: providerInstanceId.value,
-      tenantId: tenantId.value,
-    },
-  ],
-  queue: {
-    applicationName: "reference-e2e-queue",
-    connectionTimeoutMilliseconds: 5_000,
-    gracefulStopMilliseconds: 10_000,
-    jobRetentionSeconds: 3600,
-    maximumPoolSize: 4,
-    notifyPollingIntervalSeconds: 1,
-    pollingIntervalSeconds: 1,
-    queryTimeoutMilliseconds: 10_000,
-    schema: "pgboss",
-    workerBatchSize: 1,
-    workerConcurrency: 1,
-  },
-  s3: {
-    accessKeyIdSecret: "secret://s3-access-key",
-    bucket: "mail-edge-reference-e2e",
-    cleanupTimeoutMilliseconds: 10_000,
-    encryptionFrameBytes: 4096,
-    endpoint: minio.getConnectionUrl(),
-    forcePathStyle: true,
-    keyPrefix: "mail-edge",
-    multipartPartBytes: 5_242_880,
-    multipartQueueSize: 1,
-    operationTimeoutMilliseconds: 10_000,
-    rawRetentionMilliseconds: 86_400_000,
-    region: "us-east-1",
-    requireObjectVersion: true,
-    scratchLifetimeMilliseconds: 86_400_000,
-    secretAccessKeySecret: "secret://s3-secret-key",
-    serverSideEncryption: "none",
-  },
-  schemaVersion: "v1",
-  secretDirectory: directory,
-  telemetry: { enabled: false, exportTimeoutMilliseconds: 1_000, serviceName: "reference-e2e" },
-});
+class SimulatedSmtpConnector implements MailgunSmtpConnector {
+  readonly sessions: SimulatedSmtpSession[] = [];
+  #nextMode: "accepted" | "unknown" = "accepted";
 
-describe("reference service real infrastructure", { concurrent: false }, () => {
+  setNextMode(mode: "accepted" | "unknown"): void {
+    this.#nextMode = mode;
+  }
+
+  connect(
+    input: { readonly host: string; readonly port: 465; readonly timeoutMilliseconds: number },
+    signal: AbortSignal,
+  ): Promise<Result<MailgunSmtpSession, MailEdgeError>> {
+    if (
+      signal.aborted ||
+      input.host !== "smtp.mailgun.org" ||
+      input.timeoutMilliseconds !== 5_000
+    ) {
+      return Promise.resolve({ error: simulationFailure("smtp_connect_contract"), ok: false });
+    }
+    const session = new SimulatedSmtpSession(this.#nextMode);
+    this.#nextMode = "accepted";
+    this.sessions.push(session);
+    return Promise.resolve({ ok: true, value: session });
+  }
+}
+
+class SimulatedMailgunHttpTransport implements MailgunHttpTransport {
+  readonly queries: Readonly<Record<string, unknown>>[] = [];
+  #acceptedEvidence = true;
+
+  setAcceptedEvidence(value: boolean): void {
+    this.#acceptedEvidence = value;
+  }
+
+  request(
+    request: MailgunHttpRequest,
+    signal: AbortSignal,
+  ): Promise<Result<MailgunHttpResponse, MailEdgeError>> {
+    if (
+      signal.aborted ||
+      request.method !== "POST" ||
+      request.url.origin !== "https://api.mailgun.net" ||
+      request.url.pathname !== "/v1/analytics/logs" ||
+      request.body === undefined ||
+      request.headers["content-type"] !== "application/json" ||
+      !request.headers["authorization"]?.startsWith("Basic ")
+    ) {
+      return Promise.resolve({ error: simulationFailure("logs_request_contract"), ok: false });
+    }
+    try {
+      const parsed: unknown = JSON.parse(Buffer.from(request.body).toString("utf8"));
+      const query = record(parsed);
+      const filter = record(query?.["filter"]);
+      const clauses = filter?.["AND"];
+      const start = query?.["start"];
+      const end = query?.["end"];
+      if (
+        query === undefined ||
+        !Array.isArray(clauses) ||
+        clauses.length !== 2 ||
+        !Array.isArray(query["events"]) ||
+        query["events"][0] !== "accepted" ||
+        typeof start !== "string" ||
+        typeof end !== "string"
+      ) {
+        return Promise.resolve({ error: simulationFailure("logs_query_shape"), ok: false });
+      }
+      const attributes = new Map(
+        clauses.map((clause) => {
+          const item = record(clause);
+          const values = item?.["values"];
+          const first = Array.isArray(values) ? record(values[0]) : undefined;
+          return [item?.["attribute"], first?.["value"]];
+        }),
+      );
+      const messageId = attributes.get("message_id");
+      if (attributes.get("domain") !== domain || typeof messageId !== "string") {
+        return Promise.resolve({ error: simulationFailure("logs_exact_identity"), ok: false });
+      }
+      this.queries.push(query);
+      const observedAt = new Date(
+        Math.min(Date.parse(end), Date.parse(start) + 1_000),
+      ).toISOString();
+      const items = this.#acceptedEvidence
+        ? [
+            {
+              "@timestamp": observedAt,
+              domain: { name: domain },
+              envelope: { transport: "smtp" },
+              event: "accepted",
+              flags: { "is-authenticated": true, "is-routed": false },
+              id: `accepted-${String(this.queries.length)}`,
+              message: { headers: { "message-id": `<${messageId}>` } },
+            },
+          ]
+        : [];
+      const body = Buffer.from(JSON.stringify({ items, pagination: { total: items.length } }));
+      return Promise.resolve({
+        ok: true,
+        value: Object.freeze({
+          body,
+          headers: Object.freeze({ "content-type": "application/json" }),
+          statusCode: 200,
+        }),
+      });
+    } catch (cause) {
+      return Promise.resolve({
+        error: new MailEdgeError({
+          cause,
+          code: "HOST_UNAVAILABLE",
+          deliveryCertainty: "not_sent",
+          message: "Mailgun Logs protocol query was malformed.",
+          retryable: false,
+        }),
+        ok: false,
+      });
+    }
+  }
+}
+
+const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.freeze(Object.fromEntries(Object.entries(value)))
+    : undefined;
+
+const listen = (server: Server): Promise<number> =>
+  new Promise((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new TypeError("Protocol simulator did not bind a TCP port."));
+        return;
+      }
+      resolvePromise(address.port);
+    });
+  });
+
+const closeServer = (server: Server): Promise<void> =>
+  new Promise((resolvePromise, reject) => {
+    server.close((cause) => {
+      if (cause === undefined) resolvePromise();
+      else reject(cause);
+    });
+  });
+
+const readBody = async (request: AsyncIterable<Uint8Array>): Promise<Buffer> => {
+  const chunks: Uint8Array[] = [];
+  let observed = 0;
+  for await (const chunk of request) {
+    observed += chunk.byteLength;
+    if (observed > 1024 * 1024) throw new TypeError("Simulation request exceeded its limit.");
+    chunks.push(Uint8Array.from(chunk));
+  }
+  return Buffer.concat(chunks, observed);
+};
+
+const startKms = async (): Promise<{ readonly port: number; readonly server: Server }> => {
+  const server = createServer((request, response_) => {
+    void (async () => {
+      try {
+        const body = await readBody(request);
+        const input = record(JSON.parse(body.toString("utf8")));
+        if (
+          request.method !== "POST" ||
+          request.headers.authorization === undefined ||
+          input?.["KeyId"] !== kmsKeyReference ||
+          record(input["EncryptionContext"]) === undefined
+        ) {
+          throw new TypeError("KMS request contract mismatch.");
+        }
+        const target = request.headers["x-amz-target"];
+        let output: Readonly<Record<string, string>>;
+        if (target === "TrentService.GenerateDataKey" && input["KeySpec"] === "AES_256") {
+          const plaintext = randomBytes(32);
+          output = Object.freeze({
+            CiphertextBlob: Buffer.concat([Buffer.from("MES1"), plaintext]).toString("base64"),
+            KeyId: kmsKeyReference,
+            Plaintext: plaintext.toString("base64"),
+          });
+          plaintext.fill(0);
+        } else if (
+          target === "TrentService.Decrypt" &&
+          input["EncryptionAlgorithm"] === "SYMMETRIC_DEFAULT" &&
+          typeof input["CiphertextBlob"] === "string"
+        ) {
+          const wrapped = Buffer.from(input["CiphertextBlob"], "base64");
+          if (wrapped.byteLength !== 36 || wrapped.subarray(0, 4).toString() !== "MES1") {
+            throw new TypeError("KMS ciphertext mismatch.");
+          }
+          output = Object.freeze({
+            KeyId: kmsKeyReference,
+            Plaintext: wrapped.subarray(4).toString("base64"),
+          });
+        } else {
+          throw new TypeError("KMS target mismatch.");
+        }
+        const encoded = Buffer.from(JSON.stringify(output));
+        response_.writeHead(200, {
+          "content-length": String(encoded.byteLength),
+          "content-type": "application/x-amz-json-1.1",
+          "x-amzn-requestid": randomBytes(16).toString("hex"),
+        });
+        response_.end(encoded);
+      } catch {
+        response_.writeHead(400, { "content-type": "application/x-amz-json-1.1" });
+        response_.end(JSON.stringify({ __type: "ValidationException" }));
+      }
+    })();
+  });
+  return Object.freeze({ port: await listen(server), server });
+};
+
+const startApplication = async (): Promise<{
+  readonly calls: string[];
+  readonly port: number;
+  readonly server: Server;
+}> => {
+  const calls: string[] = [];
+  const signingKey = Buffer.from("reference-e2e-host-signing-key");
+  const server = createServer((request, response_) => {
+    void (async () => {
+      try {
+        const body = await readBody(request);
+        const operationId = request.headers["x-mail-edge-id"];
+        const timestamp = request.headers["x-mail-edge-timestamp"];
+        const nonce = request.headers["x-mail-edge-nonce"];
+        const signature = request.headers["x-mail-edge-signature"];
+        const digest = createHash("sha256").update(body).digest("hex");
+        if (
+          typeof operationId !== "string" ||
+          typeof timestamp !== "string" ||
+          typeof nonce !== "string" ||
+          typeof signature !== "string" ||
+          request.headers["x-mail-edge-body-sha256"] !== digest ||
+          createHmac("sha256", signingKey)
+            .update(`${timestamp}\n${nonce}\n${operationId}\n${digest}`)
+            .digest("hex") !== signature
+        ) {
+          throw new TypeError("Host integration signature mismatch.");
+        }
+        const input = record(JSON.parse(body.toString("utf8")));
+        let output: unknown;
+        switch (request.url) {
+          case "/recipients":
+            output = {
+              destinations: [
+                { deliveryMode: "push", destinationId: "application-primary", opaqueToken: "e2e" },
+              ],
+            };
+            break;
+          case "/delivery":
+            output = { acceptedAt: new Date().toISOString(), deliveryId: input?.["deliveryId"] };
+            break;
+          case "/reverse-route":
+            output = {
+              envelope: input?.["envelope"],
+              policyCode: "e2e",
+              visibleHeaderFields: [],
+            };
+            break;
+          case "/feedback":
+            output = {
+              acceptedAt: new Date().toISOString(),
+              deliveryId: input?.["feedbackEventId"],
+            };
+            break;
+          case undefined:
+            response_.writeHead(404).end();
+            return;
+          default:
+            response_.writeHead(404).end();
+            return;
+        }
+        calls.push(request.url ?? "unknown");
+        const encoded = Buffer.from(JSON.stringify(output));
+        response_.writeHead(200, {
+          "content-length": String(encoded.byteLength),
+          "content-type": "application/json",
+          "x-mail-edge-id": operationId,
+        });
+        response_.end(encoded);
+      } catch {
+        response_.writeHead(400).end();
+      }
+    })();
+  });
+  return Object.freeze({ calls, port: await listen(server), server });
+};
+
+const makeConfig = (
+  secretDirectory: string,
+  minio: StartedMinioContainer,
+  kmsPort: number,
+  applicationPort: number,
+): ReferenceServiceConfig =>
+  parseReferenceServiceConfig({
+    authentication: {
+      operatorTokenSecrets: ["secret://operator-token"],
+      tenants: [
+        { tenantId, tokenSecrets: ["secret://tenant-one-token"] },
+        { tenantId: otherTenantId, tokenSecrets: ["secret://tenant-two-token"] },
+      ],
+    },
+    compositionModule: "/tmp/qualification-composition-not-loaded.mjs",
+    environment: "test",
+    http: {
+      controlPlaneTimeoutMilliseconds: 10_000,
+      headersTimeoutMilliseconds: 11_000,
+      host: "127.0.0.1",
+      keepAliveTimeoutMilliseconds: 10_000,
+      maximumConcurrentRequests: 8,
+      maximumIngressBytes: 80 * 1024 * 1024,
+      maximumJsonBytes: 64 * 1024,
+      maximumPendingRequests: 8,
+      port: 0,
+      requestTimeoutMilliseconds: 10_000,
+      shutdownTimeoutMilliseconds: 10_000,
+    },
+    postgres: {
+      applicationName: "reference-production-e2e",
+      connectionTimeoutMilliseconds: 5_000,
+      idleTimeoutMilliseconds: 5_000,
+      maximumPoolSize: 8,
+      maximumSchemaEpoch: 1,
+      migrationConnectionSecret: "secret://postgres-migration",
+      migrationLockTimeoutMilliseconds: 5_000,
+      migrationPolicy: "apply",
+      minimumSchemaEpoch: 1,
+      runtimeConnectionSecret: "secret://postgres-runtime",
+      statementTimeoutMilliseconds: 10_000,
+      tls: "disable",
+    },
+    production: {
+      hostIntegration: [tenantId, otherTenantId].map((configuredTenantId) => ({
+        deliveryUrl: `http://127.0.0.1:${String(applicationPort)}/delivery`,
+        feedbackUrl: `http://127.0.0.1:${String(applicationPort)}/feedback`,
+        maximumResponseBytes: 64 * 1024,
+        recipientRouterUrl: `http://127.0.0.1:${String(applicationPort)}/recipients`,
+        reverseRouteUrl: `http://127.0.0.1:${String(applicationPort)}/reverse-route`,
+        signingSecret: "secret://host-signing-key",
+        tenantId: configuredTenantId,
+        timeoutMilliseconds: 5_000,
+      })),
+      kms: {
+        accessKeyIdSecret: "secret://kms-access-key",
+        endpoint: `http://127.0.0.1:${String(kmsPort)}`,
+        keyReference: kmsKeyReference,
+        operationTimeoutMilliseconds: 5_000,
+        region: "us-east-1",
+        secretAccessKeySecret: "secret://kms-secret-key",
+      },
+      mailgun: [
+        {
+          apiKeySecretReference: "secret://mailgun-api-key",
+          inboundBindings: [
+            {
+              adapterMode: "smtp_raw",
+              adapterVersion: "0.1.0",
+              bindingId: inboundBindingId,
+              bindingVersion: 1,
+              capabilityDigest,
+              configRevision: "e2e-v1",
+              createdAt: "2026-08-14T00:00:00.000Z",
+              direction: "inbound",
+              dispatchTransport: "smtp",
+              domainALabel: domain,
+              providerId: "mailgun",
+              providerInstanceId,
+              providerResourceIds: { route: "e2e-inbound" },
+              schemaVersion: "v1",
+              tenantId,
+            },
+          ],
+          inboundForwardUrl: `https://edge.example.test/v1/providers/mailgun/0.1.0/smtp_raw/instances/${providerInstanceId}/inbound/raw-mime`,
+          networkTimeoutMilliseconds: 5_000,
+          providerInstanceId,
+          region: "us",
+          routePriority: 10,
+          signatureToleranceSeconds: 300,
+          smtpPasswordSecretReference: "secret://mailgun-smtp-password",
+          smtpUsernameLocalPart: "postmaster",
+          tenantId,
+          webhookSigningKeySecretReference: "secret://mailgun-webhook-key",
+        },
+      ],
+      maintenance: {
+        blobBatchSize: 20,
+        intervalMilliseconds: 1_000,
+        orphanGraceMilliseconds: 60_000,
+        orphanObservationIntervalMilliseconds: 60_000,
+        purgeLeaseMilliseconds: 5_000,
+        stageCleanupMaximumPages: 5,
+        tenantBatchSize: 20,
+      },
+      runtime: {
+        applicationDeliveryLeaseMilliseconds: 10_000,
+        feedbackLeaseMilliseconds: 10_000,
+        gracefulStopMilliseconds: 10_000,
+        inboundLeaseMilliseconds: 10_000,
+        maximumConcurrentWork: 8,
+        operationTimeoutMilliseconds: 10_000,
+        outboundLeaseMilliseconds: 10_000,
+        reconciliationEvidenceMaximumAgeMilliseconds: 3_600_000,
+        reconciliationLeaseMilliseconds: 10_000,
+        reconciliationWindowMilliseconds: 3_600_000,
+        recoveryBatchSize: 20,
+        retry: {
+          deterministicJitterRatio: 0,
+          initialDelayMilliseconds: 100,
+          maximumAttempts: 3,
+          maximumDelayMilliseconds: 1_000,
+          multiplier: 2,
+        },
+      },
+      sensitiveValues: {
+        digestKeySecret: "secret://sensitive-digest-key",
+        encryptionKeySecret: "secret://sensitive-encryption-key",
+      },
+    },
+    providerInstances: [
+      {
+        adapterVersion: "0.1.0",
+        mode: "smtp_raw",
+        providerId: "mailgun",
+        providerInstanceId,
+        tenantId,
+      },
+    ],
+    queue: {
+      applicationName: "reference-production-e2e-queue",
+      connectionTimeoutMilliseconds: 5_000,
+      gracefulStopMilliseconds: 10_000,
+      jobRetentionSeconds: 3_600,
+      maximumPoolSize: 4,
+      notifyPollingIntervalSeconds: 0.5,
+      pollingIntervalSeconds: 0.5,
+      queryTimeoutMilliseconds: 10_000,
+      schema: "pgboss",
+      workerBatchSize: 4,
+      workerConcurrency: 4,
+    },
+    s3: {
+      accessKeyIdSecret: "secret://s3-access-key",
+      bucket: "mail-edge-reference-e2e",
+      cleanupTimeoutMilliseconds: 10_000,
+      encryptionFrameBytes: 4_096,
+      endpoint: minio.getConnectionUrl(),
+      forcePathStyle: true,
+      keyPrefix: "mail-edge",
+      multipartPartBytes: 5_242_880,
+      multipartQueueSize: 1,
+      maximumRawMessageBytes: 25 * 1024 * 1024,
+      operationTimeoutMilliseconds: 10_000,
+      rawRetentionMilliseconds: 86_400_000,
+      region: "us-east-1",
+      requireObjectVersion: true,
+      scratchLifetimeMilliseconds: 86_400_000,
+      secretAccessKeySecret: "secret://s3-secret-key",
+      serverSideEncryption: "none",
+    },
+    schemaVersion: "v1",
+    secretDirectory,
+    telemetry: {
+      enabled: false,
+      exportTimeoutMilliseconds: 1_000,
+      serviceName: "reference-production-e2e",
+    },
+  });
+
+const waitFor = async (condition: () => Promise<boolean>, label: string): Promise<void> => {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (await condition()) return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+  }
+  throw new TypeError(`Timed out waiting for ${label}.`);
+};
+
+const bearer = (token: string): Readonly<Record<string, string>> =>
+  Object.freeze({ authorization: `Bearer ${token}` });
+
+describe("shipped reference-service production composition", { concurrent: false }, () => {
   let postgres: StartedPostgreSqlContainer;
   let minio: StartedMinioContainer;
   let owner: Pool;
-  const activeHosts = new Set<ReferenceServiceHost>();
+  let kms: Awaited<ReturnType<typeof startKms>>;
+  let application: Awaited<ReturnType<typeof startApplication>>;
+  let secretDirectory: string;
+  let config: ReferenceServiceConfig;
+  let host: ReferenceServiceHost | undefined;
+  const smtp = new SimulatedSmtpConnector();
+  const mailgunHttp = new SimulatedMailgunHttpTransport();
 
   beforeAll(async () => {
-    [postgres, minio] = await Promise.all([
+    [postgres, minio, kms, application] = await Promise.all([
       new PostgreSqlContainer("postgres:17.6-alpine3.22")
         .withDatabase("mail_edge")
         .withUsername("mail_edge_owner")
@@ -424,12 +607,15 @@ describe("reference service real infrastructure", { concurrent: false }, () => {
         .withUsername("mail-edge-minio")
         .withPassword("mail-edge-minio-password")
         .start(),
+      startKms(),
+      startApplication(),
     ]);
     owner = new Pool({ connectionString: postgres.getConnectionUri() });
     const s3 = new S3Client({
       credentials: { accessKeyId: minio.getUsername(), secretAccessKey: minio.getPassword() },
       endpoint: minio.getConnectionUrl(),
       forcePathStyle: true,
+      maxAttempts: 1,
       region: "us-east-1",
     });
     await s3.send(new CreateBucketCommand({ Bucket: "mail-edge-reference-e2e" }));
@@ -440,114 +626,355 @@ describe("reference service real infrastructure", { concurrent: false }, () => {
       }),
     );
     s3.destroy();
-  }, 120_000);
-
-  afterAll(async () => {
-    await owner.end();
-    await Promise.all([postgres.stop(), minio.stop()]);
-  });
-
-  afterEach(async () => {
-    await Promise.all([...activeHosts].map(async (host) => host.close()));
-    activeHosts.clear();
-  });
-
-  test("commits streamed ingress with pg-boss and preserves idempotency across restart", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "mail-edge-reference-e2e-"));
-    await Promise.all([
-      writeFile(join(directory, "operator"), operatorToken),
-      writeFile(join(directory, "tenant"), tenantToken),
-      writeFile(join(directory, "postgres-migration"), postgres.getConnectionUri()),
-      writeFile(join(directory, "postgres-runtime"), postgres.getConnectionUri()),
-      writeFile(join(directory, "s3-access-key"), minio.getUsername()),
-      writeFile(join(directory, "s3-secret-key"), minio.getPassword()),
-    ]);
-    const hostConfig = config(directory, minio);
-    const keys = new XorKeyMaterial();
-    const first = await ReferenceServiceHost.create(
-      hostConfig,
-      new AbortController().signal,
-      new E2eComposition(keys),
+    secretDirectory = await mkdtemp(join(tmpdir(), "mail-edge-production-e2e-"));
+    await Promise.all(
+      Object.entries({
+        "host-signing-key": "reference-e2e-host-signing-key",
+        "kms-access-key": "reference-e2e-kms-access-key",
+        "kms-secret-key": "reference-e2e-kms-secret-key",
+        "mailgun-api-key": "reference-e2e-mailgun-api-key",
+        "mailgun-smtp-password": "reference-e2e-mailgun-smtp-password",
+        "mailgun-webhook-key": webhookKey,
+        "operator-token": "reference-e2e-operator-token-material",
+        "postgres-migration": postgres.getConnectionUri(),
+        "postgres-runtime": postgres.getConnectionUri(),
+        "s3-access-key": minio.getUsername(),
+        "s3-secret-key": minio.getPassword(),
+        "sensitive-digest-key": "d".repeat(32),
+        "sensitive-encryption-key": "e".repeat(32),
+        "tenant-one-token": tenantToken,
+        "tenant-two-token": otherTenantToken,
+      }).map(([name, value]) => writeFile(join(secretDirectory, name), value, { mode: 0o600 })),
     );
-    if (!first.ok) throw first.error;
-    activeHosts.add(first.value);
-    const firstStart = await first.value.start(new AbortController().signal);
-    if (!firstStart.ok) throw firstStart.error;
-    await owner.query("INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active')", [
-      tenantId.value,
-    ]);
+    config = makeConfig(secretDirectory, minio, kms.port, application.port);
+    const secrets = new DirectorySecretResolver(secretDirectory);
+    const composition = await createReferenceServiceQualificationComposition(
+      { clock: { now: () => new Date().toISOString() }, config, secrets },
+      new AbortController().signal,
+      new Map([[providerInstanceId, { httpTransport: mailgunHttp, smtpConnector: smtp }]]),
+    );
+    if (!composition.ok) throw composition.error;
+    const created = await ReferenceServiceHost.create(
+      config,
+      new AbortController().signal,
+      composition.value,
+    );
+    if (!created.ok) throw created.error;
+    host = created.value;
+    const started = await host.start(new AbortController().signal);
+    if (!started.ok) throw started.error;
+
+    const createdAt = "2026-08-14T00:00:00.000Z";
+    await owner.query(
+      "INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active'), ($2, 'active')",
+      [tenantId, otherTenantId],
+    );
     await owner.query(
       `INSERT INTO domain_claims
-         (tenant_id, domain_a_label, verification_method, verification_digest, verified_at)
-       VALUES ($1, 'e2e.example.test', 'dns', decode(repeat('11', 32), 'hex'), now())`,
-      [tenantId.value],
+        (tenant_id, domain_a_label, verification_method, verification_digest, verified_at)
+       VALUES ($1, $2, 'dns', decode(repeat('11', 32), 'hex'), $3)`,
+      [tenantId, domain, createdAt],
     );
     await owner.query(
       `INSERT INTO provider_instances
-         (provider_instance_id, tenant_id, provider_id, secret_ref, config_ref, state)
-       VALUES ($2, $1, 'fixture-provider', 'secret://provider', 'config://provider', 'enabled')`,
-      [tenantId.value, providerInstanceId.value],
+        (provider_instance_id, tenant_id, provider_id, secret_ref, config_ref, state)
+       VALUES ($1, $2, 'mailgun', 'secret://mailgun', 'config://mailgun', 'enabled')`,
+      [providerInstanceId, tenantId],
     );
-    await owner.query(
-      `INSERT INTO route_bindings
-         (binding_id, binding_version, tenant_id, domain_a_label, direction,
-          provider_instance_id, provider_id, adapter_version, secret_ref, config_ref,
-          config_revision, capability_snapshot, capability_digest, state)
-       VALUES
-         ($3, 1, $1, 'e2e.example.test', 'inbound', $2, 'fixture-provider', '1.0.0',
-          'secret://provider', 'config://provider', 'e2e-v1', $4,
-          decode($5, 'hex'), 'active')`,
-      [tenantId.value, providerInstanceId.value, bindingId, descriptor, capabilityDigest],
-    );
-    const path = `/v1/providers/fixture-provider/1.0.0/http/instances/${providerInstanceId.value}/inbound`;
-    const firstResponse = await fetch(new URL(path, first.value.address), {
-      body: "mail",
-      headers: { "content-type": "application/octet-stream" },
-      method: "POST",
-    });
-    if (firstResponse.status !== 202) {
-      throw new TypeError(
-        JSON.stringify({
-          cause: String(lastIngressError?.cause),
-          code: lastIngressError?.code,
-          message: lastIngressError?.message,
-          safeDetails: lastIngressError?.safeDetails,
-          status: firstResponse.status,
-        }),
+    for (const [bindingId, direction, checkId] of [
+      [inboundBindingId, "inbound", "018f4f6a-7b2c-7000-8000-000000000506"],
+      [outboundBindingId, "outbound", "018f4f6a-7b2c-7000-8000-000000000507"],
+    ] as const) {
+      await owner.query(
+        `INSERT INTO route_bindings
+          (binding_id, binding_version, tenant_id, domain_a_label, direction,
+           provider_instance_id, provider_id, adapter_version, adapter_mode, dispatch_transport,
+           secret_ref, config_ref, config_revision, capability_snapshot, capability_digest,
+           provider_resource_ids, state, qualified_at, created_at, updated_at)
+         VALUES ($1, 1, $2, $3, $4, $5, 'mailgun', '0.1.0', 'smtp_raw', 'smtp',
+           'secret://mailgun', 'config://mailgun', 'e2e-v1', $6, decode($7, 'hex'), $8,
+           'active', $9, $9, $9)`,
+        [
+          bindingId,
+          tenantId,
+          domain,
+          direction,
+          providerInstanceId,
+          JSON.stringify(mailgunProviderDescriptor),
+          capabilityDigest,
+          JSON.stringify({ route: `e2e-${direction}` }),
+          createdAt,
+        ],
+      );
+      await owner.query(
+        `INSERT INTO route_binding_checks
+          (check_id, tenant_id, binding_id, binding_version, check_kind, outcome,
+           report, report_digest, evidence_at, expires_at)
+         VALUES ($1, $2, $3, 1, 'live_conformance', 'pass', '{}',
+           decode(repeat('41', 32), 'hex'), $4, '2099-01-01')`,
+        [checkId, tenantId, bindingId, createdAt],
       );
     }
-    expect(firstResponse.status).toBe(202);
+  }, 180_000);
+
+  afterAll(async () => {
+    await host?.close();
+    await owner.end();
+    await Promise.all([
+      postgres.stop(),
+      minio.stop(),
+      closeServer(kms.server),
+      closeServer(application.server),
+    ]);
+    await rm(secretDirectory, { force: true, recursive: true });
+  });
+
+  test("proves durable mail flows, isolation, reconciliation, stale leases, and backpressure through the composed host", async () => {
+    if (host?.address === undefined) throw new TypeError("Reference host address is unavailable.");
+    const base = host.address;
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const routeToken = mailgunToken("inbound-e2e-route");
+    const routeSignature = createHmac("sha256", webhookKey)
+      .update(timestamp + routeToken)
+      .digest("hex");
+    const rawInbound =
+      `From: sender@example.test\r\nTo: recipient@${domain}\r\n` +
+      `Message-ID: <inbound-e2e@${domain}>\r\nSubject: inbound\r\n\r\nbody\r\n`;
+    const routeBody = new URLSearchParams({
+      "body-mime": rawInbound,
+      recipient: `recipient@${domain}`,
+      sender: "sender@example.test",
+      signature: routeSignature,
+      timestamp,
+      token: routeToken,
+    });
+    const inboundPath = `/v1/providers/mailgun/0.1.0/smtp_raw/instances/${providerInstanceId}/inbound/raw-mime`;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await fetch(new URL(inboundPath, base), {
+        body: routeBody.toString(),
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        method: "POST",
+      });
+      expect(result.status).toBe(202);
+    }
+    await waitFor(async () => {
+      const result = await owner.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM inbound_deliveries WHERE state = 'delivered'",
+      );
+      return result.rows[0]?.count === 1;
+    }, "idempotent inbound application delivery");
+    expect(application.calls).toContain("/recipients");
+    expect(application.calls).toContain("/delivery");
     expect(
       (await owner.query<{ count: number }>("SELECT count(*)::int AS count FROM inbound_receipts"))
         .rows[0]?.count,
     ).toBe(1);
-    expect(
-      (await owner.query<{ count: number }>("SELECT count(*)::int AS count FROM pgboss.job"))
-        .rows[0]?.count,
-    ).toBeGreaterThan(0);
-    expect((await first.value.close()).ok).toBe(true);
-    activeHosts.delete(first.value);
 
-    const restarted = await ReferenceServiceHost.create(
-      hostConfig,
-      new AbortController().signal,
-      new E2eComposition(keys),
+    const unauthorized = await fetch(
+      new URL(
+        `/v1/tenants/${tenantId}/inbound-receipts/018f4f6a-7b2c-7000-8000-000000000599`,
+        base,
+      ),
+      { headers: bearer(otherTenantToken) },
     );
-    if (!restarted.ok) throw restarted.error;
-    activeHosts.add(restarted.value);
-    const restartStart = await restarted.value.start(new AbortController().signal);
-    if (!restartStart.ok) throw restartStart.error;
-    const replayResponse = await fetch(new URL(path, restarted.value.address), {
-      body: "mail",
-      headers: { "content-type": "application/octet-stream" },
+    expect(unauthorized.status).toBe(401);
+
+    const rawOutbound = Buffer.from(
+      `From: sender@${domain}\r\nTo: recipient@example.net\r\n` +
+        `Message-ID: <outbound-unknown@${domain}>\r\nSubject: outbound\r\n\r\nbody\r\n`,
+    );
+    const stored = await fetch(new URL(`/v1/tenants/${tenantId}/raw-messages`, base), {
+      body: rawOutbound,
+      headers: { ...bearer(tenantToken), "content-type": "message/rfc822" },
       method: "POST",
     });
-    expect(replayResponse.status).toBe(202);
+    if (stored.status !== 201) {
+      const stages = await owner.query<{
+        optimisticVersion: string;
+        stageId: string;
+        state: string;
+      }>(
+        `SELECT stage_id AS "stageId", state, optimistic_version AS "optimisticVersion"
+         FROM blob_ingest_stages ORDER BY created_at DESC LIMIT 5`,
+      );
+      throw new TypeError(
+        `Outbound raw upload failed with ${String(stored.status)}: ${await stored.text()} ${JSON.stringify(stages.rows)}`,
+      );
+    }
+    const rawReference: unknown = await stored.json();
+    const raw = record(rawReference);
+    if (raw === undefined) throw new TypeError("Raw upload response is malformed.");
+    smtp.setNextMode("unknown");
+    const intentBody = {
+      envelope: {
+        mailFrom: `sender@${domain}`,
+        rcptTo: [{ address: "recipient@example.net" }],
+        schemaVersion: "v1",
+        smtpUtf8: false,
+      },
+      raw,
+    };
+    const createIntent = (): Promise<Response> =>
+      fetch(new URL(`/v1/tenants/${tenantId}/outbound-intents`, base), {
+        body: JSON.stringify(intentBody),
+        headers: {
+          ...bearer(tenantToken),
+          "content-type": "application/json",
+          "idempotency-key": "e2e-outbound-unknown",
+        },
+        method: "POST",
+      });
+    const firstIntent = await createIntent();
+    expect(firstIntent.status).toBe(202);
+    const firstIntentBody = record(await firstIntent.json());
+    const duplicateIntent = await createIntent();
+    expect([200, 202]).toContain(duplicateIntent.status);
+    const duplicateIntentBody = record(await duplicateIntent.json());
+    expect(duplicateIntentBody?.["intentId"]).toBe(firstIntentBody?.["intentId"]);
+
+    await waitFor(async () => {
+      const result = await owner.query<{ state: string }>(
+        "SELECT state FROM outbound_intents WHERE intent_id = $1",
+        [firstIntentBody?.["intentId"]],
+      );
+      return result.rows[0]?.state === "provider_accepted";
+    }, "Mailgun Logs reconciliation acceptance");
+    expect(mailgunHttp.queries.length).toBeGreaterThan(0);
+    expect(smtp.sessions).toHaveLength(1);
+
+    const feedbackTimestamp = String(Math.floor(Date.now() / 1000));
+    const feedbackToken = mailgunToken("feedback-e2e-delivered");
+    const feedbackSignature = createHmac("sha256", webhookKey)
+      .update(feedbackTimestamp + feedbackToken)
+      .digest("hex");
+    const feedbackBody = JSON.stringify({
+      "event-data": {
+        event: "delivered",
+        id: "mailgun-e2e-delivered-1",
+        message: { headers: { "message-id": `<outbound-unknown@${domain}>` } },
+        recipient: "recipient@example.net",
+        timestamp: Number(feedbackTimestamp),
+      },
+      signature: {
+        signature: feedbackSignature,
+        timestamp: feedbackTimestamp,
+        token: feedbackToken,
+      },
+    });
+    const feedbackPath = `/v1/providers/mailgun/0.1.0/smtp_raw/instances/${providerInstanceId}/feedback`;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const feedback = await fetch(new URL(feedbackPath, base), {
+        body: feedbackBody,
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      expect(feedback.status).toBe(202);
+    }
+    await waitFor(async () => {
+      const result = await owner.query<{ transport_state: string }>(
+        "SELECT transport_state FROM recipient_delivery_projection WHERE tenant_id = $1",
+        [tenantId],
+      );
+      return result.rows[0]?.transport_state === "delivered";
+    }, "feedback projection");
     expect(
-      (await owner.query<{ count: number }>("SELECT count(*)::int AS count FROM inbound_receipts"))
-        .rows[0]?.count,
+      (
+        await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM provider_feedback_events WHERE tenant_id = $1",
+          [tenantId],
+        )
+      ).rows[0]?.count,
     ).toBe(1);
-    expect((await restarted.value.close()).ok).toBe(true);
-    activeHosts.delete(restarted.value);
-  }, 120_000);
+    expect(
+      (
+        await owner.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM raw_blobs WHERE object_version IS NOT NULL",
+        )
+      ).rows[0]?.count,
+    ).toBeGreaterThanOrEqual(2);
+
+    mailgunHttp.setAcceptedEvidence(false);
+    const attempt = await owner.query<{ attemptId: string }>(
+      'SELECT attempt_id AS "attemptId" FROM outbound_attempts WHERE intent_id = $1',
+      [firstIntentBody?.["intentId"]],
+    );
+    const attemptId = attempt.rows[0]?.attemptId;
+    if (attemptId === undefined) throw new TypeError("Composed outbound attempt is missing.");
+    const staleIntentId = "018f4f6a-7b2c-7000-8000-0000000005a1";
+    const staleAttemptId = "018f4f6a-7b2c-7000-8000-0000000005a2";
+    const database = await owner.connect();
+    try {
+      await database.query("BEGIN");
+      const insertedIntent = await database.query(
+        `INSERT INTO outbound_intents
+           (intent_id, tenant_id, idempotency_key_hash, idempotency_key_ciphertext,
+            request_fingerprint, raw_blob_id, transmission_blob_id, envelope, route_plan,
+            state, current_attempt_id, optimistic_version, next_action_at, created_at, updated_at)
+         SELECT $3, tenant_id, decode(repeat('72', 32), 'hex'), decode('72', 'hex'),
+                request_fingerprint, raw_blob_id, transmission_blob_id, envelope, route_plan,
+                'dispatching', $4, 1, NULL, now(), now()
+         FROM outbound_intents
+         WHERE tenant_id = $1 AND intent_id = $2`,
+        [tenantId, firstIntentBody?.["intentId"], staleIntentId, staleAttemptId],
+      );
+      const insertedAttempt = await database.query(
+        `INSERT INTO outbound_attempts
+           (attempt_id, tenant_id, intent_id, ordinal, binding_id, binding_version,
+            route_snapshot, recipient_group, recipient_group_digest, transmission_blob_id,
+            fence, state, certainty, provider_message_id_ciphertext, provider_message_id_hash,
+            dispatch_boundary_at, claimed_until, next_action_at, response_evidence,
+            provider_acceptance, last_error_code, created_at, completed_at)
+         SELECT $4, tenant_id, $3, 1, binding_id, binding_version,
+                route_snapshot, recipient_group, recipient_group_digest, transmission_blob_id,
+                1, 'dispatching', 'not_sent', NULL, NULL, NULL,
+                now() - interval '1 second', NULL, NULL, NULL, NULL, now(), NULL
+         FROM outbound_attempts
+         WHERE tenant_id = $1 AND attempt_id = $2`,
+        [tenantId, attemptId, staleIntentId, staleAttemptId],
+      );
+      if (insertedIntent.rowCount !== 1 || insertedAttempt.rowCount !== 1) {
+        throw new TypeError("Failed to seed one exact stale outbound lease.");
+      }
+      await database.query("COMMIT");
+    } catch (cause) {
+      await database.query("ROLLBACK");
+      throw cause;
+    } finally {
+      database.release();
+    }
+    await waitFor(async () => {
+      const result = await owner.query<{ state: string }>(
+        "SELECT state FROM outbound_intents WHERE tenant_id = $1 AND intent_id = $2",
+        [tenantId, staleIntentId],
+      );
+      return result.rows[0]?.state === "quarantined_unknown";
+    }, "stale outbound lease quarantine");
+    expect(smtp.sessions).toHaveLength(1);
+    await waitFor(async () => {
+      const result = await owner.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM reconciliation_decisions
+         WHERE tenant_id = $1 AND intent_id = $2 AND decision = 'quarantined_unknown'`,
+        [tenantId, staleIntentId],
+      );
+      return (result.rows[0]?.count ?? 0) >= 1;
+    }, "stale outbound reconciliation decision");
+
+    const pressureBody = Buffer.concat([
+      Buffer.from("From: pressure@example.test\r\nTo: sink@example.test\r\n\r\n"),
+      Buffer.alloc(256 * 1024, 0x61),
+    ]);
+    const pressureResponses = await Promise.all(
+      Array.from({ length: 32 }, () =>
+        fetch(new URL(`/v1/tenants/${tenantId}/raw-messages`, base), {
+          body: pressureBody,
+          headers: { ...bearer(tenantToken), "content-type": "message/rfc822" },
+          method: "POST",
+        }),
+      ),
+    );
+    const pressureStatuses = pressureResponses.map(({ status }) => status);
+    expect(pressureStatuses).toContain(201);
+    expect(pressureStatuses).toContain(429);
+    expect(pressureStatuses.every((status) => status === 201 || status === 429)).toBe(true);
+  }, 180_000);
 });

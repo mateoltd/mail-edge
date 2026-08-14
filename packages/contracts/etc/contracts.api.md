@@ -1473,11 +1473,15 @@ environment: {
 export class ProviderDispatchError extends MailEdgeError {
     constructor(options: ProviderDispatchErrorOptions);
     // (undocumented)
+    readonly code: ProviderDispatchErrorOptions["code"];
+    // (undocumented)
     readonly deliveryCertainty: "not_sent" | "unknown";
     // (undocumented)
     readonly evidenceCode: string;
     // (undocumented)
     readonly phase: ProviderDispatchPhase;
+    // (undocumented)
+    readonly providerMessageId?: string;
 }
 
 // @public (undocumented)
@@ -1494,6 +1498,8 @@ export interface ProviderDispatchErrorOptions {
     readonly message: string;
     // (undocumented)
     readonly phase: ProviderDispatchPhase;
+    // (undocumented)
+    readonly providerMessageId?: string;
     // (undocumented)
     readonly retryable: boolean;
     // (undocumented)

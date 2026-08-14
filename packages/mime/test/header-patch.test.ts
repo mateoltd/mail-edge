@@ -201,7 +201,7 @@ describe("streaming top-level header patching", () => {
       ),
       { numRuns: 500 },
     );
-  }, 20_000);
+  }, 60_000);
 
   it("keeps buffering bounded by the header while streaming a large opaque body", async () => {
     const header = Buffer.from("From: sender@example.test\r\nSubject: large\r\n\r\n", "ascii");

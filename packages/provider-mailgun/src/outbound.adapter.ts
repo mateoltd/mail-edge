@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 
 import {
   ProviderDispatchError,
-  type Clock,
   type MailEdgeError,
   type OutboundProviderAdapter,
   type OutboundSubmissionV1,
@@ -29,6 +28,130 @@ import type {
 } from "./types.js";
 
 const HEADER_CAPTURE_BYTES = 64 * 1024;
+const LOGS_PAGE_LIMIT = 100;
+const MAXIMUM_LOG_PAGES = 10;
+const MAXIMUM_LOG_ITEMS = LOGS_PAGE_LIMIT * MAXIMUM_LOG_PAGES;
+
+interface MailgunLogsPage {
+  readonly items: readonly Readonly<Record<string, unknown>>[];
+  readonly nextToken?: string;
+  readonly total?: number;
+}
+
+const record = (value: unknown): Readonly<Record<string, unknown>> | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const entries: [string, unknown][] = Object.entries(value);
+  return Object.freeze(Object.fromEntries(entries));
+};
+
+const boundedString = (value: unknown, maximum: number): string | undefined =>
+  typeof value === "string" &&
+  value.length >= 1 &&
+  value.length <= maximum &&
+  !/[\r\n\0]/u.test(value)
+    ? value
+    : undefined;
+
+const rfc2822 = (milliseconds: number): string =>
+  `${new Date(milliseconds).toUTCString().slice(0, 25)} -0000`;
+
+const logsQueryBody = (input: {
+  readonly domain: string;
+  readonly from: number;
+  readonly messageId: string;
+  readonly to: number;
+  readonly token?: string;
+}): Uint8Array =>
+  Buffer.from(
+    JSON.stringify({
+      end: rfc2822(Math.ceil(input.to / 1000) * 1000),
+      events: ["accepted"],
+      filter: {
+        AND: [
+          {
+            attribute: "domain",
+            comparator: "=",
+            values: [{ label: input.domain, value: input.domain }],
+          },
+          {
+            attribute: "message_id",
+            comparator: "=",
+            values: [{ label: input.messageId, value: input.messageId }],
+          },
+        ],
+      },
+      include_subaccounts: false,
+      include_totals: true,
+      pagination: {
+        limit: LOGS_PAGE_LIMIT,
+        sort: "timestamp:asc",
+        ...(input.token === undefined ? {} : { token: input.token }),
+      },
+      start: rfc2822(Math.floor(input.from / 1000) * 1000),
+    }),
+    "utf8",
+  );
+
+const parseLogsPage = (value: Readonly<Record<string, unknown>>): MailgunLogsPage | undefined => {
+  const items = value["items"];
+  const pagination = record(value["pagination"]);
+  if (!Array.isArray(items) || items.length > LOGS_PAGE_LIMIT || pagination === undefined) {
+    return undefined;
+  }
+  const parsedItems: Readonly<Record<string, unknown>>[] = [];
+  for (const item of items) {
+    const parsed = record(item);
+    if (parsed === undefined) return undefined;
+    parsedItems.push(parsed);
+  }
+  const nextValue = pagination["next"];
+  const nextToken = nextValue === undefined ? undefined : boundedString(nextValue, 4096);
+  if (nextValue !== undefined && nextToken === undefined) return undefined;
+  const totalValue = pagination["total"];
+  const total =
+    typeof totalValue === "number" && Number.isSafeInteger(totalValue) && totalValue >= 0
+      ? totalValue
+      : undefined;
+  if (totalValue !== undefined && total === undefined) return undefined;
+  return Object.freeze({
+    items: Object.freeze(parsedItems),
+    ...(nextToken === undefined ? {} : { nextToken }),
+    ...(total === undefined ? {} : { total }),
+  });
+};
+
+const acceptedLogIdentity = (
+  event: Readonly<Record<string, unknown>>,
+  expected: {
+    readonly domain: string;
+    readonly from: number;
+    readonly messageId: string;
+    readonly to: number;
+  },
+): string | undefined => {
+  const id = boundedString(event["id"], 256);
+  const timestamp = boundedString(event["@timestamp"], 64);
+  const observed = timestamp === undefined ? Number.NaN : Date.parse(timestamp);
+  const domain = record(event["domain"]);
+  const message = record(event["message"]);
+  const headers = record(message?.["headers"]);
+  const flags = record(event["flags"]);
+  const envelope = record(event["envelope"]);
+  const rawMessageId = boundedString(headers?.["message-id"], 300);
+  const messageId = rawMessageId?.trim().replace(/^<|>$/gu, "");
+  return id !== undefined &&
+    event["event"] === "accepted" &&
+    domain?.["name"] === expected.domain &&
+    messageId === expected.messageId &&
+    flags?.["is-authenticated"] === true &&
+    flags["is-routed"] !== true &&
+    envelope?.["transport"] === "smtp" &&
+    Number.isFinite(observed) &&
+    observed >= expected.from &&
+    observed <= expected.to
+    ? id
+    : undefined;
+};
 
 class SmtpDataEncoder {
   readonly #hash = createHash("sha256");
@@ -98,20 +221,17 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
   readonly #config: MailgunProviderConfig;
   readonly #connector: MailgunSmtpConnector;
   readonly #api: MailgunApiClient;
-  readonly #clock: Clock;
   readonly #runtime: MailgunRuntime;
 
   constructor(
     config: MailgunProviderConfig,
     connector: MailgunSmtpConnector,
     api: MailgunApiClient,
-    clock: Clock,
     runtime: MailgunRuntime,
   ) {
     this.#config = config;
     this.#connector = connector;
     this.#api = api;
-    this.#clock = clock;
     this.#runtime = runtime;
   }
 
@@ -121,17 +241,17 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
   ): Promise<Result<ProviderReconciliationEvidenceV1, MailEdgeError>> {
     const available = this.#runtime.available();
     if (!available.ok) return available;
-    const observedAt = this.#clock.now();
     const unknown = (
       evidenceCode: string,
+      evidence: Readonly<Record<string, string | number | boolean>> = {},
     ): Result<ProviderReconciliationEvidenceV1, MailEdgeError> => ({
       ok: true,
       value: Object.freeze({
         authoritative: false,
         certainty: "unknown" as const,
         evidenceCode,
-        normalizedEvidence: Object.freeze({ authenticated: true, source: "api" }),
-        observedAt,
+        normalizedEvidence: Object.freeze({ authenticated: true, source: "api", ...evidence }),
+        observedAt: query.window.to,
         schemaVersion: "v1" as const,
       }),
     });
@@ -154,62 +274,90 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
     if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) {
       return { error: mailgunError("VALIDATION_FAILED", "reconciliation_window"), ok: false };
     }
-    const parameters = new URLSearchParams({
-      ascending: "yes",
-      begin: String(Math.floor(from / 1000)),
-      end: String(Math.floor(to / 1000)),
-      event: "accepted",
-      limit: "300",
-      "message-id": messageId,
+    const expected = Object.freeze({
+      domain: query.routeBinding.domainALabel,
+      from,
+      messageId,
+      to,
     });
-    const response = await this.#api.request(
-      {
-        method: "GET",
-        path: `/v3/${encodeURIComponent(query.routeBinding.domainALabel)}/events?${parameters.toString()}`,
-      },
-      signal,
-    );
-    if (!response.ok) return response;
-    if (response.value.statusCode !== 200) {
-      return {
-        error: mailgunError(
-          "HOST_UNAVAILABLE",
-          "reconciliation_status",
-          response.value.statusCode >= 500,
-        ),
-        ok: false,
-      };
+    const tokens = new Set<string>();
+    const eventIds = new Set<string>();
+    let token: string | undefined;
+    let observedItems = 0;
+    let complete = false;
+    for (let pageNumber = 0; pageNumber < MAXIMUM_LOG_PAGES; pageNumber += 1) {
+      const body = logsQueryBody({ ...expected, ...(token === undefined ? {} : { token }) });
+      const response = await this.#api.request(
+        {
+          body,
+          contentType: "application/json",
+          method: "POST",
+          path: "/v1/analytics/logs",
+        },
+        signal,
+      );
+      if (!response.ok) return unknown("logs_query_failed", { pages: pageNumber });
+      if (response.value.statusCode !== 200) {
+        return unknown("logs_query_status", {
+          pages: pageNumber + 1,
+          statusCode: response.value.statusCode,
+        });
+      }
+      const parsed = this.#api.parseJsonObject(response.value);
+      if (!parsed.ok) return unknown("logs_response_malformed", { pages: pageNumber + 1 });
+      const page = parseLogsPage(parsed.value);
+      if (page === undefined) return unknown("logs_response_malformed", { pages: pageNumber + 1 });
+      if (page.total !== undefined && page.total > MAXIMUM_LOG_ITEMS) {
+        return unknown("logs_result_truncated", { resultCount: page.total });
+      }
+      for (const item of page.items) {
+        const eventId = acceptedLogIdentity(item, expected);
+        if (eventId === undefined || eventIds.has(eventId)) {
+          return unknown("logs_result_ambiguous", { pages: pageNumber + 1 });
+        }
+        eventIds.add(eventId);
+      }
+      observedItems += page.items.length;
+      if (
+        observedItems > MAXIMUM_LOG_ITEMS ||
+        (page.total !== undefined && observedItems > page.total)
+      ) {
+        return unknown("logs_result_truncated", { resultCount: observedItems });
+      }
+      if (page.total !== undefined && observedItems === page.total) {
+        complete = true;
+        break;
+      }
+      if (page.items.length === 0) {
+        if (page.total !== undefined && observedItems < page.total) {
+          return unknown("logs_result_truncated", { resultCount: observedItems });
+        }
+        complete = true;
+        break;
+      }
+      if (page.nextToken === undefined || tokens.has(page.nextToken)) {
+        return unknown("logs_pagination_incomplete", { pages: pageNumber + 1 });
+      }
+      tokens.add(page.nextToken);
+      token = page.nextToken;
     }
-    const parsed = this.#api.parseJsonObject(response.value);
-    if (!parsed.ok) return parsed;
-    const items = parsed.value["items"];
-    if (!Array.isArray(items)) {
-      return { error: mailgunError("HOST_UNAVAILABLE", "reconciliation_items"), ok: false };
+    if (!complete) return unknown("logs_pagination_incomplete", { pages: MAXIMUM_LOG_PAGES });
+    if (eventIds.size === 0) return unknown("accepted_log_not_observed", { resultCount: 0 });
+    if (eventIds.size !== 1) {
+      return unknown("logs_result_ambiguous", { resultCount: eventIds.size });
     }
-    const accepted = items.some((item) => {
-      if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
-      const event = item as Record<string, unknown>;
-      if (event["event"] !== "accepted") return false;
-      const message = event["message"];
-      if (typeof message !== "object" || message === null || Array.isArray(message)) return false;
-      const headers = (message as Record<string, unknown>)["headers"];
-      if (typeof headers !== "object" || headers === null || Array.isArray(headers)) return false;
-      const candidate = (headers as Record<string, unknown>)["message-id"];
-      return typeof candidate === "string" && candidate.replace(/^<|>$/gu, "") === messageId;
-    });
-    if (!accepted) return unknown("accepted_event_not_observed");
     return {
       ok: true,
       value: Object.freeze({
         authoritative: true,
         certainty: "accepted" as const,
-        evidenceCode: "mailgun_accepted_event",
+        evidenceCode: "mailgun_accepted_log",
         normalizedEvidence: Object.freeze({
           authenticated: true,
-          eventCount: items.length,
+          logCount: eventIds.size,
           source: "api",
         }),
-        observedAt,
+        observedAt: query.window.to,
         schemaVersion: "v1" as const,
       }),
     };
@@ -376,7 +524,10 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
           const written = await session.writeData(encoded, signal);
           if (!written.ok) {
             return {
-              error: context.boundary.createFailure("smtp_body_write", written.error),
+              error: this.#withReconciliationIdentity(
+                context.boundary.createFailure("smtp_body_write", written.error),
+                encoder.headerBytes,
+              ),
               ok: false,
             };
           }
@@ -393,7 +544,10 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
       const finalWrite = await session.writeData(encoder.terminator, signal);
       if (!finalWrite.ok) {
         return {
-          error: context.boundary.createFailure("smtp_data_final_write", finalWrite.error),
+          error: this.#withReconciliationIdentity(
+            context.boundary.createFailure("smtp_data_final_write", finalWrite.error),
+            encoder.headerBytes,
+          ),
           ok: false,
         };
       }
@@ -402,7 +556,10 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
       const finalResponse = await session.readResponse(signal);
       if (!finalResponse.ok) {
         return {
-          error: context.boundary.createFailure("smtp_final_response", finalResponse.error),
+          error: this.#withReconciliationIdentity(
+            context.boundary.createFailure("smtp_final_response", finalResponse.error),
+            encoder.headerBytes,
+          ),
           ok: false,
         };
       }
@@ -421,7 +578,13 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
             ok: false,
           };
         }
-        return { error: context.boundary.createFailure("smtp_final_status"), ok: false };
+        return {
+          error: this.#withReconciliationIdentity(
+            context.boundary.createFailure("smtp_final_status"),
+            encoder.headerBytes,
+          ),
+          ok: false,
+        };
       }
       context.boundary.markAuthenticatedAcceptance();
       const providerMessageId = extractMessageId(encoder.headerBytes);
@@ -454,6 +617,25 @@ export class MailgunOutboundAdapter implements OutboundProviderAdapter {
   ): Promise<Result<MailgunSmtpResponse, MailEdgeError>> {
     const written = await session.writeCommand(command, signal);
     return written.ok ? session.readResponse(signal) : written;
+  }
+
+  #withReconciliationIdentity(
+    error: ProviderDispatchError,
+    headerBytes: Uint8Array,
+  ): ProviderDispatchError {
+    const providerMessageId = extractMessageId(headerBytes);
+    return providerMessageId === undefined
+      ? error
+      : new ProviderDispatchError({
+          cause: error,
+          code: error.code,
+          deliveryCertainty: error.deliveryCertainty,
+          evidenceCode: error.evidenceCode,
+          message: error.message,
+          phase: error.phase,
+          providerMessageId,
+          retryable: error.retryable,
+        });
   }
 
   #rejectedBeforeData(

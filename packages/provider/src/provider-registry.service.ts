@@ -34,25 +34,23 @@ const registryKey = (providerId: ProviderId, adapterVersion: string, mode: strin
 
 const DEFAULT_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
 
-const cloneAndFreezeJson = <T>(value: T): T => {
+const deepFreeze = (value: unknown): void => {
   if (Array.isArray(value)) {
-    const array = value as unknown as readonly unknown[];
-    return Object.freeze(array.map((item) => cloneAndFreezeJson(item))) as T;
+    for (const item of value) deepFreeze(item);
+    Object.freeze(value);
+    return;
   }
   if (typeof value === "object" && value !== null) {
-    return Object.freeze(
-      Object.fromEntries(
-        Object.entries(value).map(([key, child]) => [key, cloneAndFreezeJson(child)]),
-      ),
-    ) as T;
+    for (const item of Object.values(value)) deepFreeze(item);
+    Object.freeze(value);
   }
-  return value;
 };
 
 const snapshotRegistration = (
   registration: ProviderAdapterRegistration,
 ): ProviderAdapterRegistration => {
-  const descriptor = cloneAndFreezeJson(registration.descriptor);
+  const descriptor = structuredClone(registration.descriptor);
+  deepFreeze(descriptor);
   const lifecycleStart = registration.lifecycle.start.bind(registration.lifecycle);
   const lifecycleClose = registration.lifecycle.close.bind(registration.lifecycle);
   const inbound: InboundProviderAdapter | undefined =

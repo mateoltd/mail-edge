@@ -84,6 +84,9 @@ importers:
 
   apps/reference-service:
     dependencies:
+      '@aws-sdk/client-kms':
+        specifier: 3.1109.0
+        version: 3.1109.0
       '@aws-sdk/client-s3':
         specifier: 3.1109.0
         version: 3.1109.0
@@ -108,9 +111,15 @@ importers:
       '@mail-edge/provider':
         specifier: workspace:^
         version: link:../../packages/provider
+      '@mail-edge/provider-mailgun':
+        specifier: workspace:^
+        version: link:../../packages/provider-mailgun
       '@mail-edge/queue-pg-boss':
         specifier: workspace:^
         version: link:../../packages/queue-pg-boss
+      '@mail-edge/runtime':
+        specifier: workspace:^
+        version: link:../../packages/runtime
       '@mail-edge/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
@@ -299,7 +308,7 @@ importers:
         version: link:../conformance
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/queue-pg-boss:
     dependencies:
@@ -340,7 +349,7 @@ importers:
         version: 4.3.0
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/sdk:
     dependencies:

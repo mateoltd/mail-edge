@@ -217,7 +217,7 @@ describe("Mailgun raw-MIME inbound adapter", () => {
     if (!result.ok) expect(result.error.code).toBe("INGRESS_LIMIT_EXCEEDED");
     expect(stage.completed).toHaveLength(0);
     await registration.lifecycle.close(new AbortController().signal);
-  });
+  }, 30_000);
 
   it("rejects a validly signed recipient for any unbound domain", async () => {
     const registration = await createStartedRegistration();

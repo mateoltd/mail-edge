@@ -53,7 +53,7 @@ const otherTenantToken = "tenant-token-that-is-at-least-thirty-two-bytes-002";
 
 export const clock: Clock = Object.freeze({ now: () => "2026-08-14T10:00:00.000Z" });
 
-export const descriptor: ProviderCapabilityDescriptorV1 = Object.freeze({
+const descriptor: ProviderCapabilityDescriptorV1 = Object.freeze({
   adapterVersion: "1.0.0",
   controlPlane: Object.freeze({
     dnsDiscovery: false,
@@ -132,7 +132,7 @@ const adapterRegistration = (state: AdapterState): ProviderAdapterRegistration =
         receivedAt: "2026-08-14T10:00:00.000Z",
         schemaVersion: "v1",
       });
-      return { ok: true, value: Object.freeze([event]) };
+      return { ok: true, value: Object.freeze({ events: Object.freeze([event]) }) };
     },
   },
   identity: { adapterVersion: "1.0.0", mode: "http", providerId },
@@ -250,6 +250,7 @@ export const testConfig = (secretDirectory: string): ReferenceServiceConfig => (
     keyPrefix: "mail-edge",
     multipartPartBytes: 5_242_880,
     multipartQueueSize: 1,
+    maximumRawMessageBytes: 16,
     operationTimeoutMilliseconds: 1_000,
     rawRetentionMilliseconds: 60_000,
     region: "us-east-1",

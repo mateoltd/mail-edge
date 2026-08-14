@@ -1,4 +1,9 @@
-import type { EnvelopeKeyService } from "@mail-edge/blob-s3";
+import type { S3Client } from "@aws-sdk/client-s3";
+import type {
+  BlobErrorFactory,
+  EncryptedS3BlobStore,
+  EnvelopeKeyService,
+} from "@mail-edge/blob-s3";
 import type {
   MailEdgeError,
   ProviderFeedbackV1,
@@ -8,9 +13,9 @@ import type {
   TenantId,
 } from "@mail-edge/contracts";
 import type {
-  BlobStorePort,
   Clock,
   HeaderPatchApplierPort,
+  AuditPort,
   MailEdgeRepositories,
   SecretResolver,
 } from "@mail-edge/core";
@@ -30,6 +35,8 @@ import type {
   InboundIngestionServices,
   ProviderAdapterIdentity,
   ProviderAdapterRegistration,
+  ProviderAdapterRegistry,
+  ProviderReplayIdentityV1,
 } from "@mail-edge/provider";
 import type { PgBossWakeupScheduler } from "@mail-edge/queue-pg-boss";
 import type { MailEdgeSdk } from "@mail-edge/sdk";
@@ -51,6 +58,7 @@ export interface AuthenticatedActor {
 export interface FeedbackHandoffInput {
   readonly instance: ProviderInstanceBinding;
   readonly events: readonly ProviderFeedbackV1[];
+  readonly replay?: ProviderReplayIdentityV1;
   readonly receivedAt: string;
   readonly requestId: string;
 }
@@ -103,19 +111,23 @@ export interface ReferenceServiceWorkflowPort {
 }
 
 export interface ReferenceServiceInfrastructure {
+  readonly audit: AuditPort;
+  readonly blobErrors: BlobErrorFactory;
   readonly blobMetadata: PostgresBlobRepository;
-  readonly blobStore: BlobStorePort;
+  readonly blobStore: EncryptedS3BlobStore;
   readonly clock: Clock;
   readonly database: PostgresDatabase;
   readonly headerPatchApplier: HeaderPatchApplierPort;
   readonly queue: PgBossWakeupScheduler;
   readonly repositories: MailEdgeRepositories;
+  readonly s3: S3Client;
   readonly secrets: SecretResolver;
   readonly unitOfWork: PostgresUnitOfWork;
 }
 
 export interface ReferenceServiceRuntimeBindings {
   readonly adapters: readonly ProviderAdapterRegistration[];
+  readonly registry: ProviderAdapterRegistry;
   readonly sdk: MailEdgeSdk;
   readonly workflow: ReferenceServiceWorkflowPort;
 }

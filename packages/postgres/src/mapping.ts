@@ -26,23 +26,27 @@ export const hexToBytes = (value: string): Uint8Array => Buffer.from(value, "hex
 
 export const cloneBytes = (value: Uint8Array): Uint8Array => Uint8Array.from(value);
 
-export const immutableClone = <Value>(value: Value): Value => {
-  if (value instanceof Uint8Array) {
-    return Uint8Array.from(value) as Value;
-  }
+const deepFreeze = (value: unknown): void => {
+  if (value instanceof Uint8Array) return;
   if (value instanceof Date) {
-    return Object.freeze(new Date(value)) as Value;
+    Object.freeze(value);
+    return;
   }
   if (Array.isArray(value)) {
-    const entries: readonly unknown[] = value;
-    return Object.freeze(entries.map((entry) => immutableClone(entry))) as Value;
+    for (const item of value) deepFreeze(item);
+    Object.freeze(value);
+    return;
   }
   if (typeof value === "object" && value !== null) {
-    return Object.freeze(
-      Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, immutableClone(entry)])),
-    ) as Value;
+    for (const item of Object.values(value)) deepFreeze(item);
+    Object.freeze(value);
   }
-  return value;
+};
+
+export const immutableClone = <Value>(value: Value): Value => {
+  const cloned = structuredClone(value);
+  deepFreeze(cloned);
+  return cloned;
 };
 
 export const dateToIso = (value: Date | string): string =>
@@ -60,7 +64,7 @@ const jsonObject = (value: unknown): Readonly<Record<string, unknown>> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("Database JSON value is not an object.");
   }
-  return value as Readonly<Record<string, unknown>>;
+  return Object.freeze(Object.fromEntries(Object.entries(value)));
 };
 
 const validated = (

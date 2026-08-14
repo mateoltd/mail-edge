@@ -27,6 +27,7 @@ import type {
 import type {
   InboundReceiptCommitInput,
   ProviderAdapterRegistration,
+  ProviderReplayIdentityV1,
   ProviderReconciliationEvidenceV1,
   ProviderReconciliationQueryV1,
 } from "@mail-edge/provider";
@@ -218,6 +219,7 @@ export interface OutboundDispatchSettlement {
   readonly certainty: "accepted" | "not_sent" | "unknown";
   readonly nextActionAt?: string;
   readonly acceptance?: OutboundAttemptV1["providerAcceptance"];
+  readonly providerMessageId?: string;
   readonly evidence: Readonly<Record<string, string | number | boolean>>;
   readonly errorCode?: string;
 }
@@ -269,6 +271,7 @@ export interface FeedbackWorkflowWriter {
   commitFeedback(
     tenantId: TenantId,
     events: readonly ProviderFeedbackV1[],
+    replay: ProviderReplayIdentityV1 | undefined,
     context: UnitOfWorkContext,
     signal: AbortSignal,
   ): Promise<Result<FeedbackCommitResult, MailEdgeError>>;

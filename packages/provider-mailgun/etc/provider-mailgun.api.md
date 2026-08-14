@@ -9,7 +9,6 @@ import { MailEdgeError } from '@mail-edge/provider';
 import type { ProviderAdapterRegistration } from '@mail-edge/provider';
 import { ProviderCapabilityDescriptorV1 } from '@mail-edge/provider';
 import { ProviderId } from '@mail-edge/provider';
-import type { ProviderInstanceId } from '@mail-edge/provider';
 import { Result } from '@mail-edge/provider';
 import type { RouteBindingSnapshotV1 } from '@mail-edge/provider';
 import type { SecretResolver } from '@mail-edge/provider';
@@ -76,7 +75,6 @@ export interface MailgunProviderDependencies {
     readonly httpTransport?: MailgunHttpTransport;
     readonly secrets: SecretResolver;
     readonly smtpConnector?: MailgunSmtpConnector;
-    readonly webhookReplay: MailgunWebhookReplayStore;
 }
 
 // @public
@@ -84,9 +82,6 @@ export const mailgunProviderDescriptor: ProviderCapabilityDescriptorV1;
 
 // @public
 export type MailgunRegion = "eu" | "us";
-
-// @public
-export type MailgunReplayOutcome = "new" | "duplicate" | "conflict";
 
 // @public
 export interface MailgunSmtpConnector {
@@ -109,16 +104,6 @@ export interface MailgunSmtpSession {
     readResponse(signal: AbortSignal): Promise<Result<MailgunSmtpResponse, MailEdgeError>>;
     writeCommand(command: string, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
     writeData(chunk: Uint8Array, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
-}
-
-// @public
-export interface MailgunWebhookReplayStore {
-    consume(input: {
-        readonly providerInstanceId: ProviderInstanceId;
-        readonly nonceDigest: string;
-        readonly bodyDigest: string;
-        readonly expiresAt: string;
-    }, signal: AbortSignal): Promise<Result<MailgunReplayOutcome, MailEdgeError>>;
 }
 
 // @public

@@ -18,10 +18,7 @@ import type {
   OutboundAttemptState,
   OutboundIntentV1,
   OutboundIntentState,
-  OutboundSubmissionV1,
-  ProviderAcceptanceV1,
   ProviderCapabilityDescriptorV1,
-  ProviderDispatchError,
   ProviderId,
   RawMessageRefV1,
   RawMessageStream,
@@ -236,10 +233,6 @@ export interface WakeupScheduler {
 /** @public */
 export interface RegisteredProviderAbstraction {
   readonly descriptor: ProviderCapabilityDescriptorV1;
-  submitRaw(
-    input: OutboundSubmissionV1,
-    signal: AbortSignal,
-  ): Promise<Result<ProviderAcceptanceV1, ProviderDispatchError>>;
 }
 
 /** @public */

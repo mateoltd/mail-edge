@@ -30,6 +30,7 @@ import { ProviderFeedbackV1 } from '@mail-edge/contracts';
 import { ProviderInstanceId } from '@mail-edge/contracts';
 import type { ProviderReconciliationEvidenceV1 } from '@mail-edge/provider';
 import type { ProviderReconciliationQueryV1 } from '@mail-edge/provider';
+import type { ProviderReplayIdentityV1 } from '@mail-edge/provider';
 import type { RawMessageRefV1 } from '@mail-edge/contracts';
 import type { ReceiptId } from '@mail-edge/contracts';
 import type { RecipientRouter } from '@mail-edge/core';
@@ -143,7 +144,7 @@ export class DurableFeedbackService {
         readonly wakeups: WakeupScheduler;
     });
     // (undocumented)
-    commit(tenantId: TenantId, providerInstanceId: ProviderInstanceId, descriptor: ProviderCapabilityDescriptorV1, events: readonly ProviderFeedbackV1[], callerSignal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
+    commit(tenantId: TenantId, providerInstanceId: ProviderInstanceId, descriptor: ProviderCapabilityDescriptorV1, events: readonly ProviderFeedbackV1[], replay: ProviderReplayIdentityV1 | undefined, callerSignal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
 }
 
 // @public
@@ -407,7 +408,7 @@ export interface FeedbackWorkflowWriter {
     // (undocumented)
     claimFeedbackApplication(tenantId: TenantId, feedbackEventId: FeedbackEventId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackApplicationClaim | null, MailEdgeError>>;
     // (undocumented)
-    commitFeedback(tenantId: TenantId, events: readonly ProviderFeedbackV1[], context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
+    commitFeedback(tenantId: TenantId, events: readonly ProviderFeedbackV1[], replay: ProviderReplayIdentityV1 | undefined, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
 }
 
 // @public
@@ -543,6 +544,8 @@ export interface OutboundDispatchSettlement {
     readonly evidence: Readonly<Record<string, string | number | boolean>>;
     // (undocumented)
     readonly nextActionAt?: string;
+    // (undocumented)
+    readonly providerMessageId?: string;
     // (undocumented)
     readonly state: "provider_accepted" | "retry_wait" | "failed_not_sent" | "quarantined_unknown";
 }

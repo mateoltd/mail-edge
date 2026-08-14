@@ -106,6 +106,7 @@ export type {
   WakeupScheduler,
 } from "./ports.js";
 export { MAX_RAW_ACCESS_GRANT_LIFETIME_MS, validateRawAccessGrant } from "./raw-access.js";
+export { parseWorkflowWakeup } from "./wakeup.js";
 export type {
   RecipientRoutePlan,
   RecipientRoutingInput,

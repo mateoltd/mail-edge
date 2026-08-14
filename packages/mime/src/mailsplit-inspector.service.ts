@@ -35,9 +35,31 @@ type MailsplitConstructor = new (options?: {
   readonly maxHeadSize?: number;
 }) => MailsplitStream;
 
+const isMailsplitModule = (value: unknown): value is { readonly Splitter: MailsplitConstructor } =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof Reflect.get(value, "Splitter") === "function";
+
 const loadedMailsplit: unknown = createRequire(import.meta.url)("@zone-eu/mailsplit");
-const mailsplitModule = loadedMailsplit as {
-  readonly Splitter: MailsplitConstructor;
+if (!isMailsplitModule(loadedMailsplit)) {
+  throw new TypeError("The mailsplit module does not expose its required constructor.");
+}
+const mailsplitModule = loadedMailsplit;
+
+const isMailsplitEntry = (value: unknown): value is MailsplitEntry => {
+  if (typeof value !== "object" || value === null) return false;
+  const type: unknown = Reflect.get(value, "type");
+  if (type === "body" || type === "data") {
+    return Reflect.get(value, "value") instanceof Buffer;
+  }
+  const headers: unknown = Reflect.get(value, "headers");
+  return (
+    type === "node" &&
+    typeof Reflect.get(value, "getHeaders") === "function" &&
+    typeof headers === "object" &&
+    headers !== null &&
+    typeof Reflect.get(headers, "getList") === "function"
+  );
 };
 
 /** @public */
@@ -203,8 +225,12 @@ export class MailsplitStructuralInspector {
     let headerCount = 0;
     let maximumDepth = 0;
     try {
-      const entries = splitter as unknown as AsyncIterable<MailsplitEntry>;
-      for await (const entry of entries) {
+      for await (const untrustedEntry of splitter) {
+        const candidate: unknown = untrustedEntry;
+        if (!isMailsplitEntry(candidate)) {
+          throw mimeProcessingFailure("mailsplit_shape");
+        }
+        const entry = candidate;
         budget.checkpoint();
         if (signal.aborted) throw mimeProcessingFailure("aborted");
         if (entry.type !== "node") continue;

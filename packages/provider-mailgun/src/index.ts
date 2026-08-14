@@ -16,9 +16,7 @@ export type {
   MailgunProviderConfig,
   MailgunProviderDependencies,
   MailgunRegion,
-  MailgunReplayOutcome,
   MailgunSmtpConnector,
   MailgunSmtpResponse,
   MailgunSmtpSession,
-  MailgunWebhookReplayStore,
 } from "./types.js";

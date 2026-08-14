@@ -47,17 +47,17 @@ export class MailgunInboundAdapter implements InboundProviderAdapter {
     if (request.contentType === null || !formContentType.test(request.contentType)) {
       return { error: mailgunError("VALIDATION_FAILED", "inbound_content_type"), ok: false };
     }
-    const binding = this.#bindingFor(context);
-    if (binding === undefined) {
+    const ingressTenantId = this.#ingressTenant(context);
+    if (ingressTenantId === undefined) {
       return { error: mailgunError("BINDING_UNAVAILABLE", "binding_hint"), ok: false };
     }
-    const stageId = `mailgun-${context.requestId.replaceAll(/[^A-Za-z0-9_-]/gu, "_").slice(0, 96)}`;
+    const stageId = context.requestId;
     const reserved = await services.stages.reserve(
       Object.freeze({
         maximumBytes: MAILGUN_MAX_MESSAGE_BYTES,
         purpose: "inbound" as const,
         stageId,
-        tenantId: binding.tenantId,
+        tenantId: ingressTenantId,
       }),
       signal,
     );
@@ -87,6 +87,12 @@ export class MailgunInboundAdapter implements InboundProviderAdapter {
         smtpUtf8: false,
       });
       if (!envelope.ok) return envelope;
+      const recipientDomain = envelope.value.recipients[0]?.mailbox.domainALabel;
+      const binding =
+        recipientDomain === undefined ? undefined : this.#bindingFor(context, recipientDomain);
+      if (binding === undefined) {
+        return { error: mailgunError("BINDING_UNAVAILABLE", "recipient_domain"), ok: false };
+      }
       if (envelope.value.recipients[0]?.mailbox.domainALabel !== binding.domainALabel) {
         return { error: mailgunError("BINDING_UNAVAILABLE", "recipient_domain"), ok: false };
       }
@@ -138,13 +144,29 @@ export class MailgunInboundAdapter implements InboundProviderAdapter {
     }
   }
 
-  #bindingFor(context: ProviderHttpIngressContext): RouteBindingSnapshotV1 | undefined {
-    if (context.bindingHint === undefined) return undefined;
-    return this.#config.inboundBindings.find(
+  #bindingFor(
+    context: ProviderHttpIngressContext,
+    recipientDomain: string,
+  ): RouteBindingSnapshotV1 | undefined {
+    const candidates = this.#config.inboundBindings.filter(
       (binding) =>
-        binding.bindingId === context.bindingHint &&
-        binding.providerInstanceId === context.providerInstanceId,
+        binding.providerInstanceId === context.providerInstanceId &&
+        binding.domainALabel === recipientDomain &&
+        (context.bindingHint === undefined || binding.bindingId === context.bindingHint),
     );
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }
+
+  #ingressTenant(
+    context: ProviderHttpIngressContext,
+  ): RouteBindingSnapshotV1["tenantId"] | undefined {
+    const bindings = this.#config.inboundBindings.filter(
+      (binding) =>
+        binding.providerInstanceId === context.providerInstanceId &&
+        (context.bindingHint === undefined || binding.bindingId === context.bindingHint),
+    );
+    const tenants = new Set(bindings.map((binding) => binding.tenantId));
+    return tenants.size === 1 ? bindings[0]?.tenantId : undefined;
   }
 
   async #abort(writer: BlobStageWriter, signal: AbortSignal): Promise<void> {

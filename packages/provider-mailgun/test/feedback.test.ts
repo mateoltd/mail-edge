@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 
 import { mailgunProviderDescriptor } from "../src/index.js";
 import {
-  MemoryWebhookReplay,
   NOW_SECONDS,
   SIGNING_KEY,
   createStartedRegistration,
@@ -34,8 +33,8 @@ const event = (
     ...extra,
   });
 
-const execute = async (body: Uint8Array, replay = new MemoryWebhookReplay()) => {
-  const registration = await createStartedRegistration({ replay });
+const execute = async (body: Uint8Array) => {
+  const registration = await createStartedRegistration();
   const result = await new ProviderFeedbackIngressService(
     required(registration.feedback, "feedback adapter"),
     new StrictBoundedBodyCollector(),
@@ -72,14 +71,17 @@ describe("Mailgun feedback normalization", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toEqual([
+      expect(result.value.events).toEqual([
         expect.objectContaining({
           kind: expectedKind,
           providerMessageId: "mailgun-fixture@example.test",
           recipient: "one@example.test",
         }),
       ]);
-      expect(Object.isFrozen(result.value[0])).toBe(true);
+      expect(Object.isFrozen(result.value.events[0])).toBe(true);
+      expect(result.value.replay).toEqual(
+        expect.objectContaining({ providerInstanceId: ingressContext().providerInstanceId }),
+      );
     }
   });
 
@@ -115,15 +117,17 @@ describe("Mailgun feedback normalization", () => {
     if (!result.ok) expect(result.error.code).toBe(errorCode);
   });
 
-  it("detects reuse of one signed token for a different body", async () => {
-    const replay = new MemoryWebhookReplay();
+  it("returns a stable replay identity for the durable feedback transaction", async () => {
     const token = tokenFor("reused-token");
-    const first = await execute(feedbackBody(event("first", "delivered"), { token }), replay);
-    const conflict = await execute(feedbackBody(event("second", "delivered"), { token }), replay);
+    const first = await execute(feedbackBody(event("first", "delivered"), { token }));
+    const second = await execute(feedbackBody(event("second", "delivered"), { token }));
 
     expect(first.ok).toBe(true);
-    expect(conflict.ok).toBe(false);
-    if (!conflict.ok) expect(conflict.error.code).toBe("CONFLICT");
+    expect(second.ok).toBe(true);
+    if (first.ok && second.ok) {
+      expect(first.value.replay?.nonceDigest).toBe(second.value.replay?.nonceDigest);
+      expect(first.value.replay?.bodyDigest).not.toBe(second.value.replay?.bodyDigest);
+    }
   });
 
   it("erases the resolver-owned signing-key bytes after verification", async () => {

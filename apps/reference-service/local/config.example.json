@@ -1,12 +1,12 @@
 {
   "schemaVersion": "v1",
   "environment": "development",
-  "compositionModule": "/srv/reference-service/composition.mjs",
+  "compositionModule": "/srv/reference-service/dist/production-composition.js",
   "secretDirectory": "/run/mail-edge/secrets",
   "http": {
     "host": "0.0.0.0",
     "port": 8080,
-    "maximumIngressBytes": 26214400,
+    "maximumIngressBytes": 83886080,
     "maximumJsonBytes": 1048576,
     "requestTimeoutMilliseconds": 30000,
     "controlPlaneTimeoutMilliseconds": 60000,
@@ -41,6 +41,7 @@
     "encryptionFrameBytes": 65536,
     "multipartPartBytes": 5242880,
     "multipartQueueSize": 2,
+    "maximumRawMessageBytes": 26214400,
     "scratchLifetimeMilliseconds": 86400000,
     "rawRetentionMilliseconds": 2592000000,
     "cleanupTimeoutMilliseconds": 30000,
@@ -74,11 +75,99 @@
     {
       "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
       "providerInstanceId": "018f4f6a-7b2c-7000-8000-000000000002",
-      "providerId": "replace-with-provider",
-      "adapterVersion": "1.0.0",
-      "mode": "http"
+      "providerId": "mailgun",
+      "adapterVersion": "0.1.0",
+      "mode": "smtp_raw"
     }
   ],
+  "production": {
+    "kms": {
+      "region": "us-east-1",
+      "keyReference": "arn:aws:kms:us-east-1:000000000000:key/replace-me",
+      "accessKeyIdSecret": "secret://kms-access-key",
+      "secretAccessKeySecret": "secret://kms-secret-key",
+      "operationTimeoutMilliseconds": 30000
+    },
+    "sensitiveValues": {
+      "encryptionKeySecret": "secret://sensitive-encryption-key",
+      "digestKeySecret": "secret://sensitive-digest-key"
+    },
+    "runtime": {
+      "operationTimeoutMilliseconds": 30000,
+      "gracefulStopMilliseconds": 30000,
+      "inboundLeaseMilliseconds": 60000,
+      "applicationDeliveryLeaseMilliseconds": 60000,
+      "outboundLeaseMilliseconds": 60000,
+      "feedbackLeaseMilliseconds": 60000,
+      "reconciliationLeaseMilliseconds": 60000,
+      "reconciliationWindowMilliseconds": 86400000,
+      "reconciliationEvidenceMaximumAgeMilliseconds": 604800000,
+      "recoveryBatchSize": 100,
+      "maximumConcurrentWork": 32,
+      "retry": {
+        "maximumAttempts": 8,
+        "initialDelayMilliseconds": 1000,
+        "maximumDelayMilliseconds": 3600000,
+        "multiplier": 2,
+        "deterministicJitterRatio": 0.2
+      }
+    },
+    "maintenance": {
+      "intervalMilliseconds": 30000,
+      "tenantBatchSize": 100,
+      "blobBatchSize": 100,
+      "purgeLeaseMilliseconds": 60000,
+      "orphanGraceMilliseconds": 86400000,
+      "orphanObservationIntervalMilliseconds": 3600000,
+      "stageCleanupMaximumPages": 10
+    },
+    "hostIntegration": [
+      {
+        "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
+        "recipientRouterUrl": "https://application.example.test/mail-edge/recipients",
+        "reverseRouteUrl": "https://application.example.test/mail-edge/reverse-route",
+        "deliveryUrl": "https://application.example.test/mail-edge/delivery",
+        "feedbackUrl": "https://application.example.test/mail-edge/feedback",
+        "signingSecret": "secret://host-signing-key",
+        "timeoutMilliseconds": 10000,
+        "maximumResponseBytes": 65536
+      }
+    ],
+    "mailgun": [
+      {
+        "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
+        "providerInstanceId": "018f4f6a-7b2c-7000-8000-000000000002",
+        "region": "us",
+        "apiKeySecretReference": "secret://mailgun-api-key",
+        "smtpPasswordSecretReference": "secret://mailgun-smtp-password",
+        "webhookSigningKeySecretReference": "secret://mailgun-webhook-key",
+        "smtpUsernameLocalPart": "postmaster",
+        "inboundForwardUrl": "https://edge.example.test/v1/providers/mailgun/0.1.0/smtp_raw/instances/018f4f6a-7b2c-7000-8000-000000000002/inbound/raw-mime",
+        "routePriority": 10,
+        "signatureToleranceSeconds": 300,
+        "networkTimeoutMilliseconds": 30000,
+        "inboundBindings": [
+          {
+            "schemaVersion": "v1",
+            "bindingId": "018f4f6a-7b2c-7000-8000-000000000003",
+            "bindingVersion": 1,
+            "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
+            "domainALabel": "mail.example.test",
+            "direction": "inbound",
+            "providerId": "mailgun",
+            "adapterVersion": "0.1.0",
+            "adapterMode": "smtp_raw",
+            "dispatchTransport": "smtp",
+            "providerInstanceId": "018f4f6a-7b2c-7000-8000-000000000002",
+            "providerResourceIds": { "route": "replace-me" },
+            "capabilityDigest": "39d580d631efbccb4b8f214a6977df83f8c50213e750fdb4042bb2e942cf4ce7",
+            "configRevision": "mailgun-v1",
+            "createdAt": "2026-08-14T00:00:00.000Z"
+          }
+        ]
+      }
+    ]
+  },
   "telemetry": {
     "enabled": false,
     "serviceName": "mail-edge-reference",

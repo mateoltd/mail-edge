@@ -18,14 +18,7 @@ import {
   mailgunAdapterIdentity,
   type MailgunProviderConfig,
 } from "../../src/index.js";
-import {
-  MemorySecrets,
-  MemoryWebhookReplay,
-  NOW,
-  binding,
-  providerInstanceId,
-  required,
-} from "../helpers.js";
+import { MemorySecrets, NOW, binding, providerInstanceId, required } from "../helpers.js";
 
 const requested = process.env["MAIL_EDGE_MAILGUN_LIVE"] === "1";
 const requiredNames = Object.freeze([
@@ -91,7 +84,6 @@ describe.skipIf(!requested)("live Mailgun sandbox qualification", () => {
     const created = createMailgunProviderRegistration(config, {
       clock,
       secrets,
-      webhookReplay: new MemoryWebhookReplay(),
     });
     if (!created.ok) throw created.error;
     const started = await created.value.lifecycle.start(new AbortController().signal);

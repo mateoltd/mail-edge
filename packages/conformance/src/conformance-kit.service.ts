@@ -7,13 +7,14 @@ import {
   ProviderInboundIngressService,
   StrictBoundedBodyCollector,
   conformanceCheckDigest,
+  bindingPlanDigest,
+  desiredBindingDigest,
   evaluateReconciliationEvidence,
   inspectBindingPlan,
   inspectProviderCapabilityDescriptor,
   requiredConformanceChecks,
   sha256CanonicalJson,
   validateProviderFeedbackBatch,
-  type CanonicalJsonValue,
   type ConformanceCheckResultV1,
   type DesiredBindingV1,
   type InboundIngestionServices,
@@ -639,7 +640,7 @@ export class ProviderConformanceKit {
           new StrictBoundedBodyCollector(),
         ).execute(request, createFixtureIngressContext(fixtures), runOwner.signal);
         if (!result.ok) return result;
-        events.push(...result.value);
+        events.push(...result.value.events);
       }
       const validated = validateProviderFeedbackBatch(
         events,
@@ -695,7 +696,7 @@ export class ProviderConformanceKit {
       schemaVersion: "v1",
       tenantId: fixtures.tenantId,
     });
-    const desiredDigest = sha256CanonicalJson(desired as unknown as CanonicalJsonValue);
+    const desiredDigest = desiredBindingDigest(desired);
     const before = await runOwner.callback(() =>
       this.#target.driver.controlStateDigest?.(runOwner.context()),
     );
@@ -725,8 +726,7 @@ export class ProviderConformanceKit {
       second.ok &&
       firstInspection?.valid === true &&
       secondInspection?.valid === true &&
-      sha256CanonicalJson(first.value as unknown as CanonicalJsonValue) ===
-        sha256CanonicalJson(second.value as unknown as CanonicalJsonValue);
+      bindingPlanDigest(first.value) === bindingPlanDigest(second.value);
     const planningVerified =
       deterministic && validControlStateDigest(before) && before === afterPlan;
     const checks = [
@@ -923,7 +923,7 @@ export class ProviderConformanceKit {
       fixtureSetDigest:
         fixtures?.fixtureSetDigest ??
         sha256CanonicalJson({
-          identity: this.#target.registration.identity as unknown as CanonicalJsonValue,
+          identity: Object.freeze({ ...this.#target.registration.identity }),
           observedAt: timing.observedAt,
         }),
       mode: this.#target.registration.identity.mode,

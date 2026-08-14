@@ -18,22 +18,21 @@ const encode = (value: unknown, active: Set<object>): string => {
     return Object.is(value, -0) ? "0" : JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    const array = value as unknown as readonly unknown[];
-    if (active.has(array)) {
+    if (active.has(value)) {
       throw new TypeError("Canonical JSON cannot contain cycles.");
     }
-    active.add(array);
+    active.add(value);
     try {
       const items: string[] = [];
-      for (let index = 0; index < array.length; index += 1) {
-        if (!Object.hasOwn(array, index)) {
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
           throw new TypeError("Canonical JSON arrays cannot contain holes.");
         }
-        items.push(encode(array[index], active));
+        items.push(encode(value[index], active));
       }
       return `[${items.join(",")}]`;
     } finally {
-      active.delete(array);
+      active.delete(value);
     }
   }
   if (typeof value !== "object") {
@@ -48,10 +47,9 @@ const encode = (value: unknown, active: Set<object>): string => {
   }
   active.add(value);
   try {
-    const record = value as Readonly<Record<string, unknown>>;
-    return `{${Object.keys(record)
-      .toSorted()
-      .map((key) => `${JSON.stringify(key)}:${encode(record[key], active)}`)
+    return `{${Object.entries(value)
+      .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${encode(item, active)}`)
       .join(",")}}`;
   } finally {
     active.delete(value);

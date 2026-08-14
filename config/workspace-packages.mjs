@@ -64,6 +64,7 @@ export const workspaceUnits = Object.freeze([
     "mime",
     "postgres",
     "provider",
+    "provider-mailgun",
     "queue-pg-boss",
     "runtime",
     "sdk",

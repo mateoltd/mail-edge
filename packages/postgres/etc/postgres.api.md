@@ -44,6 +44,7 @@ import { PoolConfig } from 'pg';
 import { ProviderAdapterRegistration } from '@mail-edge/provider';
 import { ProviderFeedbackV1 } from '@mail-edge/contracts';
 import { ProviderReconciliationEvidenceV1 } from '@mail-edge/provider';
+import { ProviderReplayIdentityV1 } from '@mail-edge/provider';
 import { QueryResultRow } from 'pg';
 import { RawMessageRefV1 } from '@mail-edge/contracts';
 import { ReceiptId } from '@mail-edge/contracts';
@@ -942,7 +943,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
     // (undocumented)
     claimReconciliation(tenantId: TenantId, now: string, leaseMilliseconds: number, windowMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<ReconciliationClaim | null, MailEdgeError>>;
     // (undocumented)
-    commitFeedback(tenantId: TenantId, events: readonly ProviderFeedbackV1[], context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
+    commitFeedback(tenantId: TenantId, events: readonly ProviderFeedbackV1[], replay: ProviderReplayIdentityV1 | undefined, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
     // (undocumented)
     createOutboundIntent(input: CreateOutboundIntentInput, intentId: IntentId, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
     // (undocumented)

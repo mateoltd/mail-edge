@@ -9,6 +9,7 @@ import {
   PostgresBlobRepository,
   PostgresDatabase,
   PostgresMigrationRunner,
+  PostgresAuditRepository,
   PostgresUnitOfWork,
   type SensitiveValueCipher,
 } from "@mail-edge/postgres";
@@ -184,20 +185,26 @@ class S3Lifecycle implements LifecycleComponent {
   readonly name = "s3";
   readonly #bucket: string;
   readonly #client: S3Client;
+  readonly #operationTimeoutMilliseconds: number;
 
-  constructor(client: S3Client, bucket: string) {
+  constructor(client: S3Client, bucket: string, operationTimeoutMilliseconds: number) {
     this.#client = client;
     this.#bucket = bucket;
+    this.#operationTimeoutMilliseconds = operationTimeoutMilliseconds;
   }
 
   async start(signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
     try {
+      const operationSignal = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(this.#operationTimeoutMilliseconds),
+      ]);
       await this.#client.send(new HeadBucketCommand({ Bucket: this.#bucket }), {
-        abortSignal: signal,
+        abortSignal: operationSignal,
       });
       const versioning = await this.#client.send(
         new GetBucketVersioningCommand({ Bucket: this.#bucket }),
-        { abortSignal: signal },
+        { abortSignal: operationSignal },
       );
       if (versioning.Status !== "Enabled") {
         throw new TypeError("S3 bucket versioning must be enabled before startup.");
@@ -218,8 +225,12 @@ class S3Lifecycle implements LifecycleComponent {
 
   async readiness(signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
     try {
+      const operationSignal = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(this.#operationTimeoutMilliseconds),
+      ]);
       await this.#client.send(new HeadBucketCommand({ Bucket: this.#bucket }), {
-        abortSignal: signal,
+        abortSignal: operationSignal,
       });
       return { ok: true, value: undefined };
     } catch (cause) {
@@ -319,6 +330,7 @@ export const buildInfrastructure = async (input: {
       },
       endpoint: input.config.s3.endpoint,
       forcePathStyle: input.config.s3.forcePathStyle,
+      maxAttempts: 1,
       region: input.config.s3.region,
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
@@ -330,7 +342,7 @@ export const buildInfrastructure = async (input: {
         cleanupTimeoutMilliseconds: input.config.s3.cleanupTimeoutMilliseconds,
         encryptionFrameBytes: input.config.s3.encryptionFrameBytes,
         keyPrefix: input.config.s3.keyPrefix,
-        maximumRawMessageBytes: input.config.http.maximumIngressBytes,
+        maximumRawMessageBytes: input.config.s3.maximumRawMessageBytes,
         multipartPartBytes: input.config.s3.multipartPartBytes,
         multipartQueueSize: input.config.s3.multipartQueueSize,
         operationTimeoutMilliseconds: input.config.s3.operationTimeoutMilliseconds,
@@ -373,10 +385,12 @@ export const buildInfrastructure = async (input: {
         components: Object.freeze([
           new MigrationLifecycle(input.config.postgres, migrationSecret.value, runtimeSecret.value),
           new DatabaseLifecycle(database),
-          new S3Lifecycle(s3, input.config.s3.bucket),
+          new S3Lifecycle(s3, input.config.s3.bucket, input.config.s3.operationTimeoutMilliseconds),
           new QueueLifecycle(queue),
         ]),
         infrastructure: Object.freeze({
+          audit: new PostgresAuditRepository(unitOfWork),
+          blobErrors: Object.freeze({ create: driverError }),
           blobMetadata,
           blobStore,
           clock: input.clock,
@@ -384,6 +398,7 @@ export const buildInfrastructure = async (input: {
           headerPatchApplier: new StreamingHeaderPatchApplier(),
           queue,
           repositories,
+          s3,
           secrets: input.secrets,
           unitOfWork,
         }),

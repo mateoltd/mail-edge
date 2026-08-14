@@ -126,6 +126,8 @@ const runtimeIsComplete = (value: unknown): value is ReferenceServiceRuntimeBind
   "adapters" in value &&
   Array.isArray(value.adapters) &&
   value.adapters.length > 0 &&
+  "registry" in value &&
+  value.registry instanceof ProviderAdapterRegistry &&
   "sdk" in value &&
   value.sdk instanceof MailEdgeSdk &&
   "workflow" in value &&
@@ -144,10 +146,7 @@ const workflowIsComplete = (value: unknown): value is ReferenceServiceWorkflowPo
     "applyBindingPlan",
     "discoverBinding",
     "deleteBindingResources",
-  ].every(
-    (method) =>
-      method in value && typeof (value as Readonly<Record<string, unknown>>)[method] === "function",
-  );
+  ].every((method) => method in value && typeof Reflect.get(value, method) === "function");
 
 const closeConstructed = async (
   components: readonly LifecycleComponent[],
@@ -246,10 +245,7 @@ export class ReferenceServiceHost {
     let registry: ProviderAdapterRegistry;
     let catalog: ProviderInstanceCatalog;
     try {
-      registry = new ProviderAdapterRegistry(
-        runtime.adapters,
-        config.http.shutdownTimeoutMilliseconds,
-      );
+      registry = runtime.registry;
       catalog = new ProviderInstanceCatalog(config.providerInstances);
       catalog.assertRegistrations(runtime.adapters);
     } catch (cause) {

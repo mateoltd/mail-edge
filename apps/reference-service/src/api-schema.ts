@@ -31,6 +31,7 @@ const StringMap = Type.Record(
 
 export const ProviderRouteParamsSchema = Type.Object(
   {
+    "*": Type.Optional(Type.String({ maxLength: 128, minLength: 1 })),
     providerId: ProviderId,
     adapterVersion: Type.String({ maxLength: 128, minLength: 1 }),
     mode: Token,
@@ -237,6 +238,8 @@ export type ProviderInstanceParams = Static<typeof ProviderInstanceParamsSchema>
 export type TenantParams = Static<typeof TenantParamsSchema>;
 export type TenantIntentParams = Static<typeof TenantIntentParamsSchema>;
 export type TenantReceiptParams = Static<typeof TenantReceiptParamsSchema>;
+export type DesiredBindingInput = Static<typeof DesiredBindingSchema>;
+export type BindingPlanInput = Static<typeof BindingPlanSchema>;
 
 export class ApiValidator {
   readonly #ajv: Ajv;

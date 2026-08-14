@@ -1,8 +1,21 @@
-import type { MailEdgeError, Result, TenantId, WorkflowWakeupV1 } from "@mail-edge/contracts";
+import {
+  WorkflowWakeupV1Schema,
+  validateContract,
+  type MailEdgeError,
+  type Result,
+  type TenantId,
+  type WorkflowWakeupV1,
+} from "@mail-edge/contracts";
 import { sql } from "kysely";
 
 import type { PostgresUnitOfWork } from "./database.service.js";
 import { postgresError } from "./errors.js";
+
+const workflowWakeup = (value: unknown): WorkflowWakeupV1 => {
+  const parsed = validateContract(WorkflowWakeupV1Schema, value);
+  if (!parsed.ok) throw new TypeError("Durable wakeup identity failed its public schema.");
+  return parsed.value;
+};
 
 /** Durable workflow-state scanner. Republishing is safe because jobs are hints only. @public */
 export class PostgresWakeupRepairRepository {
@@ -80,38 +93,38 @@ export class PostgresWakeupRepairRepository {
             ...receipts.map((row) => ({
               dueAt: row.nextActionAt ?? row.createdAt,
               id: row.receiptId,
-              wakeup: {
-                receiptId: row.receiptId as never,
+              wakeup: workflowWakeup({
+                receiptId: row.receiptId,
                 schemaVersion: "v1",
                 type: "inbound_receipt",
-              } satisfies WorkflowWakeupV1,
+              }),
             })),
             ...intents.map((row) => ({
               dueAt: row.nextActionAt ?? row.createdAt,
               id: row.intentId,
-              wakeup: {
-                intentId: row.intentId as never,
+              wakeup: workflowWakeup({
+                intentId: row.intentId,
                 schemaVersion: "v1",
                 type: "outbound_intent",
-              } satisfies WorkflowWakeupV1,
+              }),
             })),
             ...deliveries.map((row) => ({
               dueAt: row.nextActionAt ?? row.createdAt,
               id: row.deliveryId,
-              wakeup: {
-                deliveryId: row.deliveryId as never,
+              wakeup: workflowWakeup({
+                deliveryId: row.deliveryId,
                 schemaVersion: "v1",
                 type: "application_delivery",
-              } satisfies WorkflowWakeupV1,
+              }),
             })),
             ...feedback.map((row) => ({
               dueAt: row.receivedAt,
               id: row.feedbackEventId,
-              wakeup: {
-                feedbackEventId: row.feedbackEventId as never,
+              wakeup: workflowWakeup({
+                feedbackEventId: row.feedbackEventId,
                 schemaVersion: "v1",
                 type: "feedback_event",
-              } satisfies WorkflowWakeupV1,
+              }),
             })),
           ]
             .toSorted(

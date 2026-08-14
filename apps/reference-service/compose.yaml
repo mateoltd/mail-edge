@@ -73,10 +73,6 @@ services:
         target: /run/mail-edge/config.json
         read_only: true
       - type: bind
-        source: ${MAIL_EDGE_REFERENCE_COMPOSITION_FILE:-./local/composition.mjs}
-        target: /srv/reference-service/composition.mjs
-        read_only: true
-      - type: bind
         source: ${MAIL_EDGE_REFERENCE_SECRET_DIRECTORY:-./local/secrets}
         target: /run/mail-edge/secrets
         read_only: true

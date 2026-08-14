@@ -1,13 +1,16 @@
 import {
   MailEdgeError,
   ProviderDispatchError,
+  ProviderFeedbackV1Schema,
+  bindingPlanDigest,
+  desiredBindingDigest,
   ok,
   parseBindingId,
   parseProviderId,
   parseProviderInstanceId,
   parseTenantId,
   sha256CanonicalJson,
-  type CanonicalJsonValue,
+  validateContractBatch,
   type ProviderAdapterRegistration,
   type ProviderCapabilityDescriptorV1,
   type ProviderFeedbackV1,
@@ -24,6 +27,11 @@ const parsed = <Value>(
   if (!result.ok) throw new Error("Sample adapter fixture is invalid.");
   return result.value;
 };
+
+const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : undefined;
 
 const providerId = parsed(parseProviderId("third-party-sample"));
 const tenantId = parsed(parseTenantId("018f1f2e-7b4a-7c11-8a00-000000000001"));
@@ -223,11 +231,15 @@ const feedback = {
     const collected = await collector.collectSmallBody(request, 64 * 1024, signal);
     if (!collected.ok) return collected;
     try {
-      const decoded = JSON.parse(Buffer.from(collected.value).toString("utf8")) as {
-        readonly events?: readonly ProviderFeedbackV1[];
+      const decoded: unknown = JSON.parse(Buffer.from(collected.value).toString("utf8"));
+      const events = record(decoded)?.["events"];
+      if (!Array.isArray(events)) throw new TypeError("events missing");
+      const validated = validateContractBatch(ProviderFeedbackV1Schema, events);
+      if (!validated.ok) throw new TypeError("events invalid", { cause: validated.error });
+      return {
+        ok: true,
+        value: Object.freeze({ events: Object.freeze([...validated.value]) }),
       };
-      if (!Array.isArray(decoded.events)) throw new TypeError("events missing");
-      return { ok: true, value: decoded.events };
     } catch (cause) {
       return {
         error: new MailEdgeError({
@@ -253,7 +265,7 @@ const controlPlane = {
       value: {
         appliedAt: "2026-08-13T08:00:00Z",
         normalizedEvidence: { revision: controlRevision },
-        planDigest: sha256CanonicalJson(plan as unknown as CanonicalJsonValue),
+        planDigest: bindingPlanDigest(plan),
         providerResourceIds: { route: "sample-route" },
         schemaVersion: "v1" as const,
       },
@@ -287,7 +299,7 @@ const controlPlane = {
       ok: true as const,
       value: {
         createdAt: "2026-08-13T08:00:00Z",
-        desiredDigest: sha256CanonicalJson(desired as unknown as CanonicalJsonValue),
+        desiredDigest: desiredBindingDigest(desired),
         expiresAt: "2026-08-13T08:10:00Z",
         identity: { adapterVersion: "1.0.0", mode: "sample", providerId },
         operations: [

@@ -31,7 +31,6 @@ import { OutboundAttemptState } from '@mail-edge/contracts';
 import type { OutboundAttemptV1 } from '@mail-edge/contracts';
 import type { OutboundIntentState } from '@mail-edge/contracts';
 import { OutboundIntentV1 } from '@mail-edge/contracts';
-import type { OutboundSubmissionV1 } from '@mail-edge/contracts';
 import { ProviderAcceptanceV1 } from '@mail-edge/contracts';
 import type { ProviderCapabilityDescriptorV1 } from '@mail-edge/contracts';
 import { ProviderDispatchError } from '@mail-edge/contracts';
@@ -55,8 +54,9 @@ import type { RouteRequirementsV1 } from '@mail-edge/contracts';
 import { SmtpEnvelopeV1 } from '@mail-edge/contracts';
 import { SmtpRecipientV1 } from '@mail-edge/contracts';
 import { TenantId } from '@mail-edge/contracts';
+import { ValidationError } from '@mail-edge/contracts';
 import type { VerifiedInboundReceiptV1 } from '@mail-edge/contracts';
-import type { WorkflowWakeupV1 } from '@mail-edge/contracts';
+import { WorkflowWakeupV1 } from '@mail-edge/contracts';
 
 // @public
 export const activateExactBinding: (bindings: readonly RouteBindingV1[], targetBindingId: BindingId, targetBindingVersion: number, expectedVersion: number, occurredAt: string) => Result<readonly RouteBindingV1[], MailEdgeError>;
@@ -710,6 +710,9 @@ export class OwnedOneShotBody implements OneShotBody {
 }
 
 // @public
+export const parseWorkflowWakeup: (value: unknown) => Result<WorkflowWakeupV1, ValidationError>;
+
+// @public
 export const projectRecipientFeedback: (input: FeedbackProjectionInput) => RecipientDeliveryProjectionV1;
 
 // @public (undocumented)
@@ -815,8 +818,6 @@ export const reduceOutboundWorkflow: (current: OutboundWorkflowState, event: Out
 export interface RegisteredProviderAbstraction {
     // (undocumented)
     readonly descriptor: ProviderCapabilityDescriptorV1;
-    // (undocumented)
-    submitRaw(input: OutboundSubmissionV1, signal: AbortSignal): Promise<Result<ProviderAcceptanceV1, ProviderDispatchError>>;
 }
 
 // @public
