@@ -33,6 +33,22 @@ export type RetryDecision =
         "accepted" | "unknown_quarantined" | "not_retryable" | "attempt_limit_reached";
     };
 
+/** Input to the application callback's same-delivery-ID retry table. @public */
+export type ApplicationDeliveryFailureInput = RetryPolicyInput;
+
+/** Bounded application callback outcome. Every retry retains the existing delivery ID. @public */
+export type ApplicationDeliveryFailureDecision =
+  | {
+      readonly retry: true;
+      readonly delayMilliseconds: number;
+      readonly nextActionAt: string;
+      readonly reason: "bounded_not_sent_retry" | "same_delivery_id_ack_recovery";
+    }
+  | {
+      readonly retry: false;
+      readonly reason: "not_retryable" | "attempt_limit_reached";
+    };
+
 /** @public */
 export interface EvidenceFreshnessInput {
   readonly observedAt: string;
@@ -83,6 +99,29 @@ const jitterUnit = (stableKey: string, attemptOrdinal: number): number => {
   return integer / 0xffff_ffff;
 };
 
+const boundedRetryTiming = (
+  input: Pick<RetryPolicyInput, "attemptOrdinal" | "now" | "stableKey">,
+  policy: RetryPolicy,
+): Readonly<{
+  delayMilliseconds: number;
+  nextActionAt: string;
+}> => {
+  const now = new Date(input.now).getTime();
+  if (!Number.isFinite(now)) {
+    throw new TypeError("Retry policy requires a valid orchestration timestamp.");
+  }
+  const exponential =
+    policy.initialDelayMilliseconds * policy.multiplier ** (input.attemptOrdinal - 1);
+  const capped = Math.min(policy.maximumDelayMilliseconds, exponential);
+  const jitterScale =
+    1 - policy.deterministicJitterRatio * jitterUnit(input.stableKey, input.attemptOrdinal);
+  const delayMilliseconds = Math.max(1, Math.floor(capped * jitterScale));
+  return Object.freeze({
+    delayMilliseconds,
+    nextActionAt: new Date(now + delayMilliseconds).toISOString(),
+  });
+};
+
 /** Deterministic bounded retry calculation. Unknown certainty can never produce a retry. @public */
 export const decideRetry = (input: RetryPolicyInput, policy: RetryPolicy): RetryDecision => {
   assertRetryPolicy(policy);
@@ -101,20 +140,39 @@ export const decideRetry = (input: RetryPolicyInput, policy: RetryPolicy): Retry
   if (input.attemptOrdinal >= policy.maximumAttempts) {
     return Object.freeze({ reason: "attempt_limit_reached", retry: false });
   }
-  const now = new Date(input.now).getTime();
-  if (!Number.isFinite(now)) {
-    throw new TypeError("Retry policy requires a valid orchestration timestamp.");
-  }
-  const exponential =
-    policy.initialDelayMilliseconds * policy.multiplier ** (input.attemptOrdinal - 1);
-  const capped = Math.min(policy.maximumDelayMilliseconds, exponential);
-  const jitterScale =
-    1 - policy.deterministicJitterRatio * jitterUnit(input.stableKey, input.attemptOrdinal);
-  const delayMilliseconds = Math.max(1, Math.floor(capped * jitterScale));
+  const timing = boundedRetryTiming(input, policy);
   return Object.freeze({
-    delayMilliseconds,
-    nextActionAt: new Date(now + delayMilliseconds).toISOString(),
+    ...timing,
     reason: "bounded_not_sent_retry",
+    retry: true,
+  });
+};
+
+/**
+ * Decides application-delivery failures under the at-least-once host contract.
+ * Unknown or accepted-without-ack outcomes are retried only with the existing delivery ID.
+ *
+ * @public
+ */
+export const decideApplicationDeliveryFailure = (
+  input: ApplicationDeliveryFailureInput,
+  policy: RetryPolicy,
+): ApplicationDeliveryFailureDecision => {
+  assertRetryPolicy(policy);
+  if (!positiveSafeInteger(input.attemptOrdinal)) {
+    throw new TypeError("Retry attempt ordinal must be a positive safe integer.");
+  }
+  if (input.certainty === "not_sent" && !input.errorRetryable) {
+    return Object.freeze({ reason: "not_retryable", retry: false });
+  }
+  if (input.attemptOrdinal >= policy.maximumAttempts) {
+    return Object.freeze({ reason: "attempt_limit_reached", retry: false });
+  }
+  const timing = boundedRetryTiming(input, policy);
+  return Object.freeze({
+    ...timing,
+    reason:
+      input.certainty === "not_sent" ? "bounded_not_sent_retry" : "same_delivery_id_ack_recovery",
     retry: true,
   });
 };

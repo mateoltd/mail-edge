@@ -3,6 +3,7 @@ import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   MailEdgeError,
   parseFeedbackEventId,
+  parseReceiptId,
   parseTenantId,
   ProviderFeedbackV1Schema,
   RouteBindingSnapshotV1Schema,
@@ -58,9 +59,10 @@ import {
   type ReconciliationApplication,
   type ReconciliationClaim,
 } from "@mail-edge/runtime";
-import { sql } from "kysely";
+import { sql, type Transaction } from "kysely";
 
 import type { PostgresUnitOfWork } from "./database.service.js";
+import type { MailEdgeDatabase } from "./database.schema.js";
 import { abortedError, notFoundError, postgresError, staleFenceError } from "./errors.js";
 import {
   bytesToHex,
@@ -192,6 +194,55 @@ const wakeupIdentity = (
     case "application_delivery":
       return { id: wakeup.deliveryId, workflow: wakeup.type };
   }
+};
+
+const settleTerminalInboundReceipt = async (
+  transaction: Transaction<MailEdgeDatabase>,
+  tenantId: TenantId,
+  receiptId: ReceiptId,
+  now: string,
+): Promise<Result<void, MailEdgeError>> => {
+  const receipt = await transaction
+    .selectFrom("inboundReceipts")
+    .select(["state", "optimisticVersion"])
+    .where("tenantId", "=", tenantId)
+    .where("receiptId", "=", receiptId)
+    .forUpdate()
+    .executeTakeFirstOrThrow();
+  if (receipt.state !== "delivering") return { ok: true, value: undefined };
+  const siblingStates = await transaction
+    .selectFrom("inboundDeliveries")
+    .select("state")
+    .where("tenantId", "=", tenantId)
+    .where("receiptId", "=", receiptId)
+    .limit(1001)
+    .execute();
+  if (siblingStates.length > 1000) {
+    return { error: conflict("inbound_delivery_history_limit"), ok: false };
+  }
+  const allTerminal = siblingStates.every(
+    ({ state }) => state === "delivered" || state === "dead_letter",
+  );
+  if (!allTerminal) return { ok: true, value: undefined };
+  const event = siblingStates.some(({ state }) => state === "dead_letter")
+    ? "dead_letter"
+    : "deliver";
+  const receiptTransition = reduceInboundReceipt(receipt.state, event);
+  if (!receiptTransition.ok) return receiptTransition;
+  const updated = await transaction
+    .updateTable("inboundReceipts")
+    .set({
+      optimisticVersion: String(safeInteger(receipt.optimisticVersion) + 1),
+      state: receiptTransition.value,
+      updatedAt: now,
+    })
+    .where("tenantId", "=", tenantId)
+    .where("receiptId", "=", receiptId)
+    .where("optimisticVersion", "=", receipt.optimisticVersion)
+    .executeTakeFirst();
+  return updated.numUpdatedRows === 1n
+    ? { ok: true, value: undefined }
+    : { error: conflict("inbound_receipt_aggregate_race", "unknown"), ok: false };
 };
 
 /** PostgreSQL transaction writer for every provider-neutral durable runtime transition. @public */
@@ -691,6 +742,7 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         .where("tenantId", "=", tenantId)
         .where("deliveryId", "=", deliveryId)
         .forUpdate()
+        .skipLocked()
         .executeTakeFirst();
       if (row === undefined) return { ok: true, value: null };
       let state = row.state;
@@ -864,47 +916,13 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
         return { error: staleFenceError(claim.fence), ok: false };
       }
       if (settlement.state !== "retry_wait") {
-        const receipt = await transaction
-          .selectFrom("inboundReceipts")
-          .select(["state", "optimisticVersion"])
-          .where("tenantId", "=", claim.delivery.tenantId)
-          .where("receiptId", "=", claim.delivery.receiptId)
-          .forUpdate()
-          .executeTakeFirstOrThrow();
-        if (receipt.state === "delivering") {
-          const siblingStates = await transaction
-            .selectFrom("inboundDeliveries")
-            .select("state")
-            .where("tenantId", "=", claim.delivery.tenantId)
-            .where("receiptId", "=", claim.delivery.receiptId)
-            .limit(1001)
-            .execute();
-          if (siblingStates.length > 1000) {
-            return { error: conflict("inbound_delivery_history_limit"), ok: false };
-          }
-          const allTerminal = siblingStates.every(
-            ({ state }) => state === "delivered" || state === "dead_letter",
-          );
-          if (allTerminal) {
-            const anyDeadLetter = siblingStates.some(({ state }) => state === "dead_letter");
-            const receiptTransition = reduceInboundReceipt(
-              receipt.state,
-              anyDeadLetter ? "dead_letter" : "deliver",
-            );
-            if (!receiptTransition.ok) return receiptTransition;
-            await transaction
-              .updateTable("inboundReceipts")
-              .set({
-                optimisticVersion: String(safeInteger(receipt.optimisticVersion) + 1),
-                state: receiptTransition.value,
-                updatedAt: now,
-              })
-              .where("tenantId", "=", claim.delivery.tenantId)
-              .where("receiptId", "=", claim.delivery.receiptId)
-              .where("optimisticVersion", "=", receipt.optimisticVersion)
-              .executeTakeFirstOrThrow();
-          }
-        }
+        const aggregated = await settleTerminalInboundReceipt(
+          transaction,
+          claim.delivery.tenantId,
+          claim.delivery.receiptId,
+          now,
+        );
+        if (!aggregated.ok) return aggregated;
       }
       return { ok: true, value: undefined };
     } catch (cause) {
@@ -2423,6 +2441,17 @@ export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveT
             .where("deliveryId", "=", delivery.deliveryId)
             .where("fence", "=", delivery.fence)
             .executeTakeFirstOrThrow();
+          if (terminal) {
+            const receiptId = parseReceiptId(delivery.receiptId);
+            if (!receiptId.ok) return { error: invalid("delivery_receipt_identity"), ok: false };
+            const aggregated = await settleTerminalInboundReceipt(
+              transaction,
+              tenantId,
+              receiptId.value,
+              now,
+            );
+            if (!aggregated.ok) return aggregated;
+          }
           if (!terminal) {
             wakeups.push({
               deliveryId: delivery.deliveryId as DeliveryId,

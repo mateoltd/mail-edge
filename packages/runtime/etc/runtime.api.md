@@ -63,6 +63,20 @@ export interface ApplicationDeliveryClaim {
 }
 
 // @public
+export type ApplicationDeliveryFailureDecision = {
+    readonly retry: true;
+    readonly delayMilliseconds: number;
+    readonly nextActionAt: string;
+    readonly reason: "bounded_not_sent_retry" | "same_delivery_id_ack_recovery";
+} | {
+    readonly retry: false;
+    readonly reason: "not_retryable" | "attempt_limit_reached";
+};
+
+// @public
+export type ApplicationDeliveryFailureInput = RetryPolicyInput;
+
+// @public
 export interface ApplicationDeliveryWriter {
     // (undocumented)
     claimApplicationDelivery(tenantId: TenantId, deliveryId: DeliveryId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<ApplicationDeliveryClaim | null, MailEdgeError>>;
@@ -111,6 +125,9 @@ export interface CreateOutboundIntentInput {
     // (undocumented)
     readonly transmissionRaw: RawMessageRefV1;
 }
+
+// @public
+export const decideApplicationDeliveryFailure: (input: ApplicationDeliveryFailureInput, policy: RetryPolicy) => ApplicationDeliveryFailureDecision;
 
 // @public
 export const decideRetry: (input: RetryPolicyInput, policy: RetryPolicy) => RetryDecision;

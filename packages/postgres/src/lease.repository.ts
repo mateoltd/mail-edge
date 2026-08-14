@@ -131,6 +131,7 @@ export class PostgresLeaseRepository {
         .where("tenantId", "=", tenantId)
         .where("deliveryId", "=", deliveryId)
         .forUpdate()
+        .skipLocked()
         .executeTakeFirst();
       if (
         current === undefined ||

@@ -16,7 +16,12 @@ import type {
 } from "@mail-edge/core";
 
 import { observeSafely, operationSignal } from "./internal.js";
-import { assertDurableRuntimeConfig, decideRetry, type DurableRuntimeConfig } from "./policy.js";
+import {
+  assertDurableRuntimeConfig,
+  decideApplicationDeliveryFailure,
+  decideRetry,
+  type DurableRuntimeConfig,
+} from "./policy.js";
 import type {
   ApplicationDeliveryWriter,
   InboundRoutingClaim,
@@ -325,10 +330,10 @@ export class DurableApplicationDeliveryWorker {
         : rawAccessGrant;
       const decision = delivered.ok
         ? undefined
-        : decideRetry(
+        : decideApplicationDeliveryFailure(
             {
               attemptOrdinal: deliveryClaim.delivery.attempt,
-              certainty: "not_sent",
+              certainty: rawAccessGrant.ok ? delivered.error.deliveryCertainty : "not_sent",
               errorRetryable: delivered.error.retryable,
               now: this.#clock.now(),
               stableKey: deliveryClaim.delivery.deliveryId,

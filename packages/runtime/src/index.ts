@@ -10,6 +10,8 @@ export {
 export { DurableOutboundIntentService } from "./outbound-intent.service.js";
 export { DurableOutboundWorker } from "./outbound.worker.js";
 export type {
+  ApplicationDeliveryFailureDecision,
+  ApplicationDeliveryFailureInput,
   DurableRuntimeConfig,
   EvidenceFreshness,
   EvidenceFreshnessInput,
@@ -20,6 +22,7 @@ export type {
 export {
   assertDurableRuntimeConfig,
   assertRetryPolicy,
+  decideApplicationDeliveryFailure,
   decideRetry,
   defaultDurableRuntimeConfig,
   evaluateEvidenceFreshness,

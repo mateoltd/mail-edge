@@ -29,8 +29,21 @@ signing uses only the active key.
 A successful response is bounded `application/json`, echoes the signed subject in
 `X-Mail-Edge-Subject-Id`, and returns the contract-specific body. Application delivery and feedback
 return `ApplicationAckV1`; settlement occurs only after that acknowledgement is durably committed.
-HTTP 408, 425, 429, and 5xx responses are retryable under the bounded workflow policy. Other
-non-success responses and malformed acknowledgements are terminal contract failures.
+Non-success responses are accepted only as bounded `application/problem+json` that passes the
+versioned `MailEdgeProblemV1` schema and has a coherent HTTP status, problem type, code,
+retryability, and delivery certainty. Problem title, detail, and arbitrary fields never become
+trusted edge diagnostics. Problem responses do not need the success-only subject echo. For
+application callbacks, a generic `internal` problem cannot prove that no business effect occurred;
+even if an older host labels it `not_sent`, the edge conservatively records `unknown`.
+
+Application delivery is at-least-once. A conclusive, retryable `not_sent` problem retries under the
+bounded policy. An `unknown` outcome, response loss, or malformed acknowledgement can have crossed
+the host's business-effect boundary, so it is never relabeled `not_sent`; Mail Edge performs only a
+bounded acknowledgement-recovery retry with the identical delivery ID. A problem reporting
+`accepted` without a valid matching acknowledgement follows the same recovery path and is never
+manufactured into success. Exhaustion moves the delivery and its parent receipt to `dead_letter`,
+where retained raw data remains available under retention policy. This application callback rule is
+separate from outbound provider reconciliation and its `quarantined_unknown` state.
 
 ## Destination and raw authority
 

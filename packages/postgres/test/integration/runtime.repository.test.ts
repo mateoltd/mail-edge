@@ -503,19 +503,58 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       signal,
     );
     expect(routed).toEqual({ ok: true, value: [deliveryId] });
-    const deliveryClaim = await unitOfWork.executeForTenant(
+    const claimEntered = Promise.withResolvers<undefined>();
+    const releaseClaim = Promise.withResolvers<undefined>();
+    const firstDeliveryClaim = unitOfWork.executeForTenant(
+      tenantId,
+      async (context, transactionSignal) => {
+        const claimed = await store.claimApplicationDelivery(
+          tenantId,
+          deliveryId,
+          "2026-08-14T01:02:02.000Z",
+          1_000,
+          context,
+          transactionSignal,
+        );
+        claimEntered.resolve(undefined);
+        await releaseClaim.promise;
+        return claimed;
+      },
+      signal,
+    );
+    await claimEntered.promise;
+    const concurrentClaimPromise = unitOfWork.executeForTenant(
       tenantId,
       (context, transactionSignal) =>
         store.claimApplicationDelivery(
           tenantId,
           deliveryId,
           "2026-08-14T01:02:02.000Z",
-          5_000,
+          1_000,
           context,
           transactionSignal,
         ),
       signal,
     );
+    const timeout = setTimeout(() => {
+      releaseClaim.resolve(undefined);
+    }, 2_000);
+    const blocked = Promise.withResolvers<"blocked">();
+    const blockedTimeout = setTimeout(() => {
+      blocked.resolve("blocked");
+    }, 1_000);
+    const concurrentDeliveryClaim = await Promise.race([concurrentClaimPromise, blocked.promise]);
+    releaseClaim.resolve(undefined);
+    clearTimeout(timeout);
+    clearTimeout(blockedTimeout);
+    expect(concurrentDeliveryClaim).not.toBe("blocked");
+    if (concurrentDeliveryClaim === "blocked") {
+      await firstDeliveryClaim;
+      await concurrentClaimPromise;
+      throw new TypeError("Concurrent application claim blocked instead of skipping the lock.");
+    }
+    expect(concurrentDeliveryClaim).toEqual({ ok: true, value: null });
+    const deliveryClaim = await firstDeliveryClaim;
     if (!deliveryClaim.ok || deliveryClaim.value === null) {
       throw new TypeError("Application delivery claim missing.");
     }
@@ -525,19 +564,76 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       destinationId: "runtime-application",
       opaqueToken: "first-token",
     });
-    const delivered = await unitOfWork.executeForTenant(
+    const applicationRecovery = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.recoverExpiredLeases(
+          tenantId,
+          "2026-08-14T01:02:04.000Z",
+          10,
+          5,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(applicationRecovery).toMatchObject({
+      ok: true,
+      value: {
+        applicationDeliveries: 1,
+        wakeups: [{ deliveryId, type: "application_delivery" }],
+      },
+    });
+    const staleApplicationSettlement = await unitOfWork.executeForTenant(
       tenantId,
       (context, transactionSignal) =>
         store.settleApplicationDelivery(
           applicationDeliveryClaim,
           {
             acknowledgement: {
-              acceptedAt: "2026-08-14T01:02:03.000Z",
+              acceptedAt: "2026-08-14T01:02:04.050Z",
               deliveryId,
             },
             state: "delivered",
           },
-          "2026-08-14T01:02:03.000Z",
+          "2026-08-14T01:02:04.050Z",
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(staleApplicationSettlement).toMatchObject({ error: { code: "STALE_FENCE" }, ok: false });
+    const reclaimedDelivery = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.claimApplicationDelivery(
+          tenantId,
+          deliveryId,
+          "2026-08-14T01:02:04.100Z",
+          5_000,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    if (!reclaimedDelivery.ok || reclaimedDelivery.value === null) {
+      throw new TypeError("Recovered application delivery claim missing.");
+    }
+    const recoveredApplicationClaim = reclaimedDelivery.value;
+    expect(recoveredApplicationClaim.delivery).toMatchObject({ attempt: 2, deliveryId });
+    const delivered = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.settleApplicationDelivery(
+          recoveredApplicationClaim,
+          {
+            acknowledgement: {
+              acceptedAt: "2026-08-14T01:02:05.000Z",
+              deliveryId,
+            },
+            state: "delivered",
+          },
+          "2026-08-14T01:02:05.000Z",
           context,
           transactionSignal,
         ),
@@ -550,6 +646,112 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
         deliveredReceiptId,
       ]),
     ).resolves.toMatchObject({ rows: [{ state: "delivered" }] });
+
+    const expiredReceiptId = must(parseReceiptId("018f6f6a-7b2c-7000-8000-000000000217"));
+    const expiredDeliveryId = must(parseDeliveryId("018f6f6a-7b2c-7000-8000-000000000218"));
+    const expiredCommit = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.finalizeInbound(
+          {
+            ...input,
+            providerReceiptKey: "provider-receipt-3",
+            replay: { ...input.replay, nonceDigest: "55".repeat(32) },
+          },
+          expiredReceiptId,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    if (!expiredCommit.ok) throw expiredCommit.error;
+    const expiredRouting = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.claimInboundRouting(
+          tenantId,
+          expiredReceiptId,
+          "2026-08-14T01:03:00.000Z",
+          5_000,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    if (!expiredRouting.ok || expiredRouting.value === null) {
+      throw new TypeError("Expired application routing claim missing.");
+    }
+    const expiredRoutingClaim = expiredRouting.value;
+    const expiredRouted = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.finalizeInboundRouting(
+          expiredRoutingClaim,
+          [
+            {
+              deliveryId: expiredDeliveryId,
+              destination: {
+                deliveryMode: "push",
+                destinationId: "runtime-expired-application",
+                opaqueToken: "expired-token",
+              },
+            },
+          ],
+          "2026-08-14T01:03:01.000Z",
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(expiredRouted).toMatchObject({ ok: true });
+    const expiredClaim = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.claimApplicationDelivery(
+          tenantId,
+          expiredDeliveryId,
+          "2026-08-14T01:03:02.000Z",
+          1_000,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(expiredClaim).toMatchObject({ ok: true, value: { delivery: { attempt: 1 } } });
+    await owner.query(
+      `UPDATE inbound_deliveries
+       SET attempt_count = 5, claimed_until = '2026-08-14T01:03:03.000Z'
+       WHERE tenant_id = $1 AND delivery_id = $2`,
+      [tenantId, expiredDeliveryId],
+    );
+    const terminalApplicationRecovery = await unitOfWork.executeForTenant(
+      tenantId,
+      (context, transactionSignal) =>
+        store.recoverExpiredLeases(
+          tenantId,
+          "2026-08-14T01:03:04.000Z",
+          10,
+          5,
+          context,
+          transactionSignal,
+        ),
+      signal,
+    );
+    expect(terminalApplicationRecovery).toMatchObject({
+      ok: true,
+      value: { applicationDeliveries: 1, wakeups: [] },
+    });
+    await expect(
+      owner.query(
+        `SELECT d.state AS delivery_state, r.state AS receipt_state
+         FROM inbound_deliveries d
+         JOIN inbound_receipts r USING (tenant_id, receipt_id)
+         WHERE d.tenant_id = $1 AND d.delivery_id = $2`,
+        [tenantId, expiredDeliveryId],
+      ),
+    ).resolves.toMatchObject({
+      rows: [{ delivery_state: "dead_letter", receipt_state: "dead_letter" }],
+    });
   });
 
   test("enforces final dispatch authority, quarantines unknown sends, and reconciles after restart", async () => {
