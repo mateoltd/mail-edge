@@ -383,21 +383,43 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       );
       const controller = new AbortController();
       const startedAt = Date.now();
-      const migrating = new PostgresMigrationRunner(
-        {
-          connectionString,
-          query_timeout: 30_000,
-          statement_timeout: 30_000,
-        },
-        directory,
-      ).migrate(controller.signal);
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
-      controller.abort(new DOMException("test migration cancellation", "AbortError"));
-      await expect(migrating).rejects.toMatchObject({ code: "57014" });
-      expect(Date.now() - startedAt).toBeLessThan(5_000);
-      const canceledPool = new Pool({ connectionString });
+      const cancellationApplicationName = "mail-edge-migration-cancellation-test";
+      const observerPool = new Pool({ connectionString });
       try {
-        const state = await canceledPool.query<{
+        const migrating = new PostgresMigrationRunner(
+          {
+            application_name: cancellationApplicationName,
+            connectionString,
+            query_timeout: 30_000,
+            statement_timeout: 30_000,
+          },
+          directory,
+        ).migrate(controller.signal);
+        const activeDeadline = Date.now() + 5_000;
+        let active = false;
+        while (!active && Date.now() < activeDeadline) {
+          const activity = await observerPool.query<{ active: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1
+               FROM pg_stat_activity
+               WHERE application_name = $1
+                 AND state = 'active'
+                 AND query LIKE $2
+             ) AS active`,
+            [cancellationApplicationName, "%pg_sleep(30)%"],
+          );
+          active = activity.rows[0]?.active === true;
+          if (!active) await new Promise<void>((resolve) => setTimeout(resolve, 20));
+        }
+        if (!active) {
+          controller.abort(new DOMException("migration activation timed out", "AbortError"));
+          await migrating.catch(() => undefined);
+          throw new TypeError("Migration SQL did not become active before the test deadline.");
+        }
+        controller.abort(new DOMException("test migration cancellation", "AbortError"));
+        await expect(migrating).rejects.toMatchObject({ code: "57014" });
+        expect(Date.now() - startedAt).toBeLessThan(5_000);
+        const state = await observerPool.query<{
           migration_count: string;
           probe: string | null;
         }>(
@@ -407,7 +429,8 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
         );
         expect(state.rows[0]).toEqual({ migration_count: "0", probe: null });
       } finally {
-        await canceledPool.end();
+        controller.abort(new DOMException("migration cancellation test cleanup", "AbortError"));
+        await observerPool.end();
       }
     } finally {
       await rm(directory, { force: true, recursive: true });
