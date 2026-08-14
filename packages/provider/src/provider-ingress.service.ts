@@ -168,14 +168,19 @@ export class ProviderInboundIngressService {
       await releaseIncompleteBody(request, "inbound_capability_invalid");
       return { error: ingressFailure("inbound_capability_invalid"), ok: false };
     }
-    if (request.contentLength !== null && request.contentLength > maximumBytes) {
+    const maximumWireBytes = this.#adapter.maximumIngressWireBytes ?? maximumBytes;
+    if (!Number.isSafeInteger(maximumWireBytes) || maximumWireBytes < 1) {
+      await releaseIncompleteBody(request, "inbound_wire_capability_invalid");
+      return { error: ingressFailure("inbound_wire_capability_invalid"), ok: false };
+    }
+    if (request.contentLength !== null && request.contentLength > maximumWireBytes) {
       await releaseIncompleteBody(request, "declared_size_exceeded");
       return {
-        error: ingressLimitFailure(maximumBytes, request.contentLength),
+        error: ingressLimitFailure(maximumWireBytes, request.contentLength),
         ok: false,
       };
     }
-    const boundedRequest = withStreamLimit(request, maximumBytes);
+    const boundedRequest = withStreamLimit(request, maximumWireBytes);
     let result: Result<InboundIngressCommit, MailEdgeError>;
     try {
       result = await this.#adapter.ingest(boundedRequest, context, this.#services, signal);

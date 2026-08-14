@@ -416,6 +416,7 @@ export interface InboundProviderAdapter {
     readonly descriptor: ProviderCapabilityDescriptorV1;
     // (undocumented)
     ingest(request: OneShotProviderHttpRequest, context: ProviderHttpIngressContext, services: InboundIngestionServices, signal: AbortSignal): Promise<Result<InboundIngressCommit, IngressError>>;
+    readonly maximumIngressWireBytes?: number;
 }
 
 // @public

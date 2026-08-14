@@ -56,7 +56,7 @@ export const workspaceUnits = Object.freeze([
     "provider-cloudflare",
     "@mail-edge/provider-cloudflare",
     "packages/provider-cloudflare",
-    ["provider"],
+    ["conformance", "provider"],
   ),
   applicationUnit("reference-service", "@mail-edge/reference-service", "apps/reference-service", [
     "blob-s3",

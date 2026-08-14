@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .turbo/
+.wrangler/
 coverage/
 dist/
 node_modules/

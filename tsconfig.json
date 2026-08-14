@@ -12,8 +12,10 @@
     { "path": "packages/conformance" },
     { "path": "packages/provider-mailgun" },
     { "path": "packages/provider-resend" },
+    { "path": "packages/provider-cloudflare" },
     { "path": "packages/mime" },
     { "path": "packages/sdk" },
-    { "path": "apps/reference-service" }
+    { "path": "apps/reference-service" },
+    { "path": "apps/cloudflare-ingress-worker" }
   ]
 }
