@@ -2,9 +2,11 @@
 
 `@mail-edge/reference-service` is the deployable HTTP owner and sole concrete Node composition root
 for Mail Edge. Its public host contracts stay provider-neutral; the shipped production composition
-explicitly registers Mailgun and wires the SDK, durable runtime, PostgreSQL 17, encrypted versioned
-S3 or MinIO storage, pg-boss wakeups, KMS, secret references, signed host callbacks, workers,
-maintenance, lifecycle, and readiness.
+explicitly registers Mailgun, Resend, and Cloudflare and wires the SDK, durable runtime, PostgreSQL
+17, encrypted versioned S3 or MinIO storage, pg-boss wakeups, KMS, secret references, signed host
+callbacks, workers, maintenance, lifecycle, and readiness. One graph can register all three at the
+same time; the provider-instance catalog keeps every instance tenant-scoped while durable route
+bindings select the provider independently for each domain and direction.
 
 `MAIL_EDGE_REFERENCE_CONFIG` must name an absolute, bounded JSON config file. The deployable example
 loads `/srv/reference-service/dist/production-composition.js`; custom absolute ESM composition
@@ -12,6 +14,17 @@ modules remain supported. Startup fails closed if configuration, migrations, key
 services, exact adapter registrations, secrets, PostgreSQL, bucket versioning, pg-boss, host
 integration, KMS, or required telemetry is missing or invalid. The process never installs a
 fallback.
+
+The checked-in local configuration keeps the established Mailgun path and leaves the optional
+`resend` and `cloudflare` arrays empty because account, region, DNS, and secret-storage choices are
+operator inputs. Each configured provider mode currently supports one explicit instance. Resend
+requires a binding hint for its metadata-first inbound flow. Cloudflare configuration is rejected
+unless the operator asserts authoritative DNS and `cloudflare_only` MX coexistence. Both adapters
+remain experimental and cannot pass activation without current provider-specific live evidence.
+
+`GET /health/degraded` reports aggregate readiness plus each registered adapter's maturity and
+lifecycle availability. Authenticated operators can inspect the redacted provider-instance catalog
+at `GET /v1/operator/provider-instances`; secrets and provider resource details are never returned.
 
 Build and run the focused checks:
 

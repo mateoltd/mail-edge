@@ -24,6 +24,7 @@ import {
   normalizeCloudflareFeedbackEvent,
   type CloudflareFeedbackScopeV1,
 } from "./feedback-normalization.js";
+import { cloudflareIngressPathIsValid } from "./ingress-path.js";
 import type { CloudflareAdapterLifecycle } from "./lifecycle.service.js";
 
 /** @public */
@@ -51,8 +52,7 @@ export const validateCloudflareFeedbackAdapterConfig = (
   const domain =
     /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/u;
   if (
-    !/^\/[A-Za-z0-9/_-]{1,255}$/u.test(config.ingressPath) ||
-    config.ingressPath.includes("//") ||
+    !cloudflareIngressPathIsValid(config.ingressPath) ||
     !identifier.test(config.scope.accountId) ||
     !identifier.test(config.scope.zoneId) ||
     !identifier.test(config.scope.eventSubscriptionId) ||

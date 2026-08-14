@@ -62,6 +62,13 @@ export interface WorkerBridgeSettings {
   readonly providerInstanceId: string;
 }
 
+/** Exact reference-service ingress path for one configured Cloudflare instance. */
+export const cloudflareIngressPath = (
+  providerInstanceId: string,
+  surface: "feedback" | "inbound",
+): string =>
+  `/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/${providerInstanceId}/${surface}`;
+
 const encodeCanonicalJson = (value: unknown): string => {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
     return JSON.stringify(value);
@@ -560,21 +567,27 @@ export const createSignedFeedbackRequest = async (
     timestamp,
   });
   const signature = await sign(macInput, await importHmacKey(encodedSecret));
-  return new Request("https://mail-edge.internal/provider/cloudflare/feedback", {
-    body,
-    headers: {
-      "content-type": "application/json",
-      "x-mail-edge-audience": FEEDBACK_AUDIENCE,
-      "x-mail-edge-body-sha256": bodyDigest,
-      "x-mail-edge-key-id": settings.currentKeyId,
-      "x-mail-edge-nonce": nonce,
-      "x-mail-edge-provider-instance-id": settings.providerInstanceId,
-      "x-mail-edge-signature": signature,
-      "x-mail-edge-timestamp": timestamp,
+  return new Request(
+    new URL(
+      cloudflareIngressPath(settings.providerInstanceId, "feedback"),
+      "https://mail-edge.internal",
+    ),
+    {
+      body,
+      headers: {
+        "content-type": "application/json",
+        "x-mail-edge-audience": FEEDBACK_AUDIENCE,
+        "x-mail-edge-body-sha256": bodyDigest,
+        "x-mail-edge-key-id": settings.currentKeyId,
+        "x-mail-edge-nonce": nonce,
+        "x-mail-edge-provider-instance-id": settings.providerInstanceId,
+        "x-mail-edge-signature": signature,
+        "x-mail-edge-timestamp": timestamp,
+      },
+      method: "POST",
+      redirect: "manual",
     },
-    method: "POST",
-    redirect: "manual",
-  });
+  );
 };
 
 export { FRAME_PAYLOAD_MAX_BYTES, INBOUND_RAW_MAX_BYTES, QUEUE_MESSAGE_MAX_BYTES };

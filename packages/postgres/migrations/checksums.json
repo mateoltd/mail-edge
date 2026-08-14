@@ -20,6 +20,10 @@
     {
       "name": "0005_durable_runtime_orchestration.sql",
       "sha256": "e347eaa841a728b1b9f0718a2dab3e9d3f1c03ebf6c3cf578a3ea7919365fa0f"
+    },
+    {
+      "name": "0006_resend_acquisition_repair.sql",
+      "sha256": "4dc125d03ceca42a0d15f0ed0f04622a2eb3acecddc0237fe6f109f1d1f297c7"
     }
   ]
 }

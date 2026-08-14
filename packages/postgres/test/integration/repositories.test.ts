@@ -55,6 +55,7 @@ const otherTenantId = must(parseTenantId("018f4f6a-7b2c-7000-8000-000000000113")
 const inboundBindingId = must(parseBindingId("018f4f6a-7b2c-7000-8000-000000000114"));
 const crossTenantIntentId = must(parseIntentId("018f4f6a-7b2c-7000-8000-000000000115"));
 const crossTenantReceiptId = must(parseReceiptId("018f4f6a-7b2c-7000-8000-000000000116"));
+const monotonicStageId = "018f4f6a-7b2c-7000-8000-000000000117";
 const idempotencyKey = must(parseIdempotencyKey("runtime-test-key"));
 void idempotencyKey;
 
@@ -325,6 +326,36 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
     await owner.query(
       "UPDATE route_binding_checks SET expires_at = '2099-01-01' WHERE tenant_id = $1 AND binding_id = $2",
       [tenantId, bindingId],
+    );
+  });
+
+  test("keeps immediate blob stage transition timestamps monotonic at database precision", async () => {
+    const signal = new AbortController().signal;
+    const reserved = await blobs.reserveStage(
+      {
+        encryptionMetadata: Object.freeze({ formatVersion: 1, purpose: "inbound" }),
+        expectedMaximumBytes: 1024,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        kmsKeyRef: "kms://monotonic-stage",
+        objectKey: `scratch/${monotonicStageId}`,
+        purpose: "inbound",
+        stageId: monotonicStageId,
+        tenantId,
+        wrappedDek: Buffer.from("wrapped-stage-key"),
+      },
+      signal,
+    );
+    expect(reserved).toEqual({ ok: true, value: { optimisticVersion: 0 } });
+    const uploading = await blobs.markUploading(tenantId, monotonicStageId, 0, occurredAt, signal);
+    expect(uploading).toEqual({ ok: true, value: { optimisticVersion: 1 } });
+    const row = await owner.query<{ createdAt: Date; state: string; updatedAt: Date }>(
+      `SELECT created_at AS "createdAt", state, updated_at AS "updatedAt"
+       FROM blob_ingest_stages WHERE tenant_id = $1 AND stage_id = $2`,
+      [tenantId, monotonicStageId],
+    );
+    expect(row.rows[0]?.state).toBe("uploading");
+    expect(row.rows[0]?.updatedAt.getTime()).toBeGreaterThanOrEqual(
+      row.rows[0]?.createdAt.getTime() ?? Number.POSITIVE_INFINITY,
     );
   });
 
@@ -1428,12 +1459,22 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
 
   test("repairs every durable wakeup type including unprojected feedback", async () => {
     const feedbackEventId = "018f4f6a-7b2c-7000-8000-000000000150";
+    const expiredAcquisitionReceiptId = "018f4f6a-7b2c-7000-8000-000000000151";
     await owner.query(
       `INSERT INTO provider_feedback_events
         (feedback_event_id, tenant_id, provider_instance_id, kind, occurred_at,
          received_at, order_key, normalized)
        VALUES ($1, $2, $3, 'delivered', $4, $4, 'provider:1', '{"schemaVersion":"v1"}')`,
       [feedbackEventId, tenantId, providerInstanceId, occurredAt],
+    );
+    await owner.query(
+      `INSERT INTO inbound_receipts
+        (receipt_id, tenant_id, provider_instance_id, provider_receipt_key_ciphertext,
+         binding_id, binding_version, state, fence, optimistic_version, next_action_at,
+         claimed_until, failure_count, received_at, created_at, updated_at)
+       VALUES ($1, $2, $3, decode('11', 'hex'), $4, 1, 'acquiring', 1, 1, NULL,
+         clock_timestamp() - interval '1 minute', 0, $5, $5, $5)`,
+      [expiredAcquisitionReceiptId, tenantId, providerInstanceId, inboundBindingId, occurredAt],
     );
     const scanned = await new PostgresWakeupRepairRepository(unitOfWork).scanDueWakeups(
       tenantId,
@@ -1447,6 +1488,16 @@ describe("Kysely repositories and fencing", { concurrent: false }, () => {
       schemaVersion: "v1",
       type: "feedback_event",
     });
+    expect(scanned.value).toContainEqual({
+      receiptId: expiredAcquisitionReceiptId,
+      schemaVersion: "v1",
+      type: "inbound_receipt",
+    });
+    const functionWakeups = await owner.query<{ workflow_id: string }>(
+      "SELECT workflow_id FROM mail_edge_due_wakeups(1000) WHERE workflow_id = $1",
+      [expiredAcquisitionReceiptId],
+    );
+    expect(functionWakeups.rows).toEqual([{ workflow_id: expiredAcquisitionReceiptId }]);
     const watermarks = await owner.query<{ workflow_name: string }>(
       "SELECT workflow_name FROM workflow_wakeup_watermarks WHERE tenant_id = $1 ORDER BY workflow_name",
       [tenantId],

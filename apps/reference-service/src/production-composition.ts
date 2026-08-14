@@ -11,8 +11,10 @@ import {
   type EnvelopeKeyService,
 } from "@mail-edge/blob-s3";
 import {
+  parseProviderInstanceId,
   RouteBindingSnapshotV1Schema,
   parseTenantId,
+  type RouteBindingSnapshotV1,
   type Result,
   type TenantId,
   type MailEdgeError,
@@ -32,13 +34,31 @@ import {
   PostgresWakeupRepairRepository,
   type SensitiveValueKeyProvider,
 } from "@mail-edge/postgres";
-import { ProviderAdapterRegistry } from "@mail-edge/provider";
+import { ProviderAdapterRegistry, type ProviderAdapterRegistration } from "@mail-edge/provider";
+import {
+  CloudflareFetchTransport,
+  CloudflareRestClient,
+  CLOUDFLARE_WORKER_FEEDBACK_AUDIENCE,
+  CLOUDFLARE_WORKER_INGRESS_AUDIENCE,
+  cloudflareProviderDescriptor,
+  createCloudflareProviderRegistration,
+  type CloudflareHttpTransport,
+  type CloudflareProviderRegistrationConfigV1,
+  type CloudflareRestClientConfigV1,
+} from "@mail-edge/provider-cloudflare";
 import {
   createMailgunProviderRegistration,
   mailgunProviderDescriptor,
   type MailgunProviderConfig,
   type MailgunProviderDependencies,
 } from "@mail-edge/provider-mailgun";
+import {
+  createResendProviderRegistration,
+  resendProviderDescriptor,
+  type ResendProviderConfig,
+  type ResendProviderDependencies,
+  type ResendProviderRegistration,
+} from "@mail-edge/provider-resend";
 import {
   BoundedWorkLimiter,
   DurableApplicationDeliveryWorker,
@@ -75,8 +95,27 @@ import {
 } from "./production-workflow.service.js";
 import { resolveSecretText } from "./secrets.js";
 import { UuidV7Generator } from "./uuid-v7.service.js";
+import { ProductionInboundWorker } from "./production-inbound.worker.js";
+import {
+  ConfiguredCloudflareBindingResolver,
+  DirectoryWebhookSecretSink,
+  NativeCloudflareFetch,
+} from "./provider-support.js";
+import { PostgresResendInboundMetadataRepository } from "./resend-inbound.repository.js";
 
 type ProductionConfig = NonNullable<ReferenceServiceConfig["production"]>;
+
+export interface ProductionProviderProtocolOverrides {
+  readonly mailgun?: ReadonlyMap<
+    string,
+    Pick<MailgunProviderDependencies, "httpTransport" | "smtpConnector">
+  >;
+  readonly resend?: ReadonlyMap<
+    string,
+    Pick<ResendProviderDependencies, "httpTransport" | "rawDownloadTransport" | "smtpConnector">
+  >;
+  readonly cloudflare?: ReadonlyMap<string, CloudflareHttpTransport>;
+}
 
 const compositionError = (reason: string, cause?: unknown): MailEdgeError =>
   hostError("HOST_UNAVAILABLE", reason, {
@@ -262,6 +301,190 @@ const mailgunConfig = (
   };
 };
 
+const providerPath = (
+  providerId: "cloudflare" | "resend",
+  mode: "smtp_raw" | "worker-frames-send-raw",
+  providerInstanceId: string,
+  surface: "feedback" | "inbound",
+): string => `/v1/providers/${providerId}/0.1.0/${mode}/instances/${providerInstanceId}/${surface}`;
+
+const validatedBinding = (
+  value: unknown,
+  expectedDigest: string,
+  reason: string,
+): Result<RouteBindingSnapshotV1, MailEdgeError> => {
+  const binding = validateContract(RouteBindingSnapshotV1Schema, value);
+  if (!binding.ok || binding.value.capabilityDigest !== expectedDigest) {
+    return { error: compositionError(reason), ok: false };
+  }
+  return binding;
+};
+
+const resendConfig = (
+  value: ProductionConfig["resend"][number],
+): Result<ResendProviderConfig, MailEdgeError> => {
+  const bindingValue = value.inboundBindings[0];
+  const inboundSecret = value.inboundWebhookSecretReferences[0];
+  const feedbackSecret = value.feedbackWebhookSecretReferences[0];
+  const rawHost = value.rawDownloadAllowedHosts[0];
+  if (
+    bindingValue === undefined ||
+    inboundSecret === undefined ||
+    feedbackSecret === undefined ||
+    rawHost === undefined
+  ) {
+    return { error: compositionError("resend_required_configuration_missing"), ok: false };
+  }
+  const binding = validatedBinding(
+    bindingValue,
+    sha256CanonicalJson(resendProviderDescriptor),
+    "resend_binding_invalid",
+  );
+  if (!binding.ok) return binding;
+  const inboundPath = providerPath("resend", "smtp_raw", value.providerInstanceId, "inbound");
+  const feedbackPath = providerPath("resend", "smtp_raw", value.providerInstanceId, "feedback");
+  const feedbackWebhookSecretReferences: readonly [string, ...string[]] = Object.freeze([
+    feedbackSecret,
+    ...value.feedbackWebhookSecretReferences.slice(1),
+  ]);
+  const inboundWebhookSecretReferences: readonly [string, ...string[]] = Object.freeze([
+    inboundSecret,
+    ...value.inboundWebhookSecretReferences.slice(1),
+  ]);
+  const rawDownloadAllowedHosts: readonly [string, ...string[]] = Object.freeze([
+    rawHost,
+    ...value.rawDownloadAllowedHosts.slice(1),
+  ]);
+  return {
+    ok: true,
+    value: Object.freeze({
+      apiKeySecretReference: value.apiKeySecretReference,
+      feedbackPath,
+      feedbackWebhookEndpoint: value.feedbackWebhookEndpoint,
+      feedbackWebhookSecretDestination: value.feedbackWebhookSecretDestination,
+      feedbackWebhookSecretReferences,
+      inboundBindings: Object.freeze([binding.value]),
+      inboundPath,
+      inboundWebhookEndpoint: value.inboundWebhookEndpoint,
+      inboundWebhookSecretDestination: value.inboundWebhookSecretDestination,
+      inboundWebhookSecretReferences,
+      maximumApiConcurrency: value.maximumApiConcurrency,
+      maximumApiQueueDepth: value.maximumApiQueueDepth,
+      maximumRawAcquisitionConcurrency: value.maximumRawAcquisitionConcurrency,
+      maximumRawAcquisitionQueueDepth: value.maximumRawAcquisitionQueueDepth,
+      maximumSmtpConcurrency: value.maximumSmtpConcurrency,
+      maximumSmtpQueueDepth: value.maximumSmtpQueueDepth,
+      networkTimeoutMilliseconds: value.networkTimeoutMilliseconds,
+      rawDownloadAllowedHosts,
+      region: value.region,
+      smtpEhloName: value.smtpEhloName,
+      webhookReplayTtlSeconds: value.webhookReplayTtlSeconds,
+    }),
+  };
+};
+
+interface CloudflareCompositionConfig {
+  readonly registration: CloudflareProviderRegistrationConfigV1;
+  readonly rest: CloudflareRestClientConfigV1;
+  readonly binding: RouteBindingSnapshotV1;
+  readonly bindingHint: string;
+}
+
+const cloudflareConfig = (
+  value: ProductionConfig["cloudflare"][number],
+): Result<CloudflareCompositionConfig, MailEdgeError> => {
+  if (!value.authoritativeDns || value.mxCoexistence !== "cloudflare_only") {
+    return { error: compositionError("cloudflare_email_routing_prerequisites_unmet"), ok: false };
+  }
+  const bindingValue = value.inboundBindings[0];
+  if (bindingValue === undefined) {
+    return { error: compositionError("cloudflare_binding_missing"), ok: false };
+  }
+  const binding = validatedBinding(
+    bindingValue,
+    sha256CanonicalJson(cloudflareProviderDescriptor),
+    "cloudflare_binding_invalid",
+  );
+  if (!binding.ok) return binding;
+  const keyReference = (reference: typeof value.workerKeys.current) =>
+    Object.freeze({
+      ...(reference.acceptUntil === undefined ? {} : { acceptUntil: reference.acceptUntil }),
+      keyId: reference.keyId,
+      secretReference: reference.secretReference,
+    });
+  const sharedKeyRing = Object.freeze({
+    current: keyReference(value.workerKeys.current),
+    maximumClockSkewSeconds: value.workerKeys.maximumClockSkewSeconds,
+    ...(value.workerKeys.previous === undefined
+      ? {}
+      : { previous: keyReference(value.workerKeys.previous) }),
+    replayTtlSeconds: value.workerKeys.replayTtlSeconds,
+    schemaVersion: "v1" as const,
+  });
+  return {
+    ok: true,
+    value: Object.freeze({
+      binding: binding.value,
+      bindingHint: value.workerBindingHint,
+      registration: Object.freeze({
+        controlPlane: Object.freeze({
+          feedbackQueueId: value.feedbackQueueId,
+          feedbackSubscriptionName: value.feedbackSubscriptionName,
+          operationTimeoutMilliseconds: value.operationTimeoutMilliseconds,
+          planLifetimeMilliseconds: value.planLifetimeMilliseconds,
+          routingWorkerName: value.routingWorkerName,
+          schemaVersion: "v1" as const,
+        }),
+        feedback: Object.freeze({
+          ingressPath: providerPath(
+            "cloudflare",
+            "worker-frames-send-raw",
+            value.providerInstanceId,
+            "feedback",
+          ),
+          keyRing: Object.freeze({
+            ...sharedKeyRing,
+            audience: CLOUDFLARE_WORKER_FEEDBACK_AUDIENCE,
+          }),
+          schemaVersion: "v1" as const,
+          scope: Object.freeze({
+            accountId: value.accountId,
+            domainALabel: value.feedbackDomainALabel,
+            eventSubscriptionId: value.feedbackEventSubscriptionId,
+            schemaVersion: "v1" as const,
+            zoneId: value.zoneId,
+          }),
+        }),
+        inbound: Object.freeze({
+          ingressPath: providerPath(
+            "cloudflare",
+            "worker-frames-send-raw",
+            value.providerInstanceId,
+            "inbound",
+          ),
+          keyRing: Object.freeze({
+            ...sharedKeyRing,
+            audience: CLOUDFLARE_WORKER_INGRESS_AUDIENCE,
+          }),
+          maximumRawBytes: value.maximumRawBytes,
+          schemaVersion: "v1" as const,
+        }),
+        outbound: Object.freeze({ schemaVersion: "v1" as const }),
+        schemaVersion: "v1" as const,
+      }),
+      rest: Object.freeze({
+        accountId: value.accountId,
+        apiTokenSecretReference: value.apiTokenSecretReference,
+        maximumJsonResponseBytes: value.maximumJsonResponseBytes,
+        requestTimeoutMilliseconds: value.requestTimeoutMilliseconds,
+        schemaVersion: "v1" as const,
+        zoneDomainALabel: value.zoneDomainALabel,
+        zoneId: value.zoneId,
+      }),
+    }),
+  };
+};
+
 class ProductionComposition implements ReferenceServiceComposition {
   readonly envelopeKeys: EnvelopeKeyService;
   readonly sensitiveValueCipher: AesGcmSensitiveValueCipher;
@@ -270,10 +493,7 @@ class ProductionComposition implements ReferenceServiceComposition {
   readonly #digestKeyProvider: SensitiveValueKeyProvider;
   readonly #encryptionKeyProvider: SensitiveValueKeyProvider;
   readonly #kms: KMSClient;
-  readonly #protocolOverrides: ReadonlyMap<
-    string,
-    Pick<MailgunProviderDependencies, "httpTransport" | "smtpConnector">
-  >;
+  readonly #protocolOverrides: ProductionProviderProtocolOverrides;
   #runtimeCreated = false;
   #closed = false;
 
@@ -284,10 +504,7 @@ class ProductionComposition implements ReferenceServiceComposition {
     readonly encryptionKeyProvider: SensitiveValueKeyProvider;
     readonly envelopeKeys: EnvelopeKeyService;
     readonly kms: KMSClient;
-    readonly protocolOverrides: ReadonlyMap<
-      string,
-      Pick<MailgunProviderDependencies, "httpTransport" | "smtpConnector">
-    >;
+    readonly protocolOverrides: ProductionProviderProtocolOverrides;
     readonly sensitiveValueCipher: AesGcmSensitiveValueCipher;
   }) {
     this.#config = input.config;
@@ -296,7 +513,7 @@ class ProductionComposition implements ReferenceServiceComposition {
     this.#encryptionKeyProvider = input.encryptionKeyProvider;
     this.envelopeKeys = input.envelopeKeys;
     this.#kms = input.kms;
-    this.#protocolOverrides = new Map(input.protocolOverrides);
+    this.#protocolOverrides = Object.freeze({ ...input.protocolOverrides });
     this.sensitiveValueCipher = input.sensitiveValueCipher;
   }
 
@@ -311,22 +528,6 @@ class ProductionComposition implements ReferenceServiceComposition {
       });
     }
     try {
-      const registrations = [];
-      for (const configured of this.#config.mailgun) {
-        const config = mailgunConfig(configured);
-        if (!config.ok) return Promise.resolve(config);
-        const registration = createMailgunProviderRegistration(config.value, {
-          clock: infrastructure.clock,
-          secrets: infrastructure.secrets,
-          ...this.#protocolOverrides.get(configured.providerInstanceId),
-        });
-        if (!registration.ok) return Promise.resolve(registration);
-        registrations.push(registration.value);
-      }
-      const registry = new ProviderAdapterRegistry(
-        Object.freeze(registrations),
-        this.#config.runtime.gracefulStopMilliseconds,
-      );
       const ids = new UuidV7Generator();
       const digester = new HmacSensitiveValueDigester(this.#digestKeyProvider);
       const store = new PostgresDurableRuntimeStore({
@@ -334,6 +535,87 @@ class ProductionComposition implements ReferenceServiceComposition {
         digester,
         unitOfWork: infrastructure.unitOfWork,
       });
+      const registrations: ProviderAdapterRegistration[] = [];
+      for (const configured of this.#config.mailgun) {
+        const config = mailgunConfig(configured);
+        if (!config.ok) return Promise.resolve(config);
+        const registration = createMailgunProviderRegistration(config.value, {
+          clock: infrastructure.clock,
+          secrets: infrastructure.secrets,
+          ...this.#protocolOverrides.mailgun?.get(configured.providerInstanceId),
+        });
+        if (!registration.ok) return Promise.resolve(registration);
+        registrations.push(registration.value);
+      }
+      let resendRuntime:
+        | {
+            readonly acquirer: ResendProviderRegistration["rawAcquirer"];
+            readonly metadata: PostgresResendInboundMetadataRepository;
+          }
+        | undefined;
+      for (const configured of this.#config.resend) {
+        const config = resendConfig(configured);
+        if (!config.ok) return Promise.resolve(config);
+        const tenantId = parseTenantId(configured.tenantId);
+        const providerInstanceId = parseProviderInstanceId(configured.providerInstanceId);
+        if (!tenantId.ok || !providerInstanceId.ok) {
+          return Promise.resolve({
+            error: compositionError("resend_instance_identity_invalid"),
+            ok: false,
+          });
+        }
+        const metadata = new PostgresResendInboundMetadataRepository({
+          cipher: this.sensitiveValueCipher,
+          clock: infrastructure.clock,
+          digester,
+          ids,
+          inboundLeaseMilliseconds: this.#config.runtime.inboundLeaseMilliseconds,
+          providerInstanceId: providerInstanceId.value,
+          queue: infrastructure.queue,
+          retry: this.#config.runtime.retry,
+          tenantId: tenantId.value,
+          unitOfWork: infrastructure.unitOfWork,
+        });
+        const registration = createResendProviderRegistration(config.value, {
+          clock: infrastructure.clock,
+          inboundMetadata: metadata,
+          secrets: infrastructure.secrets,
+          stages: infrastructure.blobStore.stages,
+          webhookSecretSink: new DirectoryWebhookSecretSink(this.#context.config.secretDirectory),
+          ...this.#protocolOverrides.resend?.get(configured.providerInstanceId),
+        });
+        if (!registration.ok) return Promise.resolve(registration);
+        registrations.push(registration.value);
+        resendRuntime = Object.freeze({ acquirer: registration.value.rawAcquirer, metadata });
+      }
+      for (const configured of this.#config.cloudflare) {
+        const config = cloudflareConfig(configured);
+        if (!config.ok) return Promise.resolve(config);
+        const transport =
+          this.#protocolOverrides.cloudflare?.get(configured.providerInstanceId) ??
+          new CloudflareFetchTransport(new NativeCloudflareFetch());
+        const restClient = new CloudflareRestClient(
+          config.value.rest,
+          transport,
+          infrastructure.secrets,
+          infrastructure.clock,
+        );
+        registrations.push(
+          createCloudflareProviderRegistration(config.value.registration, {
+            bindings: new ConfiguredCloudflareBindingResolver(
+              config.value.bindingHint,
+              config.value.binding,
+            ),
+            clock: infrastructure.clock,
+            restClient,
+            secrets: infrastructure.secrets,
+          }),
+        );
+      }
+      const registry = new ProviderAdapterRegistry(
+        Object.freeze(registrations),
+        this.#config.runtime.gracefulStopMilliseconds,
+      );
       const runtimeConfig: DurableRuntimeConfig = Object.freeze({
         ...this.#config.runtime,
         retry: Object.freeze({ ...this.#config.runtime.retry }),
@@ -517,7 +799,15 @@ class ProductionComposition implements ReferenceServiceComposition {
         maintenance,
         queue: infrastructure.queue,
         registrations: Object.freeze([
-          { handler: inboundWorker, type: "inbound_receipt" },
+          {
+            handler: new ProductionInboundWorker({
+              clock: infrastructure.clock,
+              delegate: inboundWorker,
+              ids,
+              ...(resendRuntime === undefined ? {} : { resend: resendRuntime }),
+            }),
+            type: "inbound_receipt",
+          },
           { handler: applicationDeliveryWorker, type: "application_delivery" },
           { handler: outboundWorker, type: "outbound_intent" },
           { handler: feedbackWorker, type: "feedback_event" },
@@ -604,10 +894,7 @@ class ProductionComposition implements ReferenceServiceComposition {
 const createProductionComposition = async (
   context: ReferenceServiceCompositionContext,
   signal: AbortSignal,
-  protocolOverrides: ReadonlyMap<
-    string,
-    Pick<MailgunProviderDependencies, "httpTransport" | "smtpConnector">
-  >,
+  protocolOverrides: ProductionProviderProtocolOverrides,
 ): Promise<Result<ReferenceServiceComposition, MailEdgeError>> => {
   const config = context.config.production;
   if (config === undefined) {
@@ -621,6 +908,18 @@ const createProductionComposition = async (
       mailgun.apiKeySecretReference,
       mailgun.smtpPasswordSecretReference,
       mailgun.webhookSigningKeySecretReference,
+    ]),
+    ...config.resend.flatMap((resend) => [
+      resend.apiKeySecretReference,
+      ...resend.inboundWebhookSecretReferences,
+      ...resend.feedbackWebhookSecretReferences,
+    ]),
+    ...config.cloudflare.flatMap((cloudflare) => [
+      cloudflare.apiTokenSecretReference,
+      cloudflare.workerKeys.current.secretReference,
+      ...(cloudflare.workerKeys.previous === undefined
+        ? []
+        : [cloudflare.workerKeys.previous.secretReference]),
     ]),
   ]);
   for (const reference of secretReferences) {
@@ -675,15 +974,12 @@ export const createReferenceServiceComposition = (
   context: ReferenceServiceCompositionContext,
   signal: AbortSignal,
 ): Promise<Result<ReferenceServiceComposition, MailEdgeError>> =>
-  createProductionComposition(context, signal, new Map());
+  createProductionComposition(context, signal, Object.freeze({}));
 
 /** Deterministic protocol seam for qualification of the otherwise identical production graph. @internal */
 export const createReferenceServiceQualificationComposition = (
   context: ReferenceServiceCompositionContext,
   signal: AbortSignal,
-  protocolOverrides: ReadonlyMap<
-    string,
-    Pick<MailgunProviderDependencies, "httpTransport" | "smtpConnector">
-  >,
+  protocolOverrides: ProductionProviderProtocolOverrides,
 ): Promise<Result<ReferenceServiceComposition, MailEdgeError>> =>
   createProductionComposition(context, signal, protocolOverrides);

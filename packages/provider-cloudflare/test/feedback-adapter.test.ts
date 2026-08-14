@@ -71,7 +71,7 @@ const signedRequest = (body: Uint8Array, keyId: "current" | "previous", secret: 
   return Object.freeze({
     ...createFixtureHttpRequest(body, observedAt, {
       contentType: "application/json",
-      path: "/feedback/cloudflare",
+      path: "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/feedback",
     }),
     headers: Object.freeze([
       Object.freeze({ name: "x-mail-edge-audience", value: keyRing.audience }),
@@ -94,7 +94,8 @@ const adapter = async () => {
   if (!started.ok) throw started.error;
   return new CloudflareFeedbackAdapter(
     Object.freeze({
-      ingressPath: "/feedback/cloudflare",
+      ingressPath:
+        "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/feedback",
       keyRing,
       schemaVersion: "v1",
       scope: Object.freeze({
@@ -157,7 +158,7 @@ describe("Cloudflare feedback ingress", () => {
       Object.freeze({
         ...createFixtureHttpRequest(changedBytes, observedAt, {
           contentType: "application/json",
-          path: "/feedback/cloudflare",
+          path: "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/feedback",
         }),
         headers: authentic.headers,
       }),

@@ -127,9 +127,15 @@ importers:
       '@mail-edge/provider':
         specifier: workspace:^
         version: link:../../packages/provider
+      '@mail-edge/provider-cloudflare':
+        specifier: workspace:^
+        version: link:../../packages/provider-cloudflare
       '@mail-edge/provider-mailgun':
         specifier: workspace:^
         version: link:../../packages/provider-mailgun
+      '@mail-edge/provider-resend':
+        specifier: workspace:^
+        version: link:../../packages/provider-resend
       '@mail-edge/queue-pg-boss':
         specifier: workspace:^
         version: link:../../packages/queue-pg-boss

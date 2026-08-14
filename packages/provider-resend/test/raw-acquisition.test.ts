@@ -154,6 +154,7 @@ describe("Resend inbound raw acquisition", () => {
     expect(raw.requests).toHaveLength(1);
     expect(raw.requests[0]?.allowedHosts).toEqual(CONFIG.rawDownloadAllowedHosts);
     expect(metadata.acquired).toHaveLength(1);
+    expect(metadata.acquired[0]?.fence).toBe(metadata.claim.fence);
     expect(metadata.acquired[0]?.envelope).toEqual({
       mailFrom: "sender@example.test",
       rcptTo: [{ address: "one@example.test" }, { address: "two@example.test" }],
@@ -253,6 +254,7 @@ describe("Resend inbound raw acquisition", () => {
     );
     expect(acquired.ok).toBe(false);
     expect(metadata.failures[0]?.disposition).toBe("quarantine");
+    expect(metadata.failures[0]?.fence).toBe(metadata.claim.fence);
     expect(stages.completed).toEqual([]);
     expect(stages.abortedReasons).toEqual(["resend_raw_acquisition_failed"]);
   });

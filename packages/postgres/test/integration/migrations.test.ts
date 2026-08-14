@@ -31,7 +31,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       .start();
     const runner = new PostgresMigrationRunner({ connectionString: container.getConnectionUri() });
     const first = await runner.migrate(new AbortController().signal);
-    expect(first.applied).toHaveLength(5);
+    expect(first.applied).toHaveLength(6);
     const second = await runner.migrate(new AbortController().signal);
     expect(second.applied).toHaveLength(0);
     pool = new Pool({ connectionString: container.getConnectionUri() });
@@ -64,6 +64,10 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       {
         name: "0005_durable_runtime_orchestration.sql",
         sha256: "e347eaa841a728b1b9f0718a2dab3e9d3f1c03ebf6c3cf578a3ea7919365fa0f",
+      },
+      {
+        name: "0006_resend_acquisition_repair.sql",
+        sha256: "4dc125d03ceca42a0d15f0ed0f04622a2eb3acecddc0237fe6f109f1d1f297c7",
       },
     ]);
   });
@@ -461,6 +465,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
         "0003_verified_blob_availability.sql",
         "0004_storage_integrity_hardening.sql",
         "0005_durable_runtime_orchestration.sql",
+        "0006_resend_acquisition_repair.sql",
       ]);
       const priorAfterUpgrade = new PostgresDatabase({
         applicationName: "prior-after-upgrade-test",
@@ -557,7 +562,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
            (SELECT epoch FROM mail_edge_schema_epoch WHERE singleton) AS schema_epoch`,
       );
       expect(evidence.rows[0]).toEqual({
-        migration_count: "5",
+        migration_count: "6",
         schema_epoch: 1,
         tenant_count: "2",
       });

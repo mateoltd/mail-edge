@@ -1,6 +1,7 @@
 import {
   createEmailFrameBody,
   createSignedFeedbackRequest,
+  cloudflareIngressPath,
   type WorkerBridgeSettings,
 } from "./protocol.js";
 
@@ -49,26 +50,31 @@ export class CloudflareEmailIngressService {
       new Date(),
     );
     const response = await this.#env.MAIL_EDGE_SERVICE.fetch(
-      new Request("https://mail-edge.internal/provider/cloudflare/inbound", {
-        body: framed.body,
-        headers: {
-          "content-type": "application/vnd.mail-edge.cloudflare-frames.v1",
+      new Request(
+        new URL(
+          cloudflareIngressPath(this.#env.MAIL_EDGE_PROVIDER_INSTANCE_ID, "inbound"),
+          "https://mail-edge.internal",
+        ),
+        {
+          body: framed.body,
+          headers: {
+            "content-type": "application/vnd.mail-edge.cloudflare-frames.v1",
+          },
+          method: "POST",
+          redirect: "manual",
+          signal: AbortSignal.timeout(serviceFetchTimeoutMilliseconds),
         },
-        method: "POST",
-        redirect: "manual",
-        signal: AbortSignal.timeout(serviceFetchTimeoutMilliseconds),
-      }),
+      ),
     );
     if (response.status < 200 || response.status >= 300) {
       await response.body?.cancel();
       safeLog("error", "email_ingress_failed", {
-        receiptId: framed.receiptId,
         statusCode: response.status,
       });
       throw new Error("Mail Edge ingress rejected the framed email.");
     }
     await response.body?.cancel();
-    safeLog("info", "email_ingress_committed", { receiptId: framed.receiptId });
+    safeLog("info", "email_ingress_committed", {});
   }
 }
 
@@ -128,8 +134,8 @@ export class CloudflareFeedbackForwarderService {
 }
 
 /** Named handler retained for deterministic unit tests and explicit platform export. */
-export const cloudflareWorkerHandler: ExportedHandler<Env> = Object.freeze({
-  email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+export const cloudflareWorkerHandler: ExportedHandler<CloudflareBridgeBindings> = Object.freeze({
+  email(message: ForwardableEmailMessage, env: CloudflareBridgeBindings): Promise<void> {
     return new CloudflareEmailIngressService(env).handle(message);
   },
   fetch(): Response {
@@ -138,7 +144,7 @@ export const cloudflareWorkerHandler: ExportedHandler<Env> = Object.freeze({
       status: 404,
     });
   },
-  queue(batch: MessageBatch, env: Env): Promise<void> {
+  queue(batch: MessageBatch, env: CloudflareBridgeBindings): Promise<void> {
     return new CloudflareFeedbackForwarderService(env).handle(batch);
   },
 });

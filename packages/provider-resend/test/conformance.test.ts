@@ -278,6 +278,11 @@ describe("Resend provider conformance", () => {
           rawSource.raw = raw;
           return Object.freeze({ ...submission, raw, transmissionRaw: raw });
         },
+        createReconciliationQuery: (query) =>
+          Object.freeze({
+            ...query,
+            providerMessageId: "018f1f2e-7b4a-7c11-8a00-000000000010",
+          }),
         createFeedbackRequests: (scenario, fixtures) =>
           Promise.resolve(feedbackRequests(scenario, fixtures)),
         createInboundRequest: (fixtures) => {

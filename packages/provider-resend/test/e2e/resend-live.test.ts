@@ -229,6 +229,7 @@ describe.skipIf(!configured)("Resend credential-gated live qualification", () =>
     const metadata = new MemoryInboundMetadata();
     metadata.claim = Object.freeze({
       binding: inboundBinding,
+      fence: 1,
       providerInstanceId,
       receiptId: fixtures.receiptId,
       receivedEmailId: environment.RESEND_QUALIFICATION_RECEIVED_EMAIL_ID,

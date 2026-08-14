@@ -14,31 +14,67 @@ const DOMAIN_A_LABEL_PATTERN =
 const SEMVER_PATTERN =
   "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$";
 const MAXIMUM_CONFIG_BYTES = 1024 * 1024;
+const CLOUDFLARE_FRAME_PAYLOAD_MAX_BYTES = 64 * 1024;
+const CLOUDFLARE_FRAME_HEADER_MAX_BYTES = 4096;
+const CLOUDFLARE_FRAME_PREFIX_BYTES = 8;
+
+const cloudflareFrameWireMaximum = (maximumRawBytes: number): number =>
+  maximumRawBytes +
+  (Math.ceil(maximumRawBytes / CLOUDFLARE_FRAME_PAYLOAD_MAX_BYTES) + 1) *
+    (CLOUDFLARE_FRAME_PREFIX_BYTES + CLOUDFLARE_FRAME_HEADER_MAX_BYTES);
 
 const PositiveMilliseconds = Type.Integer({ maximum: 86_400_000, minimum: 1 });
 const SecretReference = Type.String({ maxLength: 137, pattern: SECRET_REFERENCE_PATTERN });
 const TenantId = Type.String({ maxLength: 36, minLength: 36, pattern: UUID_V7_PATTERN });
-const ProductionBinding = Type.Object(
+const productionBinding = (
+  providerId: "cloudflare" | "mailgun" | "resend",
+  adapterMode: "smtp_raw" | "worker-frames-send-raw",
+  dispatchTransport: "http" | "smtp",
+) =>
+  Type.Object(
+    {
+      schemaVersion: Type.Literal("v1"),
+      bindingId: Type.String({ maxLength: 36, minLength: 36, pattern: UUID_V7_PATTERN }),
+      bindingVersion: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
+      tenantId: TenantId,
+      domainALabel: Type.String({ maxLength: 253, minLength: 1, pattern: DOMAIN_A_LABEL_PATTERN }),
+      direction: Type.Literal("inbound"),
+      providerId: Type.Literal(providerId),
+      adapterVersion: Type.Literal("0.1.0"),
+      adapterMode: Type.Literal(adapterMode),
+      dispatchTransport: Type.Literal(dispatchTransport),
+      providerInstanceId: Type.String({ maxLength: 36, minLength: 36, pattern: UUID_V7_PATTERN }),
+      providerResourceIds: Type.Record(
+        Type.String({ maxLength: 64, minLength: 1, pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
+        Type.String({ maxLength: 2048, minLength: 1 }),
+        { maxProperties: 64 },
+      ),
+      capabilityDigest: Type.String({ maxLength: 64, minLength: 64, pattern: SHA256_PATTERN }),
+      configRevision: Type.String({ maxLength: 128, minLength: 1 }),
+      createdAt: Type.String({ maxLength: 40, minLength: 20, pattern: RFC3339_PATTERN }),
+    },
+    { additionalProperties: false },
+  );
+
+const MailgunProductionBinding = productionBinding("mailgun", "smtp_raw", "smtp");
+const ResendProductionBinding = productionBinding("resend", "smtp_raw", "smtp");
+const CloudflareProductionBinding = productionBinding(
+  "cloudflare",
+  "worker-frames-send-raw",
+  "http",
+);
+
+const WorkerKeyReference = Type.Object(
   {
-    schemaVersion: Type.Literal("v1"),
-    bindingId: Type.String({ maxLength: 36, minLength: 36, pattern: UUID_V7_PATTERN }),
-    bindingVersion: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
-    tenantId: TenantId,
-    domainALabel: Type.String({ maxLength: 253, minLength: 1, pattern: DOMAIN_A_LABEL_PATTERN }),
-    direction: Type.Literal("inbound"),
-    providerId: Type.Literal("mailgun"),
-    adapterVersion: Type.Literal("0.1.0"),
-    adapterMode: Type.Literal("smtp_raw"),
-    dispatchTransport: Type.Literal("smtp"),
-    providerInstanceId: Type.String({ maxLength: 36, minLength: 36, pattern: UUID_V7_PATTERN }),
-    providerResourceIds: Type.Record(
-      Type.String({ maxLength: 64, minLength: 1, pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
-      Type.String({ maxLength: 2048, minLength: 1 }),
-      { maxProperties: 64 },
+    keyId: Type.String({
+      maxLength: 64,
+      minLength: 1,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+    }),
+    secretReference: SecretReference,
+    acceptUntil: Type.Optional(
+      Type.String({ maxLength: 40, minLength: 20, pattern: RFC3339_PATTERN }),
     ),
-    capabilityDigest: Type.String({ maxLength: 64, minLength: 64, pattern: SHA256_PATTERN }),
-    configRevision: Type.String({ maxLength: 128, minLength: 1 }),
-    createdAt: Type.String({ maxLength: 40, minLength: 20, pattern: RFC3339_PATTERN }),
   },
   { additionalProperties: false },
 );
@@ -135,11 +171,124 @@ const ProductionConfig = Type.Object(
           routePriority: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 0 }),
           signatureToleranceSeconds: Type.Integer({ maximum: 3600, minimum: 60 }),
           networkTimeoutMilliseconds: Type.Integer({ maximum: 60_000, minimum: 100 }),
-          inboundBindings: Type.Array(ProductionBinding, { maxItems: 1024, minItems: 1 }),
+          inboundBindings: Type.Array(MailgunProductionBinding, { maxItems: 1024, minItems: 1 }),
         },
         { additionalProperties: false },
       ),
       { maxItems: 1, minItems: 1 },
+    ),
+    resend: Type.Array(
+      Type.Object(
+        {
+          tenantId: TenantId,
+          providerInstanceId: Type.String({
+            maxLength: 36,
+            minLength: 36,
+            pattern: UUID_V7_PATTERN,
+          }),
+          apiKeySecretReference: SecretReference,
+          inboundWebhookSecretReferences: Type.Array(SecretReference, { maxItems: 2, minItems: 1 }),
+          feedbackWebhookSecretReferences: Type.Array(SecretReference, {
+            maxItems: 2,
+            minItems: 1,
+          }),
+          inboundWebhookSecretDestination: SecretReference,
+          feedbackWebhookSecretDestination: SecretReference,
+          inboundWebhookEndpoint: Type.String({ maxLength: 2048, minLength: 1 }),
+          feedbackWebhookEndpoint: Type.String({ maxLength: 2048, minLength: 1 }),
+          inboundBindings: Type.Array(ResendProductionBinding, { maxItems: 1, minItems: 1 }),
+          rawDownloadAllowedHosts: Type.Array(
+            Type.String({ maxLength: 253, minLength: 1, pattern: DOMAIN_A_LABEL_PATTERN }),
+            { maxItems: 8, minItems: 1 },
+          ),
+          region: Type.Union([
+            Type.Literal("ap-northeast-1"),
+            Type.Literal("eu-west-1"),
+            Type.Literal("sa-east-1"),
+            Type.Literal("us-east-1"),
+          ]),
+          smtpEhloName: Type.String({
+            maxLength: 253,
+            minLength: 1,
+            pattern: DOMAIN_A_LABEL_PATTERN,
+          }),
+          networkTimeoutMilliseconds: Type.Integer({ maximum: 120_000, minimum: 100 }),
+          webhookReplayTtlSeconds: Type.Integer({ maximum: 2_592_000, minimum: 172_800 }),
+          maximumApiConcurrency: Type.Integer({ maximum: 64, minimum: 1 }),
+          maximumApiQueueDepth: Type.Integer({ maximum: 4096, minimum: 0 }),
+          maximumRawAcquisitionConcurrency: Type.Integer({ maximum: 64, minimum: 1 }),
+          maximumRawAcquisitionQueueDepth: Type.Integer({ maximum: 4096, minimum: 0 }),
+          maximumSmtpConcurrency: Type.Integer({ maximum: 64, minimum: 1 }),
+          maximumSmtpQueueDepth: Type.Integer({ maximum: 4096, minimum: 0 }),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 1, minItems: 0 },
+    ),
+    cloudflare: Type.Array(
+      Type.Object(
+        {
+          tenantId: TenantId,
+          providerInstanceId: Type.String({
+            maxLength: 36,
+            minLength: 36,
+            pattern: UUID_V7_PATTERN,
+          }),
+          accountId: Type.String({ maxLength: 32, minLength: 32, pattern: "^[0-9a-f]{32}$" }),
+          zoneId: Type.String({ maxLength: 32, minLength: 32, pattern: "^[0-9a-f]{32}$" }),
+          zoneDomainALabel: Type.String({
+            maxLength: 253,
+            minLength: 1,
+            pattern: DOMAIN_A_LABEL_PATTERN,
+          }),
+          apiTokenSecretReference: SecretReference,
+          requestTimeoutMilliseconds: Type.Integer({ maximum: 120_000, minimum: 1000 }),
+          maximumJsonResponseBytes: Type.Integer({ maximum: 4_194_304, minimum: 1024 }),
+          maximumRawBytes: Type.Integer({ maximum: 26_214_400, minimum: 1 }),
+          workerBindingHint: Type.String({
+            maxLength: 128,
+            minLength: 1,
+            pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          }),
+          workerKeys: Type.Object(
+            {
+              maximumClockSkewSeconds: Type.Integer({ maximum: 3600, minimum: 30 }),
+              replayTtlSeconds: Type.Integer({ maximum: 2_592_000, minimum: 60 }),
+              current: WorkerKeyReference,
+              previous: Type.Optional(WorkerKeyReference),
+            },
+            { additionalProperties: false },
+          ),
+          inboundBindings: Type.Array(CloudflareProductionBinding, { maxItems: 1, minItems: 1 }),
+          feedbackDomainALabel: Type.String({
+            maxLength: 253,
+            minLength: 1,
+            pattern: DOMAIN_A_LABEL_PATTERN,
+          }),
+          feedbackEventSubscriptionId: Type.String({
+            maxLength: 32,
+            minLength: 32,
+            pattern: "^[0-9a-f]{32}$",
+          }),
+          feedbackQueueId: Type.String({ maxLength: 32, minLength: 32, pattern: "^[0-9a-f]{32}$" }),
+          feedbackSubscriptionName: Type.String({ maxLength: 128, minLength: 1 }),
+          routingWorkerName: Type.String({
+            maxLength: 63,
+            minLength: 1,
+            pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$",
+          }),
+          planLifetimeMilliseconds: Type.Integer({ maximum: 86_400_000, minimum: 60_000 }),
+          operationTimeoutMilliseconds: Type.Integer({ maximum: 120_000, minimum: 1000 }),
+          authoritativeDns: Type.Boolean(),
+          mxCoexistence: Type.Union([
+            Type.Literal("cloudflare_only"),
+            Type.Literal("external_mx_present"),
+            Type.Literal("unknown"),
+          ]),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 1, minItems: 0 },
     ),
   },
   { additionalProperties: false },
@@ -263,6 +412,13 @@ export const ReferenceServiceConfigSchema = Type.Object(
           }),
           adapterVersion: Type.String({ maxLength: 128, minLength: 5, pattern: SEMVER_PATTERN }),
           mode: Type.String({ maxLength: 64, pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
+          inboundBindingHint: Type.Optional(
+            Type.String({
+              maxLength: 36,
+              minLength: 36,
+              pattern: UUID_V7_PATTERN,
+            }),
+          ),
         },
         { additionalProperties: false },
       ),
@@ -306,6 +462,29 @@ const deepFreeze = (value: unknown): void => {
   if (typeof value === "object" && value !== null) {
     for (const item of Object.values(value)) deepFreeze(item);
     Object.freeze(value);
+  }
+};
+
+const providerPath = (
+  providerId: "cloudflare" | "mailgun" | "resend",
+  mode: "smtp_raw" | "worker-frames-send-raw",
+  providerInstanceId: string,
+  surface: "feedback" | "inbound",
+): string => `/v1/providers/${providerId}/0.1.0/${mode}/instances/${providerInstanceId}/${surface}`;
+
+const exactHttpsEndpoint = (value: string, expectedPath: string): boolean => {
+  try {
+    const endpoint = new URL(value);
+    return (
+      endpoint.protocol === "https:" &&
+      endpoint.username.length === 0 &&
+      endpoint.password.length === 0 &&
+      endpoint.pathname === expectedPath &&
+      endpoint.search.length === 0 &&
+      endpoint.hash.length === 0
+    );
+  } catch {
+    return false;
   }
 };
 
@@ -423,11 +602,13 @@ const assertSemanticConfig = (config: ReferenceServiceConfig): readonly string[]
     for (const tenantId of tenantIds) {
       if (!hostTenants.has(tenantId)) issues.push("/production/hostIntegration:tenant_missing");
     }
+    const configuredInstances = new Set<string>();
     const mailgunInstances = new Set<string>();
     for (const mailgun of config.production.mailgun) {
       if (mailgunInstances.has(mailgun.providerInstanceId)) {
         issues.push("/production/mailgun:duplicate_provider_instance");
       }
+      configuredInstances.add(mailgun.providerInstanceId);
       mailgunInstances.add(mailgun.providerInstanceId);
       const catalog = config.providerInstances.find(
         (instance) => instance.providerInstanceId === mailgun.providerInstanceId,
@@ -436,7 +617,8 @@ const assertSemanticConfig = (config: ReferenceServiceConfig): readonly string[]
         catalog?.tenantId !== mailgun.tenantId ||
         catalog.providerId !== "mailgun" ||
         catalog.adapterVersion !== "0.1.0" ||
-        catalog.mode !== "smtp_raw"
+        catalog.mode !== "smtp_raw" ||
+        catalog.inboundBindingHint !== undefined
       ) {
         issues.push("/production/mailgun:catalog_identity_mismatch");
       }
@@ -465,8 +647,117 @@ const assertSemanticConfig = (config: ReferenceServiceConfig): readonly string[]
         issues.push("/production/mailgun:forward_url_invalid");
       }
     }
-    if (mailgunInstances.size !== config.providerInstances.length) {
-      issues.push("/production/mailgun:registration_missing");
+    const resendInstances = new Set<string>();
+    for (const resend of config.production.resend) {
+      if (resendInstances.has(resend.providerInstanceId)) {
+        issues.push("/production/resend:duplicate_provider_instance");
+      }
+      resendInstances.add(resend.providerInstanceId);
+      configuredInstances.add(resend.providerInstanceId);
+      const catalog = config.providerInstances.find(
+        (instance) => instance.providerInstanceId === resend.providerInstanceId,
+      );
+      if (
+        catalog?.tenantId !== resend.tenantId ||
+        catalog.providerId !== "resend" ||
+        catalog.adapterVersion !== "0.1.0" ||
+        catalog.mode !== "smtp_raw" ||
+        catalog.inboundBindingHint !== resend.inboundBindings[0]?.bindingId
+      ) {
+        issues.push("/production/resend:catalog_identity_mismatch");
+      }
+      if (
+        new Set(resend.inboundWebhookSecretReferences).size !==
+          resend.inboundWebhookSecretReferences.length ||
+        new Set(resend.feedbackWebhookSecretReferences).size !==
+          resend.feedbackWebhookSecretReferences.length ||
+        new Set(resend.rawDownloadAllowedHosts).size !== resend.rawDownloadAllowedHosts.length
+      ) {
+        issues.push("/production/resend:duplicate_reference");
+      }
+      const inboundPath = providerPath("resend", "smtp_raw", resend.providerInstanceId, "inbound");
+      const feedbackPath = providerPath(
+        "resend",
+        "smtp_raw",
+        resend.providerInstanceId,
+        "feedback",
+      );
+      if (!exactHttpsEndpoint(resend.inboundWebhookEndpoint, inboundPath)) {
+        issues.push("/production/resend:inbound_endpoint_policy");
+      }
+      if (!exactHttpsEndpoint(resend.feedbackWebhookEndpoint, feedbackPath)) {
+        issues.push("/production/resend:feedback_endpoint_policy");
+      }
+      for (const binding of resend.inboundBindings) {
+        if (
+          binding.tenantId !== resend.tenantId ||
+          binding.providerInstanceId !== resend.providerInstanceId
+        ) {
+          issues.push("/production/resend:binding_identity_mismatch");
+        }
+      }
+    }
+    const cloudflareInstances = new Set<string>();
+    for (const cloudflare of config.production.cloudflare) {
+      if (cloudflareInstances.has(cloudflare.providerInstanceId)) {
+        issues.push("/production/cloudflare:duplicate_provider_instance");
+      }
+      cloudflareInstances.add(cloudflare.providerInstanceId);
+      configuredInstances.add(cloudflare.providerInstanceId);
+      const catalog = config.providerInstances.find(
+        (instance) => instance.providerInstanceId === cloudflare.providerInstanceId,
+      );
+      if (
+        catalog?.tenantId !== cloudflare.tenantId ||
+        catalog.providerId !== "cloudflare" ||
+        catalog.adapterVersion !== "0.1.0" ||
+        catalog.mode !== "worker-frames-send-raw" ||
+        catalog.inboundBindingHint !== undefined
+      ) {
+        issues.push("/production/cloudflare:catalog_identity_mismatch");
+      }
+      if (!cloudflare.authoritativeDns || cloudflare.mxCoexistence !== "cloudflare_only") {
+        issues.push("/production/cloudflare:authoritative_dns_and_mx_coexistence_required");
+      }
+      if (
+        cloudflare.workerKeys.replayTtlSeconds <
+          cloudflare.workerKeys.maximumClockSkewSeconds * 2 ||
+        cloudflare.workerKeys.current.acceptUntil !== undefined ||
+        (cloudflare.workerKeys.previous !== undefined &&
+          (cloudflare.workerKeys.previous.acceptUntil === undefined ||
+            cloudflare.workerKeys.previous.keyId === cloudflare.workerKeys.current.keyId))
+      ) {
+        issues.push("/production/cloudflare:worker_key_ring_invalid");
+      }
+      if (
+        cloudflare.feedbackDomainALabel !== cloudflare.zoneDomainALabel &&
+        !cloudflare.feedbackDomainALabel.endsWith(`.${cloudflare.zoneDomainALabel}`)
+      ) {
+        issues.push("/production/cloudflare:feedback_domain_outside_zone");
+      }
+      for (const binding of cloudflare.inboundBindings) {
+        if (
+          binding.tenantId !== cloudflare.tenantId ||
+          binding.providerInstanceId !== cloudflare.providerInstanceId ||
+          binding.domainALabel !== cloudflare.zoneDomainALabel
+        ) {
+          issues.push("/production/cloudflare:binding_identity_or_zone_mismatch");
+        }
+      }
+      if (
+        cloudflare.maximumRawBytes > config.s3.maximumRawMessageBytes ||
+        config.http.maximumIngressBytes < cloudflareFrameWireMaximum(cloudflare.maximumRawBytes)
+      ) {
+        issues.push("/production/cloudflare:ingress_limit_mismatch");
+      }
+    }
+    if (
+      configuredInstances.size !== config.providerInstances.length ||
+      config.providerInstances.some(
+        (instance) => !configuredInstances.has(instance.providerInstanceId),
+      )
+    ) {
+      issues.push("/production:provider_registration_missing");
     }
     if (
       config.production.runtime.retry.maximumDelayMilliseconds <

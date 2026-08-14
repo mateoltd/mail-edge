@@ -42,15 +42,27 @@ export class PostgresWakeupRepairRepository {
           const [receipts, intents, deliveries, feedback] = await Promise.all([
             transaction
               .selectFrom("inboundReceipts")
-              .select(["receiptId", "createdAt", "nextActionAt"])
+              .select(["receiptId", "claimedUntil", "createdAt", "nextActionAt"])
               .where("tenantId", "=", tenantId)
-              .where("state", "in", ["received", "stored", "retry_wait"])
-              .where(
-                (expression) => expression.fn.coalesce("nextActionAt", "createdAt"),
-                "<=",
-                new Date(scannedAt),
+              .where((expression) =>
+                expression.or([
+                  expression.and([
+                    expression("state", "in", ["received", "stored", "retry_wait"]),
+                    expression(
+                      expression.fn.coalesce("nextActionAt", "createdAt"),
+                      "<=",
+                      new Date(scannedAt),
+                    ),
+                  ]),
+                  expression.and([
+                    expression("state", "=", "acquiring"),
+                    expression("claimedUntil", "<=", new Date(scannedAt)),
+                  ]),
+                ]),
               )
-              .orderBy((expression) => expression.fn.coalesce("nextActionAt", "createdAt"))
+              .orderBy((expression) =>
+                expression.fn.coalesce("nextActionAt", "claimedUntil", "createdAt"),
+              )
               .limit(limit)
               .execute(),
             transaction
@@ -91,7 +103,7 @@ export class PostgresWakeupRepairRepository {
           ]);
           const wakeups = [
             ...receipts.map((row) => ({
-              dueAt: row.nextActionAt ?? row.createdAt,
+              dueAt: row.nextActionAt ?? row.claimedUntil ?? row.createdAt,
               id: row.receiptId,
               wakeup: workflowWakeup({
                 receiptId: row.receiptId,

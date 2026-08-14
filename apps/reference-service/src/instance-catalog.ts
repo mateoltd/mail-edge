@@ -35,6 +35,9 @@ export class ProviderInstanceCatalog {
           }),
           providerInstanceId: providerInstanceId.value,
           tenantId: tenantId.value,
+          ...(entry.inboundBindingHint === undefined
+            ? {}
+            : { inboundBindingHint: entry.inboundBindingHint }),
         }),
       );
     }

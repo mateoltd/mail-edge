@@ -11,14 +11,16 @@ handlers:
 The Worker never parses or collects MIME, forwards a message, calls `setReject`, uses
 `passThroughOnException`, follows a redirect, or calls the internal service over public REST. It has
 no mutable request-global state and no floating promises. Logs contain event codes, counts, HTTP
-status, and generated receipt IDs, never addresses, domains, headers, event bodies, raw mail, or
-secret material.
+status, and attempt counts, never receipt IDs, addresses, domains, headers, event bodies, raw mail,
+or secret material.
 
 `wrangler.jsonc` uses compatibility date 2026-08-14 with `nodejs_compat`, disables workers.dev and
-preview URLs, and defines separate staging and production bindings. Tracked configuration contains
-no secret values. Replace the non-secret placeholder provider-instance and Secrets Store resource
-IDs with provisioned exact values before qualification; the host activation gate must remain closed
-until they match the registered binding and current conformance evidence.
+preview URLs, and contains no account, environment, resource, provider-instance, or secret-storage
+choices. Before qualification, an operator must supply an untracked environment-specific Wrangler
+configuration defining `MAIL_EDGE_SERVICE`, `MAIL_EDGE_BINDING_HINT`,
+`MAIL_EDGE_PROVIDER_INSTANCE_ID`, `MAIL_EDGE_HMAC_CURRENT_KEY_ID`, `MAIL_EDGE_HMAC_CURRENT_SECRET`,
+and the feedback Queue consumer. The host activation gate remains closed until those bindings
+exactly match the registered instance and current conformance evidence.
 
 Generate and verify binding/runtime types:
 
@@ -27,7 +29,7 @@ pnpm types:generate
 pnpm types:check
 ```
 
-Validate both environments without deploying:
+Validate the generic tracked bundle without deploying:
 
 ```sh
 pnpm deploy:dry-run

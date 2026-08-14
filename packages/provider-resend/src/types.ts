@@ -83,6 +83,7 @@ export interface ResendInboundMetadataCommitInput {
 /** Immutable acquisition claim loaded by a worker from durable receipt state. @public */
 export interface ResendInboundAcquisitionClaim {
   readonly schemaVersion: "v1";
+  readonly fence: number;
   readonly receiptId: ReceiptId;
   readonly tenantId: TenantId;
   readonly providerInstanceId: ProviderInstanceId;
@@ -106,6 +107,7 @@ export interface ResendInboundMetadataPort {
   commitAcquiredRaw(
     input: {
       readonly receiptId: ReceiptId;
+      readonly fence: number;
       readonly raw: RawMessageRefV1;
       readonly envelope: SmtpEnvelopeV1;
       readonly retrievalEvidenceDigest: string;
@@ -115,6 +117,7 @@ export interface ResendInboundMetadataPort {
   recordAcquisitionFailure(
     input: {
       readonly receiptId: ReceiptId;
+      readonly fence: number;
       readonly disposition: "quarantine" | "retry_wait";
       readonly errorCode: MailEdgeError["code"];
     },

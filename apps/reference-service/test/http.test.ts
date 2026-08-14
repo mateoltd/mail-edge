@@ -131,6 +131,15 @@ describe("reference service HTTP boundaries", () => {
       url: "/v1/operator/providers",
     });
     expect(authenticated.statusCode).toBe(200);
+    const instances = await fixture.http.instance.inject({
+      headers: { authorization: `Bearer ${operatorToken}` },
+      method: "GET",
+      url: "/v1/operator/provider-instances",
+    });
+    expect(instances.statusCode).toBe(200);
+    expect(instances.json()).toMatchObject({
+      providerInstances: [{ providerInstanceId }],
+    });
   });
 
   it("keeps liveness independent while readiness reflects dependency state", async () => {
@@ -148,5 +157,11 @@ describe("reference service HTTP boundaries", () => {
     expect((await fixture.http.instance.inject({ method: "GET", url: "/readyz" })).statusCode).toBe(
       503,
     );
+    const degraded = await fixture.http.instance.inject({
+      method: "GET",
+      url: "/health/degraded",
+    });
+    expect(degraded.statusCode).toBe(200);
+    expect(degraded.json()).toMatchObject({ status: "degraded" });
   });
 });

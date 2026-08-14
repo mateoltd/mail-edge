@@ -94,6 +94,11 @@ export interface ProviderConformanceDriver {
     fixtures: ProviderConformanceFixtures,
     context: ProviderConformanceCallbackContext,
   ): Promise<ProviderConformanceFixtures["submission"]> | ProviderConformanceFixtures["submission"];
+  createReconciliationQuery?(
+    query: ProviderReconciliationQueryV1,
+    fixtures: ProviderConformanceFixtures,
+    context: ProviderConformanceCallbackContext,
+  ): Promise<ProviderReconciliationQueryV1> | ProviderReconciliationQueryV1;
   createFeedbackRequest?(
     scenario: FeedbackConformanceScenario,
     fixtures: ProviderConformanceFixtures,
@@ -871,9 +876,9 @@ export class ProviderConformanceKit {
       this.#target.driver.prepareReconciliationScenario === undefined
     )
       return Object.freeze([]);
-    const query: ProviderReconciliationQueryV1 = Object.freeze({
+    const baseQuery: ProviderReconciliationQueryV1 = Object.freeze({
       attemptId: fixtures.attemptId,
-      providerMessageId: "018f1f2e-7b4a-7c11-8a00-000000000010",
+      providerMessageId: "provider-conformance-message",
       routeBinding: fixtures.binding,
       schemaVersion: "v1",
       window: Object.freeze({
@@ -881,6 +886,10 @@ export class ProviderConformanceKit {
         to: fixtures.deadline,
       }),
     });
+    const query =
+      (await runOwner.callback(() =>
+        this.#target.driver.createReconciliationQuery?.(baseQuery, fixtures, runOwner.context()),
+      )) ?? baseQuery;
     const run = async (scenario: ReconciliationConformanceScenario) => {
       await runOwner.callback(() =>
         this.#target.driver.prepareReconciliationScenario?.(scenario, fixtures, runOwner.context()),

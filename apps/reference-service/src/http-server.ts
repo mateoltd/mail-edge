@@ -289,6 +289,21 @@ export class ReferenceHttpServer implements LifecycleComponent {
       const ready = await this.#dependencies.readiness(signal);
       return reply.code(ready.ok ? 200 : 503).send({ status: ready.ok ? "ready" : "not_ready" });
     });
+    this.#server.get("/health/degraded", async (_request, reply) => {
+      const signal = AbortSignal.timeout(
+        Math.min(this.#dependencies.config.http.requestTimeoutMilliseconds, 5_000),
+      );
+      const ready = await this.#dependencies.readiness(signal);
+      const registryStarted = this.#dependencies.registry.state === "started";
+      return reply.code(200).send({
+        providers: this.#dependencies.registry.list().map((registration) => ({
+          identity: registration.identity,
+          maturity: registration.descriptor.maturity,
+          status: registryStarted ? "operational" : "unavailable",
+        })),
+        status: ready.ok ? "operational" : "degraded",
+      });
+    });
 
     this.#registerProviderIngress();
     this.#registerTenantApi();
@@ -332,6 +347,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
             ),
             providerInstanceId: resolved.value.providerInstanceId,
             requestId,
+            ...(resolved.value.inboundBindingHint === undefined
+              ? {}
+              : { bindingHint: resolved.value.inboundBindingHint }),
           });
           const result: unknown = await new ProviderInboundIngressService(
             registration.value.inbound,
@@ -571,6 +589,27 @@ export class ReferenceHttpServer implements LifecycleComponent {
   }
 
   #registerOperatorApi(): void {
+    this.#server.get("/v1/operator/provider-instances", async (request, reply) =>
+      this.#run(
+        request,
+        reply,
+        "operator.provider_instances.list",
+        this.#dependencies.config.http.controlPlaneTimeoutMilliseconds,
+        () => {
+          const actor = this.#operatorActor(request);
+          if (!actor.ok) return Promise.resolve(actor);
+          reply.code(200).send({
+            providerInstances: this.#dependencies.catalog.list().map((instance) => ({
+              identity: instance.identity,
+              providerInstanceId: instance.providerInstanceId,
+              tenantId: instance.tenantId,
+            })),
+          });
+          return Promise.resolve({ ok: true, value: undefined });
+        },
+      ),
+    );
+
     this.#server.get("/v1/operator/providers", async (request, reply) =>
       this.#run(
         request,

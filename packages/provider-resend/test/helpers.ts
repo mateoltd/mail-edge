@@ -151,6 +151,7 @@ export class MemoryInboundMetadata implements ResendInboundMetadataPort {
   readonly failures: Parameters<ResendInboundMetadataPort["recordAcquisitionFailure"]>[0][] = [];
   claim: ResendInboundAcquisitionClaim = Object.freeze({
     binding: binding("inbound"),
+    fence: 1,
     providerInstanceId,
     receiptId,
     receivedEmailId: "received-email-fixture",

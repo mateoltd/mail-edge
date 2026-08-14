@@ -47,6 +47,7 @@ export interface ProviderInstanceBinding {
   readonly tenantId: TenantId;
   readonly providerInstanceId: ProviderInstanceId;
   readonly identity: ProviderAdapterIdentity;
+  readonly inboundBindingHint?: string;
 }
 
 export interface AuthenticatedActor {

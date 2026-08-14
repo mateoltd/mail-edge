@@ -39,6 +39,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /health/degraded:
+    get:
+      tags: [Health]
+      operationId: getDegradedStatus
+      responses:
+        "200":
+          description: Aggregate readiness and privacy-safe status for every registered adapter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DegradedHealth"
   /v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound/{providerPath}:
     post:
       tags: [Provider ingress]
@@ -221,6 +232,31 @@ paths:
         "401":
           $ref: "#/components/responses/Problem"
         "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+  /v1/operator/provider-instances:
+    get:
+      tags: [Operator]
+      operationId: listProviderInstances
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Tenant-scoped provider-instance catalog without secrets or resource details.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [providerInstances]
+                properties:
+                  providerInstances:
+                    type: array
+                    maxItems: 10000
+                    items:
+                      $ref: "#/components/schemas/ProviderInstance"
+        "401":
           $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
@@ -482,6 +518,30 @@ components:
         status:
           type: string
           enum: [live, ready, not_ready]
+    DegradedHealth:
+      type: object
+      additionalProperties: false
+      required: [status, providers]
+      properties:
+        status:
+          type: string
+          enum: [operational, degraded]
+        providers:
+          type: array
+          maxItems: 10000
+          items:
+            type: object
+            additionalProperties: false
+            required: [identity, maturity, status]
+            properties:
+              identity:
+                $ref: "#/components/schemas/AdapterIdentity"
+              maturity:
+                type: string
+                enum: [stable, experimental]
+              status:
+                type: string
+                enum: [operational, unavailable]
     RawMessageRef:
       type: object
       additionalProperties: false
@@ -558,6 +618,17 @@ components:
         mode:
           type: string
           pattern: "^[a-z][a-z0-9_-]{0,63}$"
+    ProviderInstance:
+      type: object
+      additionalProperties: false
+      required: [tenantId, providerInstanceId, identity]
+      properties:
+        tenantId:
+          $ref: "#/components/schemas/UuidV7"
+        providerInstanceId:
+          $ref: "#/components/schemas/UuidV7"
+        identity:
+          $ref: "#/components/schemas/AdapterIdentity"
     DesiredBinding:
       type: object
       additionalProperties: false

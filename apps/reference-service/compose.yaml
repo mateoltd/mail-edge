@@ -13,7 +13,7 @@ services:
       timeout: 3s
       retries: 30
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${MAIL_EDGE_REFERENCE_POSTGRES_PORT:-5432}:5432"
     volumes:
       - reference-postgres:/var/lib/postgresql/data
 
@@ -29,8 +29,8 @@ services:
       timeout: 3s
       retries: 30
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:${MAIL_EDGE_REFERENCE_MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MAIL_EDGE_REFERENCE_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - reference-minio:/data
 

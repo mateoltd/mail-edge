@@ -93,6 +93,7 @@ export class ResendInboundRawAcquirer implements InboundRawAcquirer {
           {
             disposition: acquired.error.disposition,
             errorCode: acquired.error.error.code,
+            fence: claim.fence,
             receiptId: claim.receiptId,
           },
           scopedSignal,
@@ -193,6 +194,7 @@ export class ResendInboundRawAcquirer implements InboundRawAcquirer {
       const committed = await this.#metadata.commitAcquiredRaw(
         {
           envelope: envelope.value.wire,
+          fence: claim.fence,
           raw: completed.value,
           receiptId: claim.receiptId,
           retrievalEvidenceDigest: sha256CanonicalJson({

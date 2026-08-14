@@ -291,6 +291,8 @@ export interface ProviderConformanceDriver {
         readonly services?: InboundIngestionServices;
     }>;
     // (undocumented)
+    createReconciliationQuery?(query: ProviderReconciliationQueryV1, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<ProviderReconciliationQueryV1> | ProviderReconciliationQueryV1;
+    // (undocumented)
     prepareDispatchScenario?(scenario: DispatchConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<void> | void;
     // (undocumented)
     prepareReconciliationScenario?(scenario: ReconciliationConformanceScenario, fixtures: ProviderConformanceFixtures, context: ProviderConformanceCallbackContext): Promise<void> | void;

@@ -429,7 +429,7 @@ export class PostgresBlobRepository {
             .set({
               finalObjectVersion: input.finalObjectVersion,
               optimisticVersion: String(optimisticVersion),
-              updatedAt: occurredAt,
+              updatedAt: sql<Date>`greatest(${occurredAt}::timestamptz, updated_at)`,
             })
             .where("tenantId", "=", input.tenantId)
             .where("stageId", "=", input.stageId)
@@ -1704,7 +1704,7 @@ export class PostgresBlobRepository {
               ...values,
               optimisticVersion: String(optimisticVersion),
               state,
-              updatedAt: occurredAt,
+              updatedAt: sql<Date>`greatest(${occurredAt}::timestamptz, updated_at)`,
             })
             .where("tenantId", "=", tenantId)
             .where("stageId", "=", stageId)

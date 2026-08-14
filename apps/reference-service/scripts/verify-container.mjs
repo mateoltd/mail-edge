@@ -92,8 +92,16 @@ const run = async (file, arguments_, options = {}) =>
     ...options,
   });
 
+const composeEnvironment = {
+  ...process.env,
+  MAIL_EDGE_REFERENCE_MINIO_CONSOLE_PORT: "0",
+  MAIL_EDGE_REFERENCE_MINIO_PORT: "0",
+  MAIL_EDGE_REFERENCE_POSTGRES_PORT: "0",
+};
 const compose = (...arguments_) =>
-  run("docker", ["compose", "--project-name", project, "--file", composeFile, ...arguments_]);
+  run("docker", ["compose", "--project-name", project, "--file", composeFile, ...arguments_], {
+    env: composeEnvironment,
+  });
 
 const config = {
   authentication: {
@@ -144,6 +152,7 @@ const config = {
     },
   ],
   production: {
+    cloudflare: [],
     hostIntegration: [
       {
         deliveryUrl: "https://host.invalid/delivery",
@@ -199,6 +208,7 @@ const config = {
         webhookSigningKeySecretReference: "secret://mailgun-webhook-key",
       },
     ],
+    resend: [],
     maintenance: {
       blobBatchSize: 10,
       intervalMilliseconds: 1000,

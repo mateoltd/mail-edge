@@ -35,6 +35,7 @@ import {
   type CloudflareFrameHeaderV1,
   type CloudflareFrameSequenceStateV1,
 } from "./frame-protocol.js";
+import { cloudflareIngressPathIsValid } from "./ingress-path.js";
 import type { CloudflareAdapterLifecycle } from "./lifecycle.service.js";
 
 /** Resolves an opaque, authenticated Worker hint to one immutable inbound binding snapshot. @public */
@@ -84,8 +85,7 @@ export const validateCloudflareInboundAdapterConfig = (
   config: CloudflareInboundAdapterConfigV1,
 ): Result<CloudflareInboundAdapterConfigV1, MailEdgeError> => {
   if (
-    !/^\/[A-Za-z0-9/_-]{1,255}$/u.test(config.ingressPath) ||
-    config.ingressPath.includes("//") ||
+    !cloudflareIngressPathIsValid(config.ingressPath) ||
     !Number.isSafeInteger(config.maximumRawBytes) ||
     config.maximumRawBytes < 1 ||
     config.maximumRawBytes > CLOUDFLARE_INBOUND_RAW_MAX_BYTES

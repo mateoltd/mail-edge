@@ -133,7 +133,8 @@ describe("Cloudflare inbound adapter", () => {
     await lifecycle.start(new AbortController().signal);
     const adapter = new CloudflareInboundAdapter(
       Object.freeze({
-        ingressPath: "/provider/cloudflare/inbound",
+        ingressPath:
+          "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/inbound",
         keyRing: Object.freeze({
           audience: CLOUDFLARE_WORKER_INGRESS_AUDIENCE,
           current: Object.freeze({ keyId: "current", secretReference: "current" }),
@@ -156,7 +157,7 @@ describe("Cloudflare inbound adapter", () => {
       createFixtureHttpRequest(wire, observedAt, {
         chunkBytes: 17,
         contentType: CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE,
-        path: "/provider/cloudflare/inbound",
+        path: "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/inbound",
       });
     const firstResult = await adapter.ingest(
       request(),
@@ -184,7 +185,7 @@ describe("Cloudflare inbound adapter", () => {
     const rejected = await adapter.ingest(
       createFixtureHttpRequest(tamperedFinal, observedAt, {
         contentType: CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE,
-        path: "/provider/cloudflare/inbound",
+        path: "/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/018f4f6a-7b2c-7000-8000-000000000503/inbound",
       }),
       context,
       services,

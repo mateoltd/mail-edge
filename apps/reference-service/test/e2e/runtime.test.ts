@@ -5,8 +5,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CreateBucketCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
-import { MailEdgeError, type Result } from "@mail-edge/contracts";
-import { sha256CanonicalJson } from "@mail-edge/core";
+import {
+  MailEdgeError,
+  parseBindingId,
+  parseProviderId,
+  parseProviderInstanceId,
+  parseTenantId,
+  type Result,
+  type RouteBindingV1,
+} from "@mail-edge/contracts";
+import { activateExactBinding, reduceBinding, sha256CanonicalJson } from "@mail-edge/core";
+import {
+  CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE,
+  CLOUDFLARE_WORKER_INGRESS_AUDIENCE,
+  cloudflareProviderDescriptor,
+  cloudflareSha256,
+  encodeCloudflareBase64Url,
+  encodeCloudflareFrame,
+  signCloudflareFrameHeader,
+  type CloudflareFrameHeaderV1,
+  type CloudflareHttpRequestV1,
+  type CloudflareHttpResponseV1,
+  type CloudflareHttpTransport,
+  type CloudflareUnsignedFrameHeaderV1,
+} from "@mail-edge/provider-cloudflare";
 import {
   mailgunProviderDescriptor,
   type MailgunHttpRequest,
@@ -16,12 +38,28 @@ import {
   type MailgunSmtpResponse,
   type MailgunSmtpSession,
 } from "@mail-edge/provider-mailgun";
+import {
+  resendProviderDescriptor,
+  type ResendHttpRequest,
+  type ResendHttpResponse,
+  type ResendHttpTransport,
+  type ResendRawDownloadRequest,
+  type ResendRawDownloadResponse,
+  type ResendRawDownloadTransport,
+  type ResendSmtpConnector,
+  type ResendSmtpResponse,
+  type ResendSmtpSession,
+} from "@mail-edge/provider-resend";
 import { MinioContainer, type StartedMinioContainer } from "@testcontainers/minio";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
-import { parseReferenceServiceConfig, type ReferenceServiceConfig } from "../../src/config.js";
+import {
+  ConfigurationError,
+  parseReferenceServiceConfig,
+  type ReferenceServiceConfig,
+} from "../../src/config.js";
 import { ReferenceServiceHost } from "../../src/host.js";
 import { createReferenceServiceQualificationComposition } from "../../src/production-composition.js";
 import { DirectorySecretResolver } from "../../src/secrets.js";
@@ -31,14 +69,37 @@ const otherTenantId = "018f4f6a-7b2c-7000-8000-000000000502";
 const providerInstanceId = "018f4f6a-7b2c-7000-8000-000000000503";
 const inboundBindingId = "018f4f6a-7b2c-7000-8000-000000000504";
 const outboundBindingId = "018f4f6a-7b2c-7000-8000-000000000505";
+const resendProviderInstanceId = "018f4f6a-7b2c-7000-8000-000000000510";
+const resendInboundBindingId = "018f4f6a-7b2c-7000-8000-000000000511";
+const resendOutboundBindingId = "018f4f6a-7b2c-7000-8000-000000000512";
+const cloudflareProviderInstanceId = "018f4f6a-7b2c-7000-8000-000000000520";
+const cloudflareInboundBindingId = "018f4f6a-7b2c-7000-8000-000000000521";
+const cloudflareOutboundBindingId = "018f4f6a-7b2c-7000-8000-000000000522";
+const cloudflareReplacementBindingId = "018f4f6a-7b2c-7000-8000-000000000527";
 const domain = "e2e.example.test";
+const resendDomain = "resend.e2e.example.test";
+const cloudflareDomain = "cloudflare.e2e.example.test";
 const tenantToken = "reference-e2e-tenant-one-token-material";
 const otherTenantToken = "reference-e2e-tenant-two-token-material";
 const webhookKey = "reference-e2e-mailgun-webhook-key";
 const capabilityDigest = sha256CanonicalJson(mailgunProviderDescriptor);
+const resendCapabilityDigest = sha256CanonicalJson(resendProviderDescriptor);
+const cloudflareCapabilityDigest = sha256CanonicalJson(cloudflareProviderDescriptor);
+const resendReceivedEmailId = "018f4f6a-7b2c-7000-8000-000000000513";
+const cloudflareAccountId = "a".repeat(32);
+const cloudflareZoneId = "b".repeat(32);
+const cloudflareEventSubscriptionId = "c".repeat(32);
+const cloudflareFeedbackQueueId = "d".repeat(32);
+const cloudflareWorkerSecret = Buffer.from("cloudflare-worker-secret-32bytes!");
+const resendWebhookSecret = Buffer.from("resend-webhook-secret-material-32");
 const kmsKeyReference = "arn:aws:kms:us-east-1:000000000000:key/mail-edge-e2e";
 const mailgunToken = (label: string): string =>
   createHash("sha384").update(label).digest("base64url").slice(0, 50);
+
+const required = <Value, ErrorValue>(result: Result<Value, ErrorValue>): Value => {
+  if (!result.ok) throw new TypeError("The E2E fixture identifier is invalid.");
+  return result.value;
+};
 
 const simulationFailure = (reason: string): MailEdgeError =>
   new MailEdgeError({
@@ -222,6 +283,76 @@ class SimulatedMailgunHttpTransport implements MailgunHttpTransport {
   }
 }
 
+class LocalResendSmtpSession implements ResendSmtpSession {
+  readonly commands: string[] = [];
+  readonly data: Uint8Array[] = [];
+  #responseIndex = 0;
+
+  readResponse(signal: AbortSignal): Promise<Result<ResendSmtpResponse, MailEdgeError>> {
+    signal.throwIfAborted();
+    const value = [
+      Object.freeze({ code: 220, lines: Object.freeze(["resend local protocol"]) }),
+      Object.freeze({ code: 250, lines: Object.freeze(["AUTH PLAIN", "SIZE 40000000"]) }),
+      Object.freeze({ code: 235, lines: Object.freeze(["2.7.0 authenticated"]) }),
+      Object.freeze({ code: 250, lines: Object.freeze(["2.1.0 sender accepted"]) }),
+      Object.freeze({ code: 250, lines: Object.freeze(["2.1.5 recipient accepted"]) }),
+      Object.freeze({ code: 354, lines: Object.freeze(["send message"]) }),
+      Object.freeze({
+        code: 250,
+        lines: Object.freeze(["2.0.0 queued 018f4f6a-7b2c-7000-8000-000000000519"]),
+      }),
+    ][this.#responseIndex];
+    this.#responseIndex += 1;
+    return Promise.resolve(
+      value === undefined
+        ? { error: simulationFailure("resend_smtp_response_exhausted"), ok: false }
+        : { ok: true, value },
+    );
+  }
+
+  writeCommand(command: string, signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+    signal.throwIfAborted();
+    this.commands.push(command);
+    return Promise.resolve({ ok: true, value: undefined });
+  }
+
+  writeData(chunk: Uint8Array, signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+    signal.throwIfAborted();
+    this.data.push(Uint8Array.from(chunk));
+    return Promise.resolve({ ok: true, value: undefined });
+  }
+
+  close(signal: AbortSignal): Promise<Result<void, MailEdgeError>> {
+    return signal.aborted
+      ? Promise.resolve({ error: simulationFailure("resend_smtp_close_aborted"), ok: false })
+      : Promise.resolve({ ok: true, value: undefined });
+  }
+}
+
+class LocalResendSmtpConnector implements ResendSmtpConnector {
+  readonly sessions: LocalResendSmtpSession[] = [];
+
+  connect(
+    input: { readonly host: string; readonly port: number; readonly timeoutMilliseconds: number },
+    signal: AbortSignal,
+  ): Promise<Result<ResendSmtpSession, MailEdgeError>> {
+    if (
+      signal.aborted ||
+      input.host !== "smtp.resend.com" ||
+      input.port !== 465 ||
+      input.timeoutMilliseconds !== 5_000
+    ) {
+      return Promise.resolve({
+        error: simulationFailure("resend_smtp_connect_contract"),
+        ok: false,
+      });
+    }
+    const session = new LocalResendSmtpSession();
+    this.sessions.push(session);
+    return Promise.resolve({ ok: true, value: session });
+  }
+}
+
 const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? Object.freeze(Object.fromEntries(Object.entries(value)))
@@ -258,6 +389,267 @@ const readBody = async (request: AsyncIterable<Uint8Array>): Promise<Buffer> => 
   }
   return Buffer.concat(chunks, observed);
 };
+
+const collectBody = async (
+  body: AsyncIterable<Uint8Array> | undefined,
+  maximumBytes: number,
+  onConsumed?: (bytes: number) => void,
+): Promise<Buffer> => {
+  const chunks: Uint8Array[] = [];
+  let observed = 0;
+  for await (const chunk of body ?? []) {
+    observed += chunk.byteLength;
+    if (observed > maximumBytes) throw new TypeError("Provider request body exceeded its limit.");
+    onConsumed?.(chunk.byteLength);
+    chunks.push(Uint8Array.from(chunk));
+  }
+  return Buffer.concat(chunks, observed);
+};
+
+const startProviderProtocols = async (): Promise<{
+  readonly calls: string[];
+  readonly port: number;
+  readonly server: Server;
+}> => {
+  const calls: string[] = [];
+  const resendRaw = Buffer.from(
+    `From: sender@example.test\r\nTo: recipient@${resendDomain}\r\n` +
+      `Message-ID: <resend-inbound@${resendDomain}>\r\nSubject: inbound\r\n\r\nbody\r\n`,
+  );
+  const server = createServer((request, response_) => {
+    void (async () => {
+      try {
+        const body = await readBody(request);
+        calls.push(`${request.method ?? "UNKNOWN"} ${request.url ?? "/"}`);
+        if (
+          request.method === "GET" &&
+          request.url === `/emails/receiving/${resendReceivedEmailId}` &&
+          request.headers.authorization?.startsWith("Bearer ") === true
+        ) {
+          const encoded = Buffer.from(
+            JSON.stringify({
+              created_at: new Date().toISOString(),
+              from: "sender@example.test",
+              id: resendReceivedEmailId,
+              message_id: `<resend-inbound@${resendDomain}>`,
+              raw: {
+                download_url: "https://raw.resend.test/message.eml?signature=e2e",
+                expires_at: new Date(Date.now() + 60_000).toISOString(),
+              },
+              received_for: [`recipient@${resendDomain}`],
+            }),
+          );
+          response_.writeHead(200, {
+            "content-length": String(encoded.byteLength),
+            "content-type": "application/json",
+          });
+          response_.end(encoded);
+          return;
+        }
+        if (request.method === "GET" && request.url === "/message.eml?signature=e2e") {
+          response_.writeHead(200, {
+            "content-length": String(resendRaw.byteLength),
+            "content-type": "message/rfc822",
+          });
+          response_.end(resendRaw);
+          return;
+        }
+        if (
+          request.method === "POST" &&
+          request.url === `/client/v4/accounts/${cloudflareAccountId}/email/sending/send_raw` &&
+          request.headers.authorization?.startsWith("Bearer ") === true
+        ) {
+          const input = record(JSON.parse(body.toString("utf8")));
+          const recipients = input?.["recipients"];
+          if (!Array.isArray(recipients) || recipients.some((value) => typeof value !== "string")) {
+            throw new TypeError("Cloudflare send_raw recipients were malformed.");
+          }
+          const encoded = Buffer.from(
+            JSON.stringify({
+              errors: [],
+              messages: [],
+              result: {
+                delivered: [],
+                message_id: "cloudflare-e2e-message",
+                permanent_bounces: [],
+                queued: recipients,
+              },
+              success: true,
+            }),
+          );
+          response_.writeHead(200, {
+            "content-length": String(encoded.byteLength),
+            "content-type": "application/json",
+          });
+          response_.end(encoded);
+          return;
+        }
+        response_.writeHead(404).end();
+      } catch {
+        response_.writeHead(400).end();
+      }
+    })();
+  });
+  return Object.freeze({ calls, port: await listen(server), server });
+};
+
+class LocalResendHttpTransport implements ResendHttpTransport {
+  readonly #port: number;
+
+  constructor(port: number) {
+    this.#port = port;
+  }
+
+  async request(
+    request: ResendHttpRequest,
+    signal: AbortSignal,
+  ): Promise<Result<ResendHttpResponse, MailEdgeError>> {
+    try {
+      if (request.url.origin !== "https://api.resend.com") {
+        return { error: simulationFailure("resend_api_origin"), ok: false };
+      }
+      const response_ = await fetch(
+        new URL(
+          `${request.url.pathname}${request.url.search}`,
+          `http://127.0.0.1:${String(this.#port)}`,
+        ),
+        {
+          ...(request.body === undefined ? {} : { body: request.body }),
+          headers: request.headers,
+          method: request.method,
+          redirect: "error",
+          signal,
+        },
+      );
+      const body = new Uint8Array(await response_.arrayBuffer());
+      if (body.byteLength > request.maximumResponseBytes) {
+        return { error: simulationFailure("resend_api_response_limit"), ok: false };
+      }
+      return {
+        ok: true,
+        value: Object.freeze({
+          body,
+          headers: Object.freeze(Object.fromEntries(response_.headers.entries())),
+          statusCode: response_.status,
+        }),
+      };
+    } catch (cause) {
+      return { error: simulationFailure(`resend_api_transport_${String(cause)}`), ok: false };
+    }
+  }
+}
+
+class LocalResendRawDownloadTransport implements ResendRawDownloadTransport {
+  readonly #port: number;
+
+  constructor(port: number) {
+    this.#port = port;
+  }
+
+  async open(
+    request: ResendRawDownloadRequest,
+    signal: AbortSignal,
+  ): Promise<Result<ResendRawDownloadResponse, MailEdgeError>> {
+    try {
+      if (
+        request.url.protocol !== "https:" ||
+        request.url.hostname !== "raw.resend.test" ||
+        !request.allowedHosts.includes(request.url.hostname)
+      ) {
+        return { error: simulationFailure("resend_raw_url_policy"), ok: false };
+      }
+      const response_ = await fetch(
+        new URL(
+          `${request.url.pathname}${request.url.search}`,
+          `http://127.0.0.1:${String(this.#port)}`,
+        ),
+        { redirect: "error", signal },
+      );
+      const contentLengthValue = response_.headers.get("content-length");
+      const contentLength = contentLengthValue === null ? null : Number(contentLengthValue);
+      if (
+        response_.body === null ||
+        (contentLength !== null && contentLength > request.maximumBytes)
+      ) {
+        return { error: simulationFailure("resend_raw_response_contract"), ok: false };
+      }
+      const body = response_.body;
+      return {
+        ok: true,
+        value: Object.freeze({
+          body: Object.freeze({
+            async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
+              const reader = body.getReader();
+              try {
+                for (;;) {
+                  const next = await reader.read();
+                  if (next.done) return;
+                  const value: unknown = next.value;
+                  if (!(value instanceof Uint8Array)) {
+                    throw new TypeError("Raw download transport returned a non-byte chunk.");
+                  }
+                  yield Uint8Array.from(value);
+                }
+              } finally {
+                reader.releaseLock();
+              }
+            },
+          }),
+          contentLength,
+          contentType: response_.headers.get("content-type"),
+          headers: Object.freeze(Object.fromEntries(response_.headers.entries())),
+          statusCode: response_.status,
+        }),
+      };
+    } catch (cause) {
+      return { error: simulationFailure(`resend_raw_transport_${String(cause)}`), ok: false };
+    }
+  }
+}
+
+class LocalCloudflareHttpTransport implements CloudflareHttpTransport {
+  readonly #port: number;
+
+  constructor(port: number) {
+    this.#port = port;
+  }
+
+  async request(
+    request: CloudflareHttpRequestV1,
+    signal: AbortSignal,
+  ): Promise<Result<CloudflareHttpResponseV1, MailEdgeError>> {
+    try {
+      const body = await collectBody(
+        request.body,
+        8 * 1024 * 1024,
+        request.onRequestBodyBytesConsumed,
+      );
+      const response_ = await fetch(
+        new URL(request.path, `http://127.0.0.1:${String(this.#port)}`),
+        {
+          ...(request.body === undefined ? {} : { body }),
+          headers: request.headers,
+          method: request.method,
+          redirect: "error",
+          signal,
+        },
+      );
+      const responseBody =
+        request.discardResponseBody === true
+          ? new Uint8Array()
+          : new Uint8Array(await response_.arrayBuffer());
+      if (responseBody.byteLength > request.maximumResponseBytes) {
+        return { error: simulationFailure("cloudflare_response_limit"), ok: false };
+      }
+      return {
+        ok: true,
+        value: Object.freeze({ body: responseBody, status: response_.status }),
+      };
+    } catch (cause) {
+      return { error: simulationFailure(`cloudflare_transport_${String(cause)}`), ok: false };
+    }
+  }
+}
 
 const startKms = async (): Promise<{ readonly port: number; readonly server: Server }> => {
   const server = createServer((request, response_) => {
@@ -436,6 +828,56 @@ const makeConfig = (
       tls: "disable",
     },
     production: {
+      cloudflare: [
+        {
+          accountId: cloudflareAccountId,
+          apiTokenSecretReference: "secret://cloudflare-api-token",
+          authoritativeDns: true,
+          feedbackDomainALabel: cloudflareDomain,
+          feedbackEventSubscriptionId: cloudflareEventSubscriptionId,
+          feedbackQueueId: cloudflareFeedbackQueueId,
+          feedbackSubscriptionName: "mail-edge-e2e-feedback",
+          inboundBindings: [
+            {
+              adapterMode: "worker-frames-send-raw",
+              adapterVersion: "0.1.0",
+              bindingId: cloudflareInboundBindingId,
+              bindingVersion: 1,
+              capabilityDigest: cloudflareCapabilityDigest,
+              configRevision: "cloudflare-e2e-v1",
+              createdAt: "2026-08-14T00:00:00.000Z",
+              direction: "inbound",
+              dispatchTransport: "http",
+              domainALabel: cloudflareDomain,
+              providerId: "cloudflare",
+              providerInstanceId: cloudflareProviderInstanceId,
+              providerResourceIds: { routingRule: "cloudflare-e2e-catch-all" },
+              schemaVersion: "v1",
+              tenantId,
+            },
+          ],
+          maximumJsonResponseBytes: 64 * 1024,
+          maximumRawBytes: 25 * 1024 * 1024,
+          mxCoexistence: "cloudflare_only",
+          operationTimeoutMilliseconds: 5_000,
+          planLifetimeMilliseconds: 60_000,
+          providerInstanceId: cloudflareProviderInstanceId,
+          requestTimeoutMilliseconds: 5_000,
+          routingWorkerName: "mail-edge-e2e-worker",
+          tenantId,
+          workerBindingHint: "cloudflare-e2e-binding",
+          workerKeys: {
+            current: {
+              keyId: "cloudflare-e2e-current",
+              secretReference: "secret://cloudflare-worker-key",
+            },
+            maximumClockSkewSeconds: 60,
+            replayTtlSeconds: 300,
+          },
+          zoneDomainALabel: cloudflareDomain,
+          zoneId: cloudflareZoneId,
+        },
+      ],
       hostIntegration: [tenantId, otherTenantId].map((configuredTenantId) => ({
         deliveryUrl: `http://127.0.0.1:${String(applicationPort)}/delivery`,
         feedbackUrl: `http://127.0.0.1:${String(applicationPort)}/feedback`,
@@ -488,6 +930,49 @@ const makeConfig = (
           webhookSigningKeySecretReference: "secret://mailgun-webhook-key",
         },
       ],
+      resend: [
+        {
+          apiKeySecretReference: "secret://resend-api-key",
+          feedbackWebhookEndpoint: `https://edge.example.test/v1/providers/resend/0.1.0/smtp_raw/instances/${resendProviderInstanceId}/feedback`,
+          feedbackWebhookSecretDestination: "secret://resend-feedback-created",
+          feedbackWebhookSecretReferences: ["secret://resend-webhook-key"],
+          inboundBindings: [
+            {
+              adapterMode: "smtp_raw",
+              adapterVersion: "0.1.0",
+              bindingId: resendInboundBindingId,
+              bindingVersion: 1,
+              capabilityDigest: resendCapabilityDigest,
+              configRevision: "resend-e2e-v1",
+              createdAt: "2026-08-14T00:00:00.000Z",
+              direction: "inbound",
+              dispatchTransport: "smtp",
+              domainALabel: resendDomain,
+              providerId: "resend",
+              providerInstanceId: resendProviderInstanceId,
+              providerResourceIds: { webhook: "resend-e2e-inbound" },
+              schemaVersion: "v1",
+              tenantId,
+            },
+          ],
+          inboundWebhookEndpoint: `https://edge.example.test/v1/providers/resend/0.1.0/smtp_raw/instances/${resendProviderInstanceId}/inbound`,
+          inboundWebhookSecretDestination: "secret://resend-inbound-created",
+          inboundWebhookSecretReferences: ["secret://resend-webhook-key"],
+          maximumApiConcurrency: 2,
+          maximumApiQueueDepth: 2,
+          maximumRawAcquisitionConcurrency: 2,
+          maximumRawAcquisitionQueueDepth: 2,
+          maximumSmtpConcurrency: 2,
+          maximumSmtpQueueDepth: 2,
+          networkTimeoutMilliseconds: 5_000,
+          providerInstanceId: resendProviderInstanceId,
+          rawDownloadAllowedHosts: ["raw.resend.test"],
+          region: "us-east-1",
+          smtpEhloName: "edge.e2e.example.test",
+          tenantId,
+          webhookReplayTtlSeconds: 172_800,
+        },
+      ],
       maintenance: {
         blobBatchSize: 20,
         intervalMilliseconds: 1_000,
@@ -528,6 +1013,21 @@ const makeConfig = (
         mode: "smtp_raw",
         providerId: "mailgun",
         providerInstanceId,
+        tenantId,
+      },
+      {
+        adapterVersion: "0.1.0",
+        inboundBindingHint: resendInboundBindingId,
+        mode: "smtp_raw",
+        providerId: "resend",
+        providerInstanceId: resendProviderInstanceId,
+        tenantId,
+      },
+      {
+        adapterVersion: "0.1.0",
+        mode: "worker-frames-send-raw",
+        providerId: "cloudflare",
+        providerInstanceId: cloudflareProviderInstanceId,
         tenantId,
       },
     ],
@@ -572,8 +1072,12 @@ const makeConfig = (
     },
   });
 
-const waitFor = async (condition: () => Promise<boolean>, label: string): Promise<void> => {
-  const deadline = Date.now() + 30_000;
+const waitFor = async (
+  condition: () => Promise<boolean>,
+  label: string,
+  timeoutMilliseconds = 30_000,
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
     if (await condition()) return;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
@@ -584,20 +1088,85 @@ const waitFor = async (condition: () => Promise<boolean>, label: string): Promis
 const bearer = (token: string): Readonly<Record<string, string>> =>
   Object.freeze({ authorization: `Bearer ${token}` });
 
+const concatenate = (chunks: readonly Uint8Array[]): Uint8Array => {
+  const output = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
+};
+
+const cloudflareInboundWire = (raw: Uint8Array, observedAt: string): Uint8Array => {
+  const envelope = Object.freeze({
+    mailFrom: "sender@example.test",
+    rcptTo: `recipient@${cloudflareDomain}`,
+    schemaVersion: "v1" as const,
+  });
+  const bindingHint = "cloudflare-e2e-binding";
+  const rawDigest = cloudflareSha256(raw);
+  const common = Object.freeze({
+    audience: CLOUDFLARE_WORKER_INGRESS_AUDIENCE,
+    bindingHintDigest: cloudflareSha256(Buffer.from(bindingHint)),
+    envelopeDigest: sha256CanonicalJson(envelope),
+    keyId: "cloudflare-e2e-current",
+    nonce: encodeCloudflareBase64Url(Buffer.alloc(16, 7)),
+    protocol: "mail-edge-cloudflare-frame-v1" as const,
+    providerInstanceId: cloudflareProviderInstanceId,
+    rawSize: raw.byteLength,
+    receiptId: "018f4f6a-7b2c-7000-8000-000000000523",
+    timestamp: observedAt,
+  });
+  const firstUnsigned: CloudflareUnsignedFrameHeaderV1 = Object.freeze({
+    ...common,
+    bindingHint,
+    envelope,
+    final: false,
+    index: 0,
+    payloadBytes: raw.byteLength,
+    payloadDigest: rawDigest,
+    previousMac: null,
+  });
+  const first: CloudflareFrameHeaderV1 = Object.freeze({
+    ...firstUnsigned,
+    mac: signCloudflareFrameHeader(firstUnsigned, cloudflareWorkerSecret),
+  });
+  const finalUnsigned: CloudflareUnsignedFrameHeaderV1 = Object.freeze({
+    ...common,
+    final: true,
+    index: 1,
+    payloadBytes: 0,
+    payloadDigest: cloudflareSha256(new Uint8Array()),
+    previousMac: first.mac,
+    rawDigest,
+  });
+  const final: CloudflareFrameHeaderV1 = Object.freeze({
+    ...finalUnsigned,
+    mac: signCloudflareFrameHeader(finalUnsigned, cloudflareWorkerSecret),
+  });
+  const firstFrame = encodeCloudflareFrame(first, raw);
+  const finalFrame = encodeCloudflareFrame(final, new Uint8Array());
+  if (!firstFrame.ok || !finalFrame.ok) throw new TypeError("Cloudflare frame encoding failed.");
+  return concatenate([firstFrame.value, finalFrame.value]);
+};
+
 describe("shipped reference-service production composition", { concurrent: false }, () => {
   let postgres: StartedPostgreSqlContainer;
   let minio: StartedMinioContainer;
   let owner: Pool;
   let kms: Awaited<ReturnType<typeof startKms>>;
   let application: Awaited<ReturnType<typeof startApplication>>;
+  let providerProtocols: Awaited<ReturnType<typeof startProviderProtocols>>;
   let secretDirectory: string;
   let config: ReferenceServiceConfig;
   let host: ReferenceServiceHost | undefined;
   const smtp = new SimulatedSmtpConnector();
+  const resendSmtp = new LocalResendSmtpConnector();
   const mailgunHttp = new SimulatedMailgunHttpTransport();
 
   beforeAll(async () => {
-    [postgres, minio, kms, application] = await Promise.all([
+    [postgres, minio, kms, application, providerProtocols] = await Promise.all([
       new PostgreSqlContainer("postgres:17.6-alpine3.22")
         .withDatabase("mail_edge")
         .withUsername("mail_edge_owner")
@@ -609,6 +1178,7 @@ describe("shipped reference-service production composition", { concurrent: false
         .start(),
       startKms(),
       startApplication(),
+      startProviderProtocols(),
     ]);
     owner = new Pool({ connectionString: postgres.getConnectionUri() });
     const s3 = new S3Client({
@@ -635,6 +1205,8 @@ describe("shipped reference-service production composition", { concurrent: false
         "mailgun-api-key": "reference-e2e-mailgun-api-key",
         "mailgun-smtp-password": "reference-e2e-mailgun-smtp-password",
         "mailgun-webhook-key": webhookKey,
+        "cloudflare-api-token": "reference-e2e-cloudflare-api-token",
+        "cloudflare-worker-key": cloudflareWorkerSecret,
         "operator-token": "reference-e2e-operator-token-material",
         "postgres-migration": postgres.getConnectionUri(),
         "postgres-runtime": postgres.getConnectionUri(),
@@ -642,77 +1214,257 @@ describe("shipped reference-service production composition", { concurrent: false
         "s3-secret-key": minio.getPassword(),
         "sensitive-digest-key": "d".repeat(32),
         "sensitive-encryption-key": "e".repeat(32),
+        "resend-api-key": "reference-e2e-resend-api-key",
+        "resend-webhook-key": `whsec_${resendWebhookSecret.toString("base64")}`,
         "tenant-one-token": tenantToken,
         "tenant-two-token": otherTenantToken,
       }).map(([name, value]) => writeFile(join(secretDirectory, name), value, { mode: 0o600 })),
     );
     config = makeConfig(secretDirectory, minio, kms.port, application.port);
+    if (config.production === undefined) {
+      throw new TypeError("The E2E production configuration is missing.");
+    }
+    const invalidDnsConfig: unknown = {
+      ...config,
+      production: {
+        ...config.production,
+        cloudflare: config.production.cloudflare.map((cloudflare) => ({
+          ...cloudflare,
+          authoritativeDns: false,
+        })),
+      },
+    };
+    let invalidDnsError: unknown;
+    try {
+      parseReferenceServiceConfig(invalidDnsConfig);
+    } catch (cause) {
+      invalidDnsError = cause;
+    }
+    expect(invalidDnsError).toBeInstanceOf(ConfigurationError);
+    if (!(invalidDnsError instanceof ConfigurationError)) {
+      throw new TypeError("Cloudflare authoritative DNS policy did not fail closed.");
+    }
+    expect(invalidDnsError.issues).toContain(
+      "/production/cloudflare:authoritative_dns_and_mx_coexistence_required",
+    );
     const secrets = new DirectorySecretResolver(secretDirectory);
     const composition = await createReferenceServiceQualificationComposition(
       { clock: { now: () => new Date().toISOString() }, config, secrets },
       new AbortController().signal,
-      new Map([[providerInstanceId, { httpTransport: mailgunHttp, smtpConnector: smtp }]]),
+      Object.freeze({
+        mailgun: new Map([
+          [providerInstanceId, { httpTransport: mailgunHttp, smtpConnector: smtp }],
+        ]),
+        resend: new Map([
+          [
+            resendProviderInstanceId,
+            {
+              httpTransport: new LocalResendHttpTransport(providerProtocols.port),
+              rawDownloadTransport: new LocalResendRawDownloadTransport(providerProtocols.port),
+              smtpConnector: resendSmtp,
+            },
+          ],
+        ]),
+        cloudflare: new Map([
+          [cloudflareProviderInstanceId, new LocalCloudflareHttpTransport(providerProtocols.port)],
+        ]),
+      }),
     );
-    if (!composition.ok) throw composition.error;
+    if (!composition.ok) {
+      throw new TypeError(
+        `${composition.error.code}:${composition.error.message}:${JSON.stringify(composition.error.safeDetails)}:${String(composition.error.cause)}`,
+      );
+    }
     const created = await ReferenceServiceHost.create(
       config,
       new AbortController().signal,
       composition.value,
     );
-    if (!created.ok) throw created.error;
+    if (!created.ok) {
+      throw new TypeError(
+        `${created.error.code}:${created.error.message}:${JSON.stringify(created.error.safeDetails)}:${String(created.error.cause)}`,
+      );
+    }
     host = created.value;
     const started = await host.start(new AbortController().signal);
-    if (!started.ok) throw started.error;
+    if (!started.ok) {
+      throw new TypeError(
+        `${started.error.code}:${started.error.message}:${JSON.stringify(started.error.safeDetails)}:${String(started.error.cause)}`,
+      );
+    }
 
     const createdAt = "2026-08-14T00:00:00.000Z";
     await owner.query(
       "INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active'), ($2, 'active')",
       [tenantId, otherTenantId],
     );
-    await owner.query(
-      `INSERT INTO domain_claims
-        (tenant_id, domain_a_label, verification_method, verification_digest, verified_at)
-       VALUES ($1, $2, 'dns', decode(repeat('11', 32), 'hex'), $3)`,
-      [tenantId, domain, createdAt],
-    );
-    await owner.query(
-      `INSERT INTO provider_instances
-        (provider_instance_id, tenant_id, provider_id, secret_ref, config_ref, state)
-       VALUES ($1, $2, 'mailgun', 'secret://mailgun', 'config://mailgun', 'enabled')`,
-      [providerInstanceId, tenantId],
-    );
-    for (const [bindingId, direction, checkId] of [
-      [inboundBindingId, "inbound", "018f4f6a-7b2c-7000-8000-000000000506"],
-      [outboundBindingId, "outbound", "018f4f6a-7b2c-7000-8000-000000000507"],
-    ] as const) {
+    for (const configuredDomain of [domain, resendDomain, cloudflareDomain]) {
+      await owner.query(
+        `INSERT INTO domain_claims
+          (tenant_id, domain_a_label, verification_method, verification_digest, verified_at)
+         VALUES ($1, $2, 'dns', decode(repeat('11', 32), 'hex'), $3)`,
+        [tenantId, configuredDomain, createdAt],
+      );
+    }
+    for (const instance of [
+      { id: providerInstanceId, providerId: "mailgun" },
+      { id: resendProviderInstanceId, providerId: "resend" },
+      { id: cloudflareProviderInstanceId, providerId: "cloudflare" },
+    ]) {
+      await owner.query(
+        `INSERT INTO provider_instances
+          (provider_instance_id, tenant_id, provider_id, secret_ref, config_ref, state)
+         VALUES ($1, $2, $3, $4, $5, 'enabled')`,
+        [
+          instance.id,
+          tenantId,
+          instance.providerId,
+          `secret://${instance.providerId}`,
+          `config://${instance.providerId}`,
+        ],
+      );
+    }
+    for (const binding of [
+      {
+        bindingId: inboundBindingId,
+        checkId: "018f4f6a-7b2c-7000-8000-000000000506",
+        checkKind: "live_conformance",
+        configRevision: "e2e-v1",
+        descriptor: mailgunProviderDescriptor,
+        digest: capabilityDigest,
+        direction: "inbound",
+        dispatchTransport: "smtp",
+        domain,
+        mode: "smtp_raw",
+        providerId: "mailgun",
+        providerInstanceId,
+        providerResourceIds: { route: "e2e-inbound" },
+      },
+      {
+        bindingId: outboundBindingId,
+        checkId: "018f4f6a-7b2c-7000-8000-000000000507",
+        checkKind: "live_conformance",
+        configRevision: "e2e-v1",
+        descriptor: mailgunProviderDescriptor,
+        digest: capabilityDigest,
+        direction: "outbound",
+        dispatchTransport: "smtp",
+        domain,
+        mode: "smtp_raw",
+        providerId: "mailgun",
+        providerInstanceId,
+        providerResourceIds: { route: "e2e-outbound" },
+      },
+      {
+        bindingId: resendInboundBindingId,
+        configRevision: "resend-e2e-v1",
+        descriptor: resendProviderDescriptor,
+        digest: resendCapabilityDigest,
+        direction: "inbound",
+        dispatchTransport: "smtp",
+        domain: resendDomain,
+        mode: "smtp_raw",
+        providerId: "resend",
+        providerInstanceId: resendProviderInstanceId,
+        providerResourceIds: { webhook: "resend-e2e-inbound" },
+      },
+      {
+        bindingId: resendOutboundBindingId,
+        checkId: "018f4f6a-7b2c-7000-8000-000000000516",
+        checkKind: "capability",
+        configRevision: "resend-e2e-outbound-v1",
+        descriptor: resendProviderDescriptor,
+        digest: resendCapabilityDigest,
+        direction: "outbound",
+        dispatchTransport: "smtp",
+        domain: resendDomain,
+        mode: "smtp_raw",
+        providerId: "resend",
+        providerInstanceId: resendProviderInstanceId,
+        providerResourceIds: { smtp: "resend-e2e-outbound" },
+      },
+      {
+        bindingId: cloudflareInboundBindingId,
+        configRevision: "cloudflare-e2e-v1",
+        descriptor: cloudflareProviderDescriptor,
+        digest: cloudflareCapabilityDigest,
+        direction: "inbound",
+        dispatchTransport: "http",
+        domain: cloudflareDomain,
+        mode: "worker-frames-send-raw",
+        providerId: "cloudflare",
+        providerInstanceId: cloudflareProviderInstanceId,
+        providerResourceIds: { routingRule: "cloudflare-e2e-catch-all" },
+      },
+      {
+        bindingId: cloudflareOutboundBindingId,
+        checkId: "018f4f6a-7b2c-7000-8000-000000000526",
+        checkKind: "capability",
+        configRevision: "cloudflare-e2e-outbound-v1",
+        descriptor: cloudflareProviderDescriptor,
+        digest: cloudflareCapabilityDigest,
+        direction: "outbound",
+        dispatchTransport: "http",
+        domain: cloudflareDomain,
+        mode: "worker-frames-send-raw",
+        providerId: "cloudflare",
+        providerInstanceId: cloudflareProviderInstanceId,
+        providerResourceIds: { sendRaw: "cloudflare-e2e-outbound" },
+      },
+      {
+        bindingId: cloudflareReplacementBindingId,
+        checkId: "018f4f6a-7b2c-7000-8000-000000000528",
+        checkKind: "capability",
+        configRevision: "cloudflare-e2e-outbound-v2",
+        descriptor: cloudflareProviderDescriptor,
+        digest: cloudflareCapabilityDigest,
+        direction: "outbound",
+        dispatchTransport: "http",
+        domain: cloudflareDomain,
+        mode: "worker-frames-send-raw",
+        providerId: "cloudflare",
+        providerInstanceId: cloudflareProviderInstanceId,
+        providerResourceIds: { sendRaw: "cloudflare-e2e-outbound-v2" },
+        state: "testing",
+      },
+    ]) {
+      const state = "state" in binding ? binding.state : "active";
       await owner.query(
         `INSERT INTO route_bindings
           (binding_id, binding_version, tenant_id, domain_a_label, direction,
            provider_instance_id, provider_id, adapter_version, adapter_mode, dispatch_transport,
            secret_ref, config_ref, config_revision, capability_snapshot, capability_digest,
            provider_resource_ids, state, qualified_at, created_at, updated_at)
-         VALUES ($1, 1, $2, $3, $4, $5, 'mailgun', '0.1.0', 'smtp_raw', 'smtp',
-           'secret://mailgun', 'config://mailgun', 'e2e-v1', $6, decode($7, 'hex'), $8,
-           'active', $9, $9, $9)`,
+         VALUES ($1, 1, $2, $3, $4, $5, $6, '0.1.0', $7, $8,
+           $9, $10, $11, $12, decode($13, 'hex'), $14,
+           $15, $16, $16, $16)`,
         [
-          bindingId,
+          binding.bindingId,
           tenantId,
-          domain,
-          direction,
-          providerInstanceId,
-          JSON.stringify(mailgunProviderDescriptor),
-          capabilityDigest,
-          JSON.stringify({ route: `e2e-${direction}` }),
+          binding.domain,
+          binding.direction,
+          binding.providerInstanceId,
+          binding.providerId,
+          binding.mode,
+          binding.dispatchTransport,
+          `secret://${binding.providerId}`,
+          `config://${binding.providerId}`,
+          binding.configRevision,
+          JSON.stringify(binding.descriptor),
+          binding.digest,
+          JSON.stringify(binding.providerResourceIds),
+          state,
           createdAt,
         ],
       );
+      if (!("checkId" in binding)) continue;
       await owner.query(
         `INSERT INTO route_binding_checks
           (check_id, tenant_id, binding_id, binding_version, check_kind, outcome,
            report, report_digest, evidence_at, expires_at)
-         VALUES ($1, $2, $3, 1, 'live_conformance', 'pass', '{}',
-           decode(repeat('41', 32), 'hex'), $4, '2099-01-01')`,
-        [checkId, tenantId, bindingId, createdAt],
+         VALUES ($1, $2, $3, 1, $4, 'pass', '{"environment":"local_protocol"}',
+           decode(repeat('41', 32), 'hex'), $5, '2099-01-01')`,
+        [binding.checkId, tenantId, binding.bindingId, binding.checkKind, createdAt],
       );
     }
   }, 180_000);
@@ -725,6 +1477,7 @@ describe("shipped reference-service production composition", { concurrent: false
       minio.stop(),
       closeServer(kms.server),
       closeServer(application.server),
+      closeServer(providerProtocols.server),
     ]);
     await rm(secretDirectory, { force: true, recursive: true });
   });
@@ -755,7 +1508,21 @@ describe("shipped reference-service production composition", { concurrent: false
         headers: { "content-type": "application/x-www-form-urlencoded" },
         method: "POST",
       });
-      expect(result.status).toBe(202);
+      if (result.status !== 202) {
+        const bindings = await owner.query(
+          "SELECT * FROM route_bindings WHERE binding_id = $1 AND binding_version = 1",
+          [inboundBindingId],
+        );
+        const blobs = await owner.query(
+          "SELECT blob_id, status, size_bytes, encode(sha256, 'hex') AS sha256 FROM raw_blobs ORDER BY created_at DESC LIMIT 3",
+        );
+        const stages = await owner.query(
+          "SELECT stage_id, state, optimistic_version, final_object_key, final_object_version FROM blob_ingest_stages ORDER BY created_at DESC LIMIT 3",
+        );
+        throw new TypeError(
+          `Mailgun inbound failed with ${String(result.status)}: ${await result.text()} ${JSON.stringify({ bindings: bindings.rows, blobs: blobs.rows, stages: stages.rows })}`,
+        );
+      }
     }
     await waitFor(async () => {
       const result = await owner.query<{ count: number }>(
@@ -769,6 +1536,94 @@ describe("shipped reference-service production composition", { concurrent: false
       (await owner.query<{ count: number }>("SELECT count(*)::int AS count FROM inbound_receipts"))
         .rows[0]?.count,
     ).toBe(1);
+
+    const resendEventId = "resend-e2e-event-1";
+    const resendTimestamp = String(Math.floor(Date.now() / 1000));
+    const resendBody = Buffer.from(
+      JSON.stringify({
+        created_at: new Date().toISOString(),
+        data: { email_id: resendReceivedEmailId },
+        type: "email.received",
+      }),
+    );
+    const resendSignature = createHmac("sha256", resendWebhookSecret)
+      .update(`${resendEventId}.${resendTimestamp}.`)
+      .update(resendBody)
+      .digest("base64");
+    const resendInboundPath = `/v1/providers/resend/0.1.0/smtp_raw/instances/${resendProviderInstanceId}/inbound`;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await fetch(new URL(resendInboundPath, base), {
+        body: resendBody,
+        headers: {
+          "content-type": "application/json",
+          "svix-id": resendEventId,
+          "svix-signature": `v1,${resendSignature}`,
+          "svix-timestamp": resendTimestamp,
+        },
+        method: "POST",
+      });
+      expect(result.status).toBe(202);
+    }
+
+    const cloudflareRaw = Buffer.from(
+      `From: sender@example.test\r\nTo: recipient@${cloudflareDomain}\r\n` +
+        `Message-ID: <cloudflare-inbound@${cloudflareDomain}>\r\nSubject: inbound\r\n\r\nbody\r\n`,
+    );
+    const cloudflareObservedAt = new Date().toISOString();
+    const cloudflareIngress = await fetch(
+      new URL(
+        `/v1/providers/cloudflare/0.1.0/worker-frames-send-raw/instances/${cloudflareProviderInstanceId}/inbound`,
+        base,
+      ),
+      {
+        body: cloudflareInboundWire(cloudflareRaw, cloudflareObservedAt),
+        headers: { "content-type": CLOUDFLARE_WORKER_FRAME_CONTENT_TYPE },
+        method: "POST",
+      },
+    );
+    expect(cloudflareIngress.status).toBe(202);
+    try {
+      await waitFor(
+        async () => {
+          const result = await owner.query<{ count: number }>(
+            "SELECT count(*)::int AS count FROM inbound_deliveries WHERE state = 'delivered'",
+          );
+          return result.rows[0]?.count === 3;
+        },
+        "all-provider inbound application delivery",
+        5_000,
+      );
+    } catch (cause) {
+      const receipts = await owner.query(
+        "SELECT provider_instance_id, receipt_id, state, failure_count, last_error_code, next_action_at FROM inbound_receipts ORDER BY created_at",
+      );
+      throw new TypeError(
+        `${String(cause)} ${JSON.stringify({ providerCalls: providerProtocols.calls, receipts: receipts.rows })}`,
+      );
+    }
+    expect(
+      (await owner.query<{ count: number }>("SELECT count(*)::int AS count FROM inbound_receipts"))
+        .rows[0]?.count,
+    ).toBe(3);
+    expect(providerProtocols.calls).toContain(`GET /emails/receiving/${resendReceivedEmailId}`);
+    expect(providerProtocols.calls).toContain("GET /message.eml?signature=e2e");
+
+    const providersResponse = await fetch(new URL("/v1/operator/providers", base), {
+      headers: bearer("reference-e2e-operator-token-material"),
+    });
+    expect(providersResponse.status).toBe(200);
+    const providersBody = record(await providersResponse.json());
+    const providers = providersBody?.["providers"];
+    if (!Array.isArray(providers)) throw new TypeError("Provider response was malformed.");
+    expect(providers).toHaveLength(3);
+    const instancesResponse = await fetch(new URL("/v1/operator/provider-instances", base), {
+      headers: bearer("reference-e2e-operator-token-material"),
+    });
+    expect(instancesResponse.status).toBe(200);
+    const instancesBody = record(await instancesResponse.json());
+    const providerInstances = instancesBody?.["providerInstances"];
+    if (!Array.isArray(providerInstances)) throw new TypeError("Instance response was malformed.");
+    expect(providerInstances).toHaveLength(3);
 
     const unauthorized = await fetch(
       new URL(
@@ -841,6 +1696,203 @@ describe("shipped reference-service production composition", { concurrent: false
     }, "Mailgun Logs reconciliation acceptance");
     expect(mailgunHttp.queries.length).toBeGreaterThan(0);
     expect(smtp.sessions).toHaveLength(1);
+
+    const createProviderIntent = async (
+      providerDomain: string,
+      idempotencyKey: string,
+    ): Promise<string> => {
+      const rawMessage = Buffer.from(
+        `From: sender@${providerDomain}\r\nTo: recipient@example.net\r\n` +
+          `Message-ID: <${idempotencyKey}@${providerDomain}>\r\nSubject: outbound\r\n\r\nbody\r\n`,
+      );
+      const rawResponse = await fetch(new URL(`/v1/tenants/${tenantId}/raw-messages`, base), {
+        body: rawMessage,
+        headers: { ...bearer(tenantToken), "content-type": "message/rfc822" },
+        method: "POST",
+      });
+      expect(rawResponse.status).toBe(201);
+      const rawValue: unknown = await rawResponse.json();
+      const createdIntent = await fetch(new URL(`/v1/tenants/${tenantId}/outbound-intents`, base), {
+        body: JSON.stringify({
+          envelope: {
+            mailFrom: `sender@${providerDomain}`,
+            rcptTo: [{ address: "recipient@example.net" }],
+            schemaVersion: "v1",
+            smtpUtf8: false,
+          },
+          raw: rawValue,
+        }),
+        headers: {
+          ...bearer(tenantToken),
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        method: "POST",
+      });
+      expect(createdIntent.status).toBe(202);
+      const created = record(await createdIntent.json());
+      const intentId = created?.["intentId"];
+      if (typeof intentId !== "string") throw new TypeError("Provider intent ID was malformed.");
+      return intentId;
+    };
+
+    const cloudflareIntentId = await createProviderIntent(
+      cloudflareDomain,
+      "e2e-cloudflare-outbound",
+    );
+    await waitFor(async () => {
+      const result = await owner.query<{ state: string }>(
+        "SELECT state FROM outbound_intents WHERE intent_id = $1",
+        [cloudflareIntentId],
+      );
+      return result.rows[0]?.state === "provider_accepted";
+    }, "Cloudflare provider-selected outbound acceptance");
+    expect(providerProtocols.calls).toContain(
+      `POST /client/v4/accounts/${cloudflareAccountId}/email/sending/send_raw`,
+    );
+
+    const bindingCreatedAt = "2026-08-14T00:00:00.000Z";
+    const typedCloudflareProviderId = required(parseProviderId("cloudflare"));
+    const typedCloudflareInstanceId = required(
+      parseProviderInstanceId(cloudflareProviderInstanceId),
+    );
+    const typedOldCloudflareBindingId = required(parseBindingId(cloudflareOutboundBindingId));
+    const typedReplacementCloudflareBindingId = required(
+      parseBindingId(cloudflareReplacementBindingId),
+    );
+    const typedTenantId = required(parseTenantId(tenantId));
+    const oldCloudflareBinding = Object.freeze({
+      adapterMode: "worker-frames-send-raw",
+      adapterVersion: "0.1.0",
+      bindingId: typedOldCloudflareBindingId,
+      bindingVersion: 1,
+      capabilityDigest: cloudflareCapabilityDigest,
+      configRevision: "cloudflare-e2e-outbound-v1",
+      createdAt: bindingCreatedAt,
+      direction: "outbound",
+      dispatchTransport: "http",
+      domainALabel: cloudflareDomain,
+      fallbackEligible: false,
+      optimisticVersion: 0,
+      providerId: typedCloudflareProviderId,
+      providerInstanceId: typedCloudflareInstanceId,
+      providerResourceIds: { sendRaw: "cloudflare-e2e-outbound" },
+      schemaVersion: "v1",
+      state: "active",
+      tenantId: typedTenantId,
+      updatedAt: bindingCreatedAt,
+    }) satisfies RouteBindingV1;
+    const replacementCloudflareBinding = Object.freeze({
+      ...oldCloudflareBinding,
+      bindingId: typedReplacementCloudflareBindingId,
+      configRevision: "cloudflare-e2e-outbound-v2",
+      providerResourceIds: { sendRaw: "cloudflare-e2e-outbound-v2" },
+      state: "testing",
+    }) satisfies RouteBindingV1;
+    const switchedAt = new Date().toISOString();
+    const switched = activateExactBinding(
+      [oldCloudflareBinding, replacementCloudflareBinding],
+      typedReplacementCloudflareBindingId,
+      1,
+      0,
+      switchedAt,
+    );
+    if (!switched.ok) throw switched.error;
+    const drainingBinding = switched.value.find(
+      ({ bindingId }) => bindingId === cloudflareOutboundBindingId,
+    );
+    const activeBinding = switched.value.find(
+      ({ bindingId }) => bindingId === cloudflareReplacementBindingId,
+    );
+    expect(drainingBinding).toMatchObject({ optimisticVersion: 1, state: "draining" });
+    expect(activeBinding).toMatchObject({ optimisticVersion: 1, state: "active" });
+
+    const switchDatabase = await owner.connect();
+    try {
+      await switchDatabase.query("BEGIN");
+      const drained = await switchDatabase.query(
+        `UPDATE route_bindings
+         SET state = 'draining', optimistic_version = 1, draining_at = $4, updated_at = $4
+         WHERE tenant_id = $1 AND binding_id = $2 AND binding_version = 1
+           AND state = 'active' AND optimistic_version = $3`,
+        [tenantId, cloudflareOutboundBindingId, 0, switchedAt],
+      );
+      const activated = await switchDatabase.query(
+        `UPDATE route_bindings
+         SET state = 'active', optimistic_version = 1, activated_at = $4, updated_at = $4
+         WHERE tenant_id = $1 AND binding_id = $2 AND binding_version = 1
+           AND state = 'testing' AND optimistic_version = $3`,
+        [tenantId, cloudflareReplacementBindingId, 0, switchedAt],
+      );
+      if (drained.rowCount !== 1 || activated.rowCount !== 1) {
+        throw new TypeError("Exact Cloudflare binding switch lost its optimistic fence.");
+      }
+      await switchDatabase.query("COMMIT");
+    } catch (cause) {
+      await switchDatabase.query("ROLLBACK");
+      throw cause;
+    } finally {
+      switchDatabase.release();
+    }
+
+    const replacementIntentId = await createProviderIntent(
+      cloudflareDomain,
+      "e2e-cloudflare-outbound-after-switch",
+    );
+    await waitFor(async () => {
+      const result = await owner.query<{ state: string }>(
+        "SELECT state FROM outbound_intents WHERE intent_id = $1",
+        [replacementIntentId],
+      );
+      return result.rows[0]?.state === "provider_accepted";
+    }, "Cloudflare replacement binding acceptance");
+    const pinnedBindings = await owner.query<{ bindingId: string; intentId: string }>(
+      `SELECT intent_id AS "intentId", binding_id AS "bindingId"
+       FROM outbound_attempts WHERE intent_id = ANY($1::uuid[])`,
+      [[cloudflareIntentId, replacementIntentId]],
+    );
+    expect(
+      new Map(pinnedBindings.rows.map(({ bindingId, intentId }) => [intentId, bindingId])),
+    ).toEqual(
+      new Map([
+        [cloudflareIntentId, cloudflareOutboundBindingId],
+        [replacementIntentId, cloudflareReplacementBindingId],
+      ]),
+    );
+
+    if (drainingBinding === undefined) throw new TypeError("Draining binding is missing.");
+    const retiredAt = new Date().toISOString();
+    const retired = reduceBinding(
+      drainingBinding,
+      { expectedVersion: 1, type: "retire" },
+      retiredAt,
+    );
+    if (!retired.ok) throw retired.error;
+    const retiredRow = await owner.query(
+      `UPDATE route_bindings
+       SET state = 'retired', optimistic_version = 2, retired_at = $4, updated_at = $4
+       WHERE tenant_id = $1 AND binding_id = $2 AND binding_version = 1
+         AND state = 'draining' AND optimistic_version = $3`,
+      [tenantId, cloudflareOutboundBindingId, 1, retiredAt],
+    );
+    expect(retired.value).toMatchObject({ optimisticVersion: 2, state: "retired" });
+    expect(retiredRow.rowCount).toBe(1);
+
+    const resendIntentId = await createProviderIntent(resendDomain, "e2e-resend-outbound-gap");
+    await waitFor(async () => {
+      const result = await owner.query<{ state: string }>(
+        "SELECT state FROM outbound_intents WHERE intent_id = $1",
+        [resendIntentId],
+      );
+      return result.rows[0]?.state === "failed_not_sent";
+    }, "Resend host-bridge preflight failure");
+    expect(resendSmtp.sessions).toHaveLength(0);
+    const resendAttempt = await owner.query<{ certainty: string; lastErrorCode: string }>(
+      `SELECT certainty, last_error_code AS "lastErrorCode"
+       FROM outbound_attempts WHERE intent_id = $1 ORDER BY ordinal DESC LIMIT 1`,
+      [resendIntentId],
+    );
+    expect(resendAttempt.rows[0]).toMatchObject({ certainty: "not_sent" });
 
     const feedbackTimestamp = String(Math.floor(Date.now() / 1000));
     const feedbackToken = mailgunToken("feedback-e2e-delivered");

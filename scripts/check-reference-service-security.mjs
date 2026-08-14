@@ -120,9 +120,30 @@ const documentedOperations = Object.values(openapi?.paths ?? {}).flatMap((path) 
       typeof operation === "object" && operation !== null && "operationId" in operation,
   ),
 );
-if (documentedOperations.length !== 13) {
+const expectedOperationIds = [
+  "applyProviderBindingPlan",
+  "createOutboundIntent",
+  "deleteProviderBinding",
+  "discoverProviderBinding",
+  "getDegradedStatus",
+  "getInboundReceipt",
+  "getLiveness",
+  "getOutboundIntent",
+  "getReadiness",
+  "ingestProviderFeedback",
+  "ingestProviderMessage",
+  "listProviderInstances",
+  "listProviders",
+  "planProviderBinding",
+  "storeRawMessage",
+].toSorted();
+const documentedOperationIds = documentedOperations
+  .map((operation) => operation.operationId)
+  .filter((operationId) => typeof operationId === "string")
+  .toSorted();
+if (JSON.stringify(documentedOperationIds) !== JSON.stringify(expectedOperationIds)) {
   errors.push(
-    `Reference-service OpenAPI must document 13 operations; found ${String(documentedOperations.length)}.`,
+    `Reference-service OpenAPI operations differ: ${JSON.stringify(documentedOperationIds)}.`,
   );
 }
 

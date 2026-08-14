@@ -202,6 +202,8 @@ export interface ResendInboundAcquisitionClaim {
     // (undocumented)
     readonly binding: RouteBindingSnapshotV1;
     // (undocumented)
+    readonly fence: number;
+    // (undocumented)
     readonly providerInstanceId: ProviderInstanceId;
     // (undocumented)
     readonly receiptId: ReceiptId;
@@ -247,6 +249,7 @@ export interface ResendInboundMetadataPort {
     // (undocumented)
     commitAcquiredRaw(input: {
         readonly receiptId: ReceiptId;
+        readonly fence: number;
         readonly raw: RawMessageRefV1;
         readonly envelope: SmtpEnvelopeV1;
         readonly retrievalEvidenceDigest: string;
@@ -256,6 +259,7 @@ export interface ResendInboundMetadataPort {
     // (undocumented)
     recordAcquisitionFailure(input: {
         readonly receiptId: ReceiptId;
+        readonly fence: number;
         readonly disposition: "quarantine" | "retry_wait";
         readonly errorCode: MailEdgeError["code"];
     }, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;

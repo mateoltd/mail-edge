@@ -9,13 +9,13 @@
     "node": "24.19.0"
   },
   "scripts": {
-    "build": "wrangler deploy --dry-run --env staging --outdir dist/staging && wrangler deploy --dry-run --env production --outdir dist/production",
-    "deploy:dry-run": "wrangler deploy --dry-run --env staging && wrangler deploy --dry-run --env production",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "deploy:dry-run": "wrangler deploy --dry-run",
     "lint": "eslint src test vitest.config.mjs --max-warnings 0",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "types:check": "wrangler types --env staging --check worker-configuration.d.ts",
-    "types:generate": "wrangler types --env staging worker-configuration.d.ts"
+    "types:check": "wrangler types --check worker-configuration.d.ts",
+    "types:generate": "wrangler types worker-configuration.d.ts"
   },
   "dependencies": {
     "@mail-edge/contracts": "workspace:^"
