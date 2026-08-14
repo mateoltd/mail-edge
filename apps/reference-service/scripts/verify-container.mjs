@@ -98,6 +98,7 @@ const compose = (...arguments_) =>
 const config = {
   authentication: {
     operatorTokenSecrets: ["secret://operator-token"],
+    privilegedOperatorTokenSecrets: ["secret://privileged-operator-token"],
     tenants: [
       {
         tenantId: "018f4f6a-7b2c-7000-8000-000000000901",
@@ -146,12 +147,14 @@ const config = {
   production: {
     hostIntegration: [
       {
+        audience: "simplelogin-host",
         deliveryUrl: "https://host.invalid/delivery",
         feedbackUrl: "https://host.invalid/feedback",
         maximumResponseBytes: 65536,
         recipientRouterUrl: "https://host.invalid/recipients",
         reverseRouteUrl: "https://host.invalid/reverse-route",
         signingSecret: "secret://host-signing-key",
+        signingKeyId: "host-key-2026-08",
         tenantId: "018f4f6a-7b2c-7000-8000-000000000901",
         timeoutMilliseconds: 5000,
       },
@@ -313,6 +316,11 @@ try {
       {
         mode: 0o600,
       },
+    ),
+    writeFile(
+      join(secretDirectory, "privileged-operator-token"),
+      "container-privileged-operator-token-at-least-32-bytes",
+      { mode: 0o600 },
     ),
     writeFile(join(secretDirectory, "postgres-migration"), postgresUri, { mode: 0o600 }),
     writeFile(join(secretDirectory, "postgres-runtime"), postgresUri, { mode: 0o600 }),

@@ -31,6 +31,7 @@ export type {
   CreateOutboundIntentInput,
   DurableRuntimeStore,
   FeedbackApplicationClaim,
+  ReverseRoutePreparationPort,
   FeedbackCommitResult,
   FeedbackWorkflowWriter,
   InboundFinalizationCommit,

@@ -117,6 +117,22 @@ export const VerifiedInboundReceiptV1Schema = Type.Object(
 /** @public */
 export type VerifiedInboundReceiptV1 = DeepReadonly<Static<typeof VerifiedInboundReceiptV1Schema>>;
 
+/** Exact opaque application destination returned by the host router. @public */
+export const ApplicationDestinationV1Schema = Type.Object(
+  {
+    destinationId: Type.String({ maxLength: 256, minLength: 1 }),
+    deliveryMode: Type.Union([Type.Literal("push"), Type.Literal("pull")]),
+    opaqueToken: Type.String({ maxLength: 4096, minLength: 1 }),
+  },
+  {
+    $id: "urn:mail-edge:schema:v1:application-destination",
+    additionalProperties: false,
+  },
+);
+
+/** @public */
+export type ApplicationDestinationV1 = DeepReadonly<Static<typeof ApplicationDestinationV1Schema>>;
+
 /** @public */
 export const ApplicationDeliveryV1Schema = Type.Object(
   {
@@ -126,6 +142,7 @@ export const ApplicationDeliveryV1Schema = Type.Object(
     tenantId: schemaRef(TenantIdSchema),
     envelope: schemaRef(SmtpEnvelopeV1Schema),
     raw: schemaRef(RawMessageRefV1Schema),
+    destination: schemaRef(ApplicationDestinationV1Schema),
     binding: schemaRef(RouteBindingSnapshotV1Schema),
     attempt: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
     occurredAt: schemaRef(Rfc3339TimestampSchema),
@@ -347,12 +364,28 @@ export const RawAccessGrantV1Schema = Type.Object(
     tenantId: schemaRef(TenantIdSchema),
     raw: schemaRef(RawMessageRefV1Schema),
     audience: Type.String({ maxLength: 128, minLength: 1 }),
+    operation: Type.Literal("raw_download"),
+    subjectId: Type.String({
+      maxLength: 128,
+      minLength: 1,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+    }),
     purpose: Type.Union([
       Type.Literal("application_delivery"),
       Type.Literal("operator_review"),
       Type.Literal("reconciliation"),
     ]),
     singleUse: Type.Boolean(),
+    opaqueToken: Type.String({
+      maxLength: 128,
+      minLength: 43,
+      pattern: "^[A-Za-z0-9_-]{43,128}$",
+    }),
+    downloadPath: Type.String({
+      maxLength: 256,
+      minLength: 1,
+      pattern: "^/v1/raw-access-grants/[0-9a-f-]{36}/raw$",
+    }),
     issuedAt: schemaRef(Rfc3339TimestampSchema),
     expiresAt: schemaRef(Rfc3339TimestampSchema),
   },
@@ -364,6 +397,24 @@ export const RawAccessGrantV1Schema = Type.Object(
 
 /** @public */
 export type RawAccessGrantV1 = DeepReadonly<Static<typeof RawAccessGrantV1Schema>>;
+
+/** Signed application-delivery callback body carrying an exact durable destination and raw grant. @public */
+export const ApplicationDeliveryCallbackV1Schema = Type.Object(
+  {
+    schemaVersion: Type.Literal("v1"),
+    delivery: schemaRef(ApplicationDeliveryV1Schema),
+    rawAccessGrant: schemaRef(RawAccessGrantV1Schema),
+  },
+  {
+    $id: "urn:mail-edge:schema:v1:application-delivery-callback",
+    additionalProperties: false,
+  },
+);
+
+/** @public */
+export type ApplicationDeliveryCallbackV1 = DeepReadonly<
+  Static<typeof ApplicationDeliveryCallbackV1Schema>
+>;
 
 /** @public */
 export const IdempotencyRecordV1Schema = Type.Object(

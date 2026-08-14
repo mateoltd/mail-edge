@@ -20,6 +20,10 @@
     {
       "name": "0005_durable_runtime_orchestration.sql",
       "sha256": "e347eaa841a728b1b9f0718a2dab3e9d3f1c03ebf6c3cf578a3ea7919365fa0f"
+    },
+    {
+      "name": "0006_host_bridge_contracts.sql",
+      "sha256": "1446b30c5ddc01e6cf555861bb43d87b9cc83f2b2d2e2a782606821f09420fc4"
     }
   ]
 }

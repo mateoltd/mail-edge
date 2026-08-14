@@ -8,6 +8,12 @@
       "minLength": 1,
       "type": "string"
     },
+    "downloadPath": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^/v1/raw-access-grants/[0-9a-f-]{36}/raw$",
+      "type": "string"
+    },
     "expiresAt": {
       "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
     },
@@ -16,6 +22,16 @@
     },
     "issuedAt": {
       "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "opaqueToken": {
+      "maxLength": 128,
+      "minLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43,128}$",
+      "type": "string"
+    },
+    "operation": {
+      "const": "raw_download",
+      "type": "string"
     },
     "purpose": {
       "anyOf": [
@@ -43,6 +59,12 @@
     "singleUse": {
       "type": "boolean"
     },
+    "subjectId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+      "type": "string"
+    },
     "tenantId": {
       "$ref": "urn:mail-edge:schema:v1:tenant-id"
     }
@@ -53,8 +75,12 @@
     "tenantId",
     "raw",
     "audience",
+    "operation",
+    "subjectId",
     "purpose",
     "singleUse",
+    "opaqueToken",
+    "downloadPath",
     "issuedAt",
     "expiresAt"
   ],

@@ -9,6 +9,7 @@ import type {
   ApplicationDeliverySink,
   Clock,
   IdGenerator,
+  RawAccessGrantIssuer,
   RecipientRouter,
   TenantUnitOfWorkFactory,
   WakeupScheduler,
@@ -240,6 +241,7 @@ export class DurableApplicationDeliveryWorker {
   readonly #limiter: BoundedWorkLimiter;
   readonly #locator: WorkflowTenantLocator;
   readonly #observability: RuntimeObservabilityPort;
+  readonly #rawAccessGrants: RawAccessGrantIssuer;
   readonly #sink: ApplicationDeliverySink;
   readonly #store: ApplicationDeliveryWriter;
   readonly #transactions: TenantUnitOfWorkFactory;
@@ -251,6 +253,7 @@ export class DurableApplicationDeliveryWorker {
     readonly limiter: BoundedWorkLimiter;
     readonly locator: WorkflowTenantLocator;
     readonly observability: RuntimeObservabilityPort;
+    readonly rawAccessGrants: RawAccessGrantIssuer;
     readonly sink: ApplicationDeliverySink;
     readonly store: ApplicationDeliveryWriter;
     readonly transactions: TenantUnitOfWorkFactory;
@@ -262,6 +265,7 @@ export class DurableApplicationDeliveryWorker {
     this.#limiter = input.limiter;
     this.#locator = input.locator;
     this.#observability = input.observability;
+    this.#rawAccessGrants = input.rawAccessGrants;
     this.#sink = input.sink;
     this.#store = input.store;
     this.#transactions = input.transactions;
@@ -305,7 +309,20 @@ export class DurableApplicationDeliveryWorker {
         return claim.ok ? { ok: true, value: undefined } : claim;
       }
       const deliveryClaim = claim.value;
-      const delivered = await this.#sink.deliver(deliveryClaim.delivery, signal);
+      const rawAccessGrant = await this.#rawAccessGrants.issueForApplicationDelivery(
+        deliveryClaim.delivery,
+        signal,
+      );
+      const delivered = rawAccessGrant.ok
+        ? await this.#sink.deliver(
+            Object.freeze({
+              delivery: deliveryClaim.delivery,
+              rawAccessGrant: rawAccessGrant.value,
+              schemaVersion: "v1" as const,
+            }),
+            signal,
+          )
+        : rawAccessGrant;
       const decision = delivered.ok
         ? undefined
         : decideRetry(

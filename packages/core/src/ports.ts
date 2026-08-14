@@ -1,12 +1,14 @@
 import type {
   AuditEventV1,
   ApplicationDeliveryV1,
+  ApplicationDeliveryCallbackV1,
+  ApplicationDestinationV1,
+  ApplicationAckV1 as ContractApplicationAckV1,
   ApplicationDeliveryState,
   ApplicationFeedbackV1,
   AttemptId,
   BindingState,
   BlobId,
-  DeliveryId,
   HeaderPatchPlanV1,
   IdempotencyRecordV1,
   IdempotencyKey,
@@ -21,10 +23,13 @@ import type {
   ProviderCapabilityDescriptorV1,
   ProviderId,
   RawMessageRefV1,
+  RawAccessGrantV1,
   RawMessageStream,
   RecipientTransportState,
   ReceiptId,
   Result,
+  ReverseRouteRequestV1 as ContractReverseRouteRequestV1,
+  ReverseRouteResolutionV1 as ContractReverseRouteResolutionV1,
   RouteBindingSnapshotV1,
   SmtpEnvelopeV1,
   TenantId,
@@ -245,13 +250,6 @@ export interface ProviderRegistryPort {
 }
 
 /** @public */
-export interface ApplicationDestinationV1 {
-  readonly destinationId: string;
-  readonly deliveryMode: "push" | "pull";
-  readonly opaqueToken: string;
-}
-
-/** @public */
 export interface RecipientRouter {
   resolveRecipients(
     input: {
@@ -264,19 +262,10 @@ export interface RecipientRouter {
 }
 
 /** @public */
-export interface ReverseRouteRequestV1 {
-  readonly tenantId: TenantId;
-  readonly envelope: SmtpEnvelopeV1;
-  readonly raw: RawMessageRefV1;
-  readonly opaqueReplyToken: string;
-}
+export type ReverseRouteRequestV1 = ContractReverseRouteRequestV1;
 
 /** @public */
-export interface ReverseRouteResolutionV1 {
-  readonly envelope: SmtpEnvelopeV1;
-  readonly visibleHeaderFields: readonly string[];
-  readonly policyCode: string;
-}
+export type ReverseRouteResolutionV1 = ContractReverseRouteResolutionV1;
 
 /** @public */
 export interface ReverseRouteResolver {
@@ -295,21 +284,26 @@ export interface HeaderPatchPlanner {
 }
 
 /** @public */
-export interface ApplicationAckV1 {
-  readonly deliveryId: DeliveryId;
-  readonly acceptedAt: string;
-}
+export type ApplicationAckV1 = ContractApplicationAckV1;
 
 /** @public */
 export interface ApplicationDeliverySink {
   deliver(
-    input: ApplicationDeliveryV1,
+    input: ApplicationDeliveryCallbackV1,
     signal: AbortSignal,
   ): Promise<Result<ApplicationAckV1, MailEdgeError>>;
   deliverFeedback(
     input: ApplicationFeedbackV1,
     signal: AbortSignal,
   ): Promise<Result<ApplicationAckV1, MailEdgeError>>;
+}
+
+/** Durable raw grant issuer used before a host callback crosses the side-effect boundary. @public */
+export interface RawAccessGrantIssuer {
+  issueForApplicationDelivery(
+    delivery: ApplicationDeliveryV1,
+    signal: AbortSignal,
+  ): Promise<Result<RawAccessGrantV1, MailEdgeError>>;
 }
 
 /** @public */
@@ -374,6 +368,7 @@ export interface OutboundIntentPort {
       readonly raw: RawMessageRefV1;
       readonly envelope: SmtpEnvelopeV1;
       readonly idempotencyKey: IdempotencyKey;
+      readonly opaqueReplyToken?: string;
     },
     signal: AbortSignal,
   ): Promise<Result<OutboundIntentV1, MailEdgeError>>;

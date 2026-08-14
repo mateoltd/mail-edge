@@ -16,6 +16,7 @@
     { "path": "../../packages/blob-s3" },
     { "path": "../../packages/queue-pg-boss" },
     { "path": "../../packages/mime" },
+    { "path": "../../packages/observability" },
     { "path": "../../packages/sdk" }
   ]
 }

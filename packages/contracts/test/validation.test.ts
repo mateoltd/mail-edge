@@ -36,7 +36,7 @@ describe("strict runtime schemas", () => {
 
   it("registers every schema in strict Ajv without warnings or missing references", () => {
     const validator = createContractValidator();
-    expect(contractSchemas).toHaveLength(47);
+    expect(contractSchemas).toHaveLength(62);
     expect(validator.validate(SmtpEnvelopeV1Schema, validEnvelope).ok).toBe(true);
   });
 

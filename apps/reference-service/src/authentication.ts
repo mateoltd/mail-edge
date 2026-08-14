@@ -10,14 +10,34 @@ import type { SecretResolver } from "@mail-edge/core";
 
 import type { ReferenceServiceConfig } from "./config.js";
 import { hostError } from "./errors.js";
-import type { AuthenticatedActor } from "./ports.js";
+import type { AuthenticatedActor, AuthScope } from "./ports.js";
 import { resolveSecretText } from "./secrets.js";
 
 interface TokenIdentity {
   readonly digest: Uint8Array;
   readonly role: "operator" | "tenant";
+  readonly scopes: readonly AuthScope[];
   readonly tenantId?: TenantId;
 }
+
+const operatorScopes: readonly AuthScope[] = Object.freeze([
+  "bindings.manage",
+  "bindings.read",
+  "providers.read",
+  "quarantine.decide",
+  "quarantine.read",
+]);
+const privilegedOperatorScopes: readonly AuthScope[] = Object.freeze([
+  ...operatorScopes,
+  "quarantine.retry",
+]);
+const tenantScopes: readonly AuthScope[] = Object.freeze([
+  "bindings.read",
+  "mail.status.read",
+  "mail.submit",
+  "quarantine.read",
+  "raw.read",
+]);
 
 const digest = (value: string): Uint8Array => createHash("sha256").update(value).digest();
 
@@ -41,7 +61,18 @@ export class StaticTokenAuthenticator {
     if (this.#started) throw new Error("Token authenticator is already started.");
     const identities: TokenIdentity[] = [];
     for (const reference of this.#config.operatorTokenSecrets) {
-      const loaded = await this.#load(reference, "operator", undefined, signal);
+      const loaded = await this.#load(reference, "operator", operatorScopes, undefined, signal);
+      if (!loaded.ok) return loaded;
+      identities.push(loaded.value);
+    }
+    for (const reference of this.#config.privilegedOperatorTokenSecrets) {
+      const loaded = await this.#load(
+        reference,
+        "operator",
+        privilegedOperatorScopes,
+        undefined,
+        signal,
+      );
       if (!loaded.ok) return loaded;
       identities.push(loaded.value);
     }
@@ -50,7 +81,7 @@ export class StaticTokenAuthenticator {
       if (!parsed.ok)
         return { error: hostError("INTERNAL", "configured_tenant_invalid"), ok: false };
       for (const reference of tenant.tokenSecrets) {
-        const loaded = await this.#load(reference, "tenant", parsed.value, signal);
+        const loaded = await this.#load(reference, "tenant", tenantScopes, parsed.value, signal);
         if (!loaded.ok) return loaded;
         identities.push(loaded.value);
       }
@@ -76,6 +107,7 @@ export class StaticTokenAuthenticator {
   authenticate(
     authorization: string | undefined,
     requiredRole: "operator" | "tenant",
+    requiredScope: AuthScope,
     expectedTenantId?: TenantId,
   ): Result<AuthenticatedActor, MailEdgeError> {
     if (!this.#started || !authorization?.startsWith("Bearer ")) {
@@ -97,11 +129,13 @@ export class StaticTokenAuthenticator {
     if (requiredRole === "tenant" && matched.tenantId !== expectedTenantId) {
       return authorizationFailure();
     }
+    if (!matched.scopes.includes(requiredScope)) return authorizationFailure();
     return {
       ok: true,
       value: Object.freeze({
         actorIdHash: Buffer.from(matched.digest).toString("hex"),
         role: matched.role,
+        scopes: matched.scopes,
         ...(matched.tenantId === undefined ? {} : { tenantId: matched.tenantId }),
       }),
     };
@@ -110,6 +144,7 @@ export class StaticTokenAuthenticator {
   async #load(
     reference: string,
     role: "operator" | "tenant",
+    scopes: readonly AuthScope[],
     tenantId: TenantId | undefined,
     signal: AbortSignal,
   ): Promise<Result<TokenIdentity, MailEdgeError>> {
@@ -123,6 +158,7 @@ export class StaticTokenAuthenticator {
       value: Object.freeze({
         digest: digest(resolved.value),
         role,
+        scopes,
         ...(tenantId === undefined ? {} : { tenantId }),
       }),
     };

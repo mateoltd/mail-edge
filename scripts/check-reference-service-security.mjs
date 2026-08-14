@@ -120,9 +120,9 @@ const documentedOperations = Object.values(openapi?.paths ?? {}).flatMap((path) 
       typeof operation === "object" && operation !== null && "operationId" in operation,
   ),
 );
-if (documentedOperations.length !== 13) {
+if (documentedOperations.length !== 22) {
   errors.push(
-    `Reference-service OpenAPI must document 13 operations; found ${String(documentedOperations.length)}.`,
+    `Reference-service OpenAPI must document 22 operations; found ${String(documentedOperations.length)}.`,
   );
 }
 

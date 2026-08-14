@@ -1,4 +1,5 @@
 import {
+  type ApplicationDestinationV1,
   MailEdgeError,
   type ReceiptId,
   type Result,
@@ -8,7 +9,7 @@ import {
 
 import { sha256CanonicalJson } from "./canonical-json.js";
 import { canonicalizeSmtpEnvelope } from "./envelope.js";
-import type { ApplicationDestinationV1, RecipientRouter } from "./ports.js";
+import type { RecipientRouter } from "./ports.js";
 
 /** @public */
 export interface RecipientRoutePlan {

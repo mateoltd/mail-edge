@@ -150,6 +150,16 @@ export interface RawBlobTable {
 }
 
 /** @public */
+export interface RawBlobDerivationTable {
+  readonly tenantId: string;
+  readonly derivedBlobId: string;
+  readonly sourceBlobId: string;
+  readonly patchPlan: JsonObject;
+  readonly patchPlanDigest: Uint8Array;
+  readonly createdAt: Timestamp;
+}
+
+/** @public */
 export interface OutboundIntentTable {
   readonly intentId: string;
   readonly tenantId: string;
@@ -416,6 +426,50 @@ export interface ProviderFeedbackEventTable {
   readonly eventCiphertext: Generated<Uint8Array | null>;
   readonly applicationFence: Generated<string>;
   readonly claimedUntil: GeneratedNullableTimestamp;
+  readonly applicationNextActionAt: GeneratedNullableTimestamp;
+  readonly applicationFailureCount: Generated<number>;
+  readonly applicationAcknowledgement: Generated<JsonObject | null>;
+  readonly applicationTerminalAt: GeneratedNullableTimestamp;
+  readonly applicationLastErrorCode: Generated<string | null>;
+}
+
+/** @public */
+export interface RawAccessGrantTable {
+  readonly grantId: string;
+  readonly tenantId: string;
+  readonly blobId: string;
+  readonly audience: string;
+  readonly operation: ColumnType<string, "raw_download", "raw_download">;
+  readonly subjectId: string;
+  readonly purpose: "application_delivery" | "operator_review" | "reconciliation";
+  readonly tokenHash: Uint8Array;
+  readonly singleUse: boolean;
+  readonly state: "active" | "consumed" | "revoked" | "expired";
+  readonly fence: Generated<string>;
+  readonly issuedAt: Timestamp;
+  readonly expiresAt: Timestamp;
+  readonly consumedAt: Timestamp | null;
+  readonly revokedAt: Timestamp | null;
+  readonly lastAuthorizedAt: Timestamp | null;
+  readonly createdAt: GeneratedTimestamp;
+  readonly updatedAt: GeneratedTimestamp;
+}
+
+/** @public */
+export interface QuarantineControlDecisionTable {
+  readonly decisionId: string;
+  readonly tenantId: string;
+  readonly workflowType: "inbound_receipt" | "outbound_intent";
+  readonly workflowId: string;
+  readonly attemptId: string | null;
+  readonly action:
+    "release" | "terminal" | "resolve_accepted" | "resolve_not_sent" | "authorize_retry";
+  readonly evidence: JsonObject;
+  readonly reasonCode: string;
+  readonly actorIdHash: Uint8Array;
+  readonly expectedVersion: string;
+  readonly expectedFence: string | null;
+  readonly createdAt: GeneratedTimestamp;
 }
 
 /** @public */
@@ -458,6 +512,7 @@ export interface MailEdgeDatabase {
   readonly routeBindingChecks: RouteBindingCheckTable;
   readonly blobIngestStages: BlobIngestStageTable;
   readonly rawBlobs: RawBlobTable;
+  readonly rawBlobDerivations: RawBlobDerivationTable;
   readonly outboundIntents: OutboundIntentTable;
   readonly outboundAttempts: OutboundAttemptTable;
   readonly outboundAttemptRecipients: OutboundAttemptRecipientTable;
@@ -473,6 +528,8 @@ export interface MailEdgeDatabase {
   readonly auditEvents: AuditEventTable;
   readonly providerFeedbackEvents: ProviderFeedbackEventTable;
   readonly providerFeedbackDedup: ProviderFeedbackDedupTable;
+  readonly rawAccessGrants: RawAccessGrantTable;
+  readonly quarantineControlDecisions: QuarantineControlDecisionTable;
   readonly webhookReplayNonces: WebhookReplayNonceTable;
   readonly workflowWakeupWatermarks: WorkflowWakeupWatermarkTable;
 }

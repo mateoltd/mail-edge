@@ -32,6 +32,7 @@
     "@mail-edge/contracts": "workspace:^",
     "@mail-edge/core": "workspace:^",
     "@mail-edge/mime": "workspace:^",
+    "@mail-edge/observability": "workspace:^",
     "@mail-edge/postgres": "workspace:^",
     "@mail-edge/provider": "workspace:^",
     "@mail-edge/provider-mailgun": "workspace:^",

@@ -13,6 +13,9 @@
     { "path": "packages/provider-mailgun" },
     { "path": "packages/mime" },
     { "path": "packages/sdk" },
+    { "path": "packages/http-client" },
+    { "path": "packages/smtp-bridge" },
+    { "path": "packages/observability" },
     { "path": "apps/reference-service" }
   ]
 }

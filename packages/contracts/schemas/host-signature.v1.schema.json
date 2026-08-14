@@ -1,0 +1,84 @@
+{
+  "$id": "urn:mail-edge:schema:v1:host-signature",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "algorithm": {
+      "const": "hmac-sha256",
+      "type": "string"
+    },
+    "audience": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+      "type": "string"
+    },
+    "bodySha256": {
+      "$ref": "urn:mail-edge:schema:v1:sha256"
+    },
+    "keyId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+      "type": "string"
+    },
+    "nonce": {
+      "maxLength": 128,
+      "minLength": 16,
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "type": "string"
+    },
+    "operation": {
+      "anyOf": [
+        {
+          "const": "application_delivery",
+          "type": "string"
+        },
+        {
+          "const": "application_feedback",
+          "type": "string"
+        },
+        {
+          "const": "recipient_route",
+          "type": "string"
+        },
+        {
+          "const": "reverse_route",
+          "type": "string"
+        }
+      ]
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "signature": {
+      "maxLength": 43,
+      "minLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "type": "string"
+    },
+    "subjectId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+      "type": "string"
+    },
+    "timestamp": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "algorithm",
+    "keyId",
+    "audience",
+    "subjectId",
+    "nonce",
+    "bodySha256",
+    "operation",
+    "timestamp",
+    "signature"
+  ],
+  "type": "object"
+}

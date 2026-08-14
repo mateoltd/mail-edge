@@ -64,6 +64,7 @@
   },
   "authentication": {
     "operatorTokenSecrets": ["secret://operator-token"],
+    "privilegedOperatorTokenSecrets": ["secret://privileged-operator-token"],
     "tenants": [
       {
         "tenantId": "018f4f6a-7b2c-7000-8000-000000000001",
@@ -129,6 +130,7 @@
         "deliveryUrl": "https://application.example.test/mail-edge/delivery",
         "feedbackUrl": "https://application.example.test/mail-edge/feedback",
         "signingSecret": "secret://host-signing-key",
+        "signingKeyId": "host-key-2026-08",
         "timeoutMilliseconds": 10000,
         "maximumResponseBytes": 65536
       }

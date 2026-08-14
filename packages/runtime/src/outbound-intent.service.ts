@@ -17,6 +17,7 @@ import { assertDurableRuntimeConfig, type DurableRuntimeConfig } from "./policy.
 import type {
   CreateOutboundIntentInput,
   OutboundIntentWriter,
+  ReverseRoutePreparationPort,
   RuntimeObservabilityPort,
 } from "./ports.js";
 
@@ -34,6 +35,7 @@ export class DurableOutboundIntentService implements OutboundIntentPort {
   readonly #config: DurableRuntimeConfig;
   readonly #ids: IdGenerator;
   readonly #observability: RuntimeObservabilityPort;
+  readonly #reverseRoutes: ReverseRoutePreparationPort;
   readonly #store: OutboundIntentWriter;
   readonly #transactions: TenantUnitOfWorkFactory;
   readonly #wakeups: WakeupScheduler;
@@ -43,6 +45,7 @@ export class DurableOutboundIntentService implements OutboundIntentPort {
     readonly config: DurableRuntimeConfig;
     readonly ids: IdGenerator;
     readonly observability: RuntimeObservabilityPort;
+    readonly reverseRoutes: ReverseRoutePreparationPort;
     readonly store: OutboundIntentWriter;
     readonly transactions: TenantUnitOfWorkFactory;
     readonly wakeups: WakeupScheduler;
@@ -52,24 +55,51 @@ export class DurableOutboundIntentService implements OutboundIntentPort {
     this.#config = input.config;
     this.#ids = input.ids;
     this.#observability = input.observability;
+    this.#reverseRoutes = input.reverseRoutes;
     this.#store = input.store;
     this.#transactions = input.transactions;
     this.#wakeups = input.wakeups;
   }
 
   async createIntent(
-    input: CreateOutboundIntentInput,
+    input: Parameters<OutboundIntentPort["createIntent"]>[0],
     callerSignal: AbortSignal,
   ): Promise<Result<OutboundIntentV1, MailEdgeError>> {
     const started = performance.now();
     const intentId = parseIntentId(this.#ids.next());
     if (!intentId.ok) return { error: invalidId(), ok: false };
     const signal = operationSignal(callerSignal, this.#config.operationTimeoutMilliseconds);
+    const prepared =
+      input.opaqueReplyToken === undefined
+        ? {
+            ok: true as const,
+            value: Object.freeze({ envelope: input.envelope, transmissionRaw: input.raw }),
+          }
+        : await this.#reverseRoutes.prepare(
+            {
+              envelope: input.envelope,
+              opaqueReplyToken: input.opaqueReplyToken,
+              raw: input.raw,
+              tenantId: input.tenantId,
+            },
+            signal,
+          );
+    if (!prepared.ok) return prepared;
+    const durableInput: CreateOutboundIntentInput = Object.freeze({
+      envelope: prepared.value.envelope,
+      idempotencyKey: input.idempotencyKey,
+      raw: input.raw,
+      tenantId: input.tenantId,
+      transmissionRaw: prepared.value.transmissionRaw,
+      ...("planDigest" in prepared.value
+        ? { reverseRoutePlanDigest: prepared.value.planDigest }
+        : {}),
+    });
     const result = await this.#transactions
       .forTenant(input.tenantId)
       .execute(async (context, transactionSignal) => {
         const created = await this.#store.createOutboundIntent(
-          input,
+          durableInput,
           intentId.value,
           this.#clock.now(),
           context,

@@ -11,13 +11,17 @@ if (!grantId.ok) throw new Error("Fixture grant identifier is invalid.");
 const grant = (expiresAt: string): RawAccessGrantV1 =>
   Object.freeze({
     audience: "application-callback",
+    downloadPath: `/v1/raw-access-grants/${grantId.value}/raw`,
     expiresAt,
     grantId: grantId.value,
     issuedAt: "2026-08-13T08:00:00Z",
+    opaqueToken: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    operation: "raw_download",
     purpose: "application_delivery",
     raw,
     schemaVersion: "v1",
     singleUse: true,
+    subjectId: "01890f31-9f42-7cc2-8e45-9234567890aa",
     tenantId,
   });
 

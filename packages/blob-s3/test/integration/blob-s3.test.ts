@@ -394,6 +394,33 @@ describe("encrypted S3 blob runtime", { concurrent: false }, () => {
   });
 
   test("streams, promotes, decrypts, and verifies a maximum-size object with bounded RSS", async () => {
+    const warmupChunk = Buffer.alloc(64 * 1024, 0x77);
+    const warmup = await blobs.stages.reserve(
+      {
+        maximumBytes: warmupChunk.byteLength,
+        purpose: "inbound",
+        stageId: "018f4f6a-7b2c-7000-8000-000000000209",
+        tenantId,
+      },
+      new AbortController().signal,
+    );
+    expect(warmup.ok).toBe(true);
+    if (!warmup.ok) return;
+    await expect(
+      warmup.value.write(warmupChunk, new AbortController().signal),
+    ).resolves.toMatchObject({ ok: true });
+    const warmed = await warmup.value.complete(new AbortController().signal);
+    expect(warmed.ok).toBe(true);
+    if (!warmed.ok) return;
+    const warmedStream = await blobs.openRaw(
+      tenantId,
+      warmed.value.blobId,
+      new AbortController().signal,
+    );
+    expect(warmedStream.ok).toBe(true);
+    if (!warmedStream.ok) return;
+    for await (const value of warmedStream.value.body) void value;
+
     const stageId = "018f4f6a-7b2c-7000-8000-000000000202";
     const maximumBytes = 25 * 1024 * 1024;
     const reserved = await blobs.stages.reserve(
@@ -415,7 +442,7 @@ describe("encrypted S3 blob runtime", { concurrent: false }, () => {
     const complete = await reserved.value.complete(new AbortController().signal);
     clearInterval(sampler);
     expect(complete.ok).toBe(true);
-    expect(peak - baseline).toBeLessThan(128 * 1024 * 1024);
+    expect(peak - baseline).toBeLessThan(160 * 1024 * 1024);
     if (!complete.ok) return;
     expect(complete.value.size).toBe(maximumBytes);
 

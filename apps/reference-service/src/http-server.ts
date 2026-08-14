@@ -1,11 +1,15 @@
+import { Readable } from "node:stream";
+
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import {
   MailEdgeError,
   DomainALabelSchema,
+  parseBindingId,
   parseIdempotencyKey,
   parseIntentId,
   parseProviderId,
   parseProviderInstanceId,
+  parseRawAccessGrantId,
   parseReceiptId,
   parseTenantId,
   projectProblem,
@@ -29,6 +33,7 @@ import {
   type RouteBindingSnapshotV1,
 } from "@mail-edge/provider";
 import type { MailEdgeSdk } from "@mail-edge/sdk";
+import type { BlobStorePort, Clock } from "@mail-edge/core";
 import fastify, {
   type FastifyError,
   type FastifyInstance,
@@ -41,6 +46,8 @@ import {
   ApiValidator,
   AppliedBindingResourcesSchema,
   ApplyPlanRequestSchema,
+  BindingLifecycleParamsSchema,
+  LifecycleDecisionSchema,
   BindingDiscoveryRequestSchema,
   BindingOperationRequestSchema,
   BindingPlanSchema,
@@ -49,16 +56,27 @@ import {
   DiscoveredBindingResourcesSchema,
   FeedbackHandoffResultSchema,
   OutboundIntentRequestSchema,
+  OutboundQuarantineDecisionSchema,
+  InboundQuarantineDecisionSchema,
   ProviderInstanceParamsSchema,
   ProviderRouteParamsSchema,
+  RawAccessGrantParamsSchema,
+  RawAccessGrantRequestSchema,
+  RawAccessGrantRevocationSchema,
   TenantIntentParamsSchema,
   TenantParamsSchema,
+  TenantBindingParamsSchema,
   TenantReceiptParamsSchema,
+  TenantRawAccessGrantParamsSchema,
   type ProviderInstanceParams,
   type ProviderRouteParams,
+  type RawAccessGrantParams,
+  type TenantRawAccessGrantParams,
   type BindingPlanInput,
   type DesiredBindingInput,
   type TenantIntentParams,
+  type BindingLifecycleParams,
+  type TenantBindingParams,
   type TenantParams,
   type TenantReceiptParams,
 } from "./api-schema.js";
@@ -71,8 +89,11 @@ import type { ProviderInstanceCatalog } from "./instance-catalog.js";
 import type { LifecycleComponent } from "./lifecycle.js";
 import type {
   AuthenticatedActor,
+  AuthScope,
+  ControlServicePort,
   ControlPlaneHandoffContext,
   ProviderInstanceBinding,
+  RawAccessServicePort,
   ReferenceServiceWorkflowPort,
 } from "./ports.js";
 import {
@@ -85,16 +106,18 @@ import {
 } from "./request-body.js";
 import { UuidV7Generator } from "./uuid-v7.service.js";
 import type { HostTracer } from "./telemetry.js";
-import type { Clock } from "@mail-edge/core";
 
 interface HttpDependencies {
   readonly authenticator: StaticTokenAuthenticator;
+  readonly blobStore: BlobStorePort;
   readonly catalog: ProviderInstanceCatalog;
   readonly clock: Clock;
   readonly config: ReferenceServiceConfig;
+  readonly control: ControlServicePort;
   readonly gate: BoundedConcurrencyGate;
   readonly readiness: (signal: AbortSignal) => Promise<Result<void, MailEdgeError>>;
   readonly registry: ProviderAdapterRegistry;
+  readonly rawAccess: RawAccessServicePort;
   readonly sdk: MailEdgeSdk;
   readonly shutdownSignal: AbortSignal;
   readonly tracer: HostTracer;
@@ -291,8 +314,88 @@ export class ReferenceHttpServer implements LifecycleComponent {
     });
 
     this.#registerProviderIngress();
+    this.#registerRawAccess();
     this.#registerTenantApi();
     this.#registerOperatorApi();
+  }
+
+  #registerRawAccess(): void {
+    this.#server.get<{ Params: RawAccessGrantParams }>(
+      "/v1/raw-access-grants/:grantId/raw",
+      { schema: { params: RawAccessGrantParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "raw_access.download",
+          this.#dependencies.config.http.requestTimeoutMilliseconds,
+          async (signal) => {
+            if (
+              request.headers.range !== undefined ||
+              request.headers["if-range"] !== undefined ||
+              (request.headers["accept-encoding"] !== undefined &&
+                request.headers["accept-encoding"] !== "identity")
+            ) {
+              return {
+                error: hostError("VALIDATION_FAILED", "raw_range_or_encoding_rejected", {
+                  retryable: false,
+                }),
+                ok: false,
+              };
+            }
+            const grantId = parseRawAccessGrantId(request.params.grantId);
+            if (!grantId.ok) {
+              return { error: hostError("AUTHORIZATION_FAILED", "raw_grant_rejected"), ok: false };
+            }
+            const authorization = request.headers.authorization;
+            const matched =
+              typeof authorization === "string"
+                ? /^MailEdgeRaw ([A-Za-z0-9_-]{43,128})$/u.exec(authorization)
+                : null;
+            const audience = request.headers["x-mail-edge-signature-audience"];
+            const subjectId = request.headers["x-mail-edge-subject-id"];
+            const operation = request.headers["x-mail-edge-operation"];
+            if (
+              matched?.[1] === undefined ||
+              typeof audience !== "string" ||
+              typeof subjectId !== "string" ||
+              operation !== "raw_download"
+            ) {
+              return { error: hostError("AUTHORIZATION_FAILED", "raw_grant_rejected"), ok: false };
+            }
+            const authorized = await this.#dependencies.rawAccess.authorize(
+              grantId.value,
+              matched[1],
+              Object.freeze({ audience, operation, subjectId }),
+              signal,
+            );
+            if (!authorized.ok) return authorized;
+            const opened = await this.#dependencies.blobStore.openRaw(
+              authorized.value.tenantId,
+              authorized.value.raw.blobId,
+              signal,
+            );
+            if (!opened.ok) return opened;
+            if (
+              opened.value.contentLength !== null &&
+              opened.value.contentLength !== authorized.value.raw.size
+            ) {
+              return { error: hostError("INTERNAL", "raw_stream_metadata_mismatch"), ok: false };
+            }
+            reply
+              .code(200)
+              .header("accept-ranges", "none")
+              .header("cache-control", "no-store, private")
+              .header("content-disposition", 'attachment; filename="message.eml"')
+              .header("content-length", String(authorized.value.raw.size))
+              .header("content-type", "message/rfc822")
+              .header("x-content-type-options", "nosniff")
+              .send(Readable.from(opened.value.body, { objectMode: false }));
+            await reply;
+            return { ok: true, value: undefined };
+          },
+        ),
+    );
   }
 
   #registerProviderIngress(): void {
@@ -432,6 +535,82 @@ export class ReferenceHttpServer implements LifecycleComponent {
 
   #registerTenantApi(): void {
     this.#server.post<{ Params: TenantParams }>(
+      "/v1/tenants/:tenantId/raw-access-grants",
+      { schema: { params: TenantParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "tenant.raw_access.issue",
+          this.#dependencies.config.http.requestTimeoutMilliseconds,
+          async (signal) => {
+            const tenant = this.#tenantActor(request, request.params.tenantId, "raw.read");
+            if (!tenant.ok) return tenant;
+            const body = await this.#json(request, signal);
+            if (!body.ok) return body;
+            const payload = this.#validator.validate(RawAccessGrantRequestSchema, body.value);
+            if (!payload.ok) return payload;
+            const raw = validateContract(RawMessageRefV1Schema, payload.value.raw);
+            if (!raw.ok)
+              return { error: hostError("VALIDATION_FAILED", "raw_ref_invalid"), ok: false };
+            const issued = await this.#dependencies.rawAccess.issueForSubject(
+              {
+                purpose: payload.value.purpose,
+                raw: raw.value,
+                singleUse: payload.value.singleUse,
+                subjectId: payload.value.subjectId,
+                tenantId: tenant.value.tenantId,
+                actor: {
+                  actorIdHash: tenant.value.actorIdHash,
+                  actorType: "application",
+                  reasonCode: "tenant_request",
+                },
+              },
+              signal,
+            );
+            if (issued.ok) reply.code(201).send(issued.value);
+            return issued;
+          },
+        ),
+    );
+
+    this.#server.post<{ Params: TenantRawAccessGrantParams }>(
+      "/v1/tenants/:tenantId/raw-access-grants/:grantId/revoke",
+      { schema: { params: TenantRawAccessGrantParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "tenant.raw_access.revoke",
+          this.#dependencies.config.http.requestTimeoutMilliseconds,
+          async (signal) => {
+            const tenant = this.#tenantActor(request, request.params.tenantId, "raw.read");
+            const grantId = parseRawAccessGrantId(request.params.grantId);
+            if (!tenant.ok) return tenant;
+            if (!grantId.ok)
+              return { error: hostError("NOT_FOUND", "raw_grant_not_found"), ok: false };
+            const body = await this.#json(request, signal);
+            if (!body.ok) return body;
+            const payload = this.#validator.validate(RawAccessGrantRevocationSchema, body.value);
+            if (!payload.ok) return payload;
+            const revoked = await this.#dependencies.rawAccess.revoke(
+              tenant.value.tenantId,
+              grantId.value,
+              payload.value.expectedFence,
+              {
+                actorIdHash: tenant.value.actorIdHash,
+                actorType: "application",
+                reasonCode: "tenant_request",
+              },
+              signal,
+            );
+            if (revoked.ok) reply.code(204).send();
+            return revoked;
+          },
+        ),
+    );
+
+    this.#server.post<{ Params: TenantParams }>(
       "/v1/tenants/:tenantId/raw-messages",
       { schema: { params: TenantParamsSchema } },
       async (request, reply) =>
@@ -441,7 +620,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
           "tenant.raw.store",
           this.#dependencies.config.http.requestTimeoutMilliseconds,
           async (signal) => {
-            const tenant = this.#tenantActor(request, request.params.tenantId);
+            const tenant = this.#tenantActor(request, request.params.tenantId, "mail.submit");
             if (!tenant.ok) return tenant;
             if (request.headers["content-type"]?.split(";", 1)[0]?.trim() !== "message/rfc822") {
               return {
@@ -477,7 +656,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
           "tenant.intent.create",
           this.#dependencies.config.http.requestTimeoutMilliseconds,
           async (signal) => {
-            const tenant = this.#tenantActor(request, request.params.tenantId);
+            const tenant = this.#tenantActor(request, request.params.tenantId, "mail.submit");
             if (!tenant.ok) return tenant;
             const idempotencyHeader = request.headers["idempotency-key"];
             const idempotency = parseIdempotencyKey(
@@ -507,6 +686,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
                 idempotencyKey: idempotency.value,
                 raw: raw.value,
                 tenantId: tenant.value.tenantId,
+                ...(payload.value.opaqueReplyToken === undefined
+                  ? {}
+                  : { opaqueReplyToken: payload.value.opaqueReplyToken }),
               },
               signal,
             );
@@ -527,7 +709,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
           "tenant.intent.get",
           this.#dependencies.config.http.requestTimeoutMilliseconds,
           async (signal) => {
-            const tenant = this.#tenantActor(request, request.params.tenantId);
+            const tenant = this.#tenantActor(request, request.params.tenantId, "mail.status.read");
             const intentId = parseIntentId(request.params.intentId);
             if (!tenant.ok) return tenant;
             if (!intentId.ok)
@@ -553,12 +735,93 @@ export class ReferenceHttpServer implements LifecycleComponent {
           "tenant.receipt.get",
           this.#dependencies.config.http.requestTimeoutMilliseconds,
           async (signal) => {
-            const tenant = this.#tenantActor(request, request.params.tenantId);
+            const tenant = this.#tenantActor(request, request.params.tenantId, "mail.status.read");
             const receiptId = parseReceiptId(request.params.receiptId);
             if (!tenant.ok) return tenant;
             if (!receiptId.ok)
               return { error: hostError("NOT_FOUND", "receipt_not_found"), ok: false };
             const found = await this.#dependencies.sdk.getInboundReceipt(
+              tenant.value.tenantId,
+              receiptId.value,
+              signal,
+            );
+            if (found.ok) reply.code(200).send(found.value);
+            return found;
+          },
+        ),
+    );
+
+    this.#server.get<{ Params: TenantBindingParams }>(
+      "/v1/tenants/:tenantId/bindings/:bindingId/versions/:bindingVersion",
+      { schema: { params: TenantBindingParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "tenant.binding.inspect",
+          this.#dependencies.config.http.requestTimeoutMilliseconds,
+          async (signal) => {
+            const tenant = this.#tenantActor(request, request.params.tenantId, "bindings.read");
+            const bindingId = parseBindingId(request.params.bindingId);
+            const bindingVersion = Number(request.params.bindingVersion);
+            if (!tenant.ok) return tenant;
+            if (!bindingId.ok || !Number.isSafeInteger(bindingVersion) || bindingVersion < 1) {
+              return { error: hostError("NOT_FOUND", "binding_not_found"), ok: false };
+            }
+            const found = await this.#dependencies.control.inspectBinding(
+              tenant.value.tenantId,
+              bindingId.value,
+              bindingVersion,
+              signal,
+            );
+            if (found.ok) reply.code(200).send(found.value);
+            return found;
+          },
+        ),
+    );
+
+    this.#server.get<{ Params: TenantIntentParams }>(
+      "/v1/tenants/:tenantId/outbound-intents/:intentId/quarantine",
+      { schema: { params: TenantIntentParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "tenant.quarantine.outbound.inspect",
+          this.#dependencies.config.http.requestTimeoutMilliseconds,
+          async (signal) => {
+            const tenant = this.#tenantActor(request, request.params.tenantId, "quarantine.read");
+            const intentId = parseIntentId(request.params.intentId);
+            if (!tenant.ok) return tenant;
+            if (!intentId.ok)
+              return { error: hostError("NOT_FOUND", "intent_not_found"), ok: false };
+            const found = await this.#dependencies.control.inspectOutboundQuarantine(
+              tenant.value.tenantId,
+              intentId.value,
+              signal,
+            );
+            if (found.ok) reply.code(200).send(found.value);
+            return found;
+          },
+        ),
+    );
+
+    this.#server.get<{ Params: TenantReceiptParams }>(
+      "/v1/tenants/:tenantId/inbound-receipts/:receiptId/quarantine",
+      { schema: { params: TenantReceiptParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "tenant.quarantine.inbound.inspect",
+          this.#dependencies.config.http.requestTimeoutMilliseconds,
+          async (signal) => {
+            const tenant = this.#tenantActor(request, request.params.tenantId, "quarantine.read");
+            const receiptId = parseReceiptId(request.params.receiptId);
+            if (!tenant.ok) return tenant;
+            if (!receiptId.ok)
+              return { error: hostError("NOT_FOUND", "receipt_not_found"), ok: false };
+            const found = await this.#dependencies.control.inspectInboundQuarantine(
               tenant.value.tenantId,
               receiptId.value,
               signal,
@@ -578,7 +841,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
         "operator.providers.list",
         this.#dependencies.config.http.controlPlaneTimeoutMilliseconds,
         () => {
-          const actor = this.#operatorActor(request);
+          const actor = this.#operatorActor(request, "providers.read");
           if (!actor.ok) return Promise.resolve(actor);
           const registrations = this.#dependencies.registry.list().map((registration) => ({
             descriptor: registration.descriptor,
@@ -588,6 +851,142 @@ export class ReferenceHttpServer implements LifecycleComponent {
           return Promise.resolve({ ok: true, value: undefined });
         },
       ),
+    );
+
+    this.#server.post<{ Params: BindingLifecycleParams }>(
+      "/v1/operator/tenants/:tenantId/bindings/:bindingId/versions/:bindingVersion/:action",
+      { schema: { params: BindingLifecycleParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          `operator.binding.${request.params.action}`,
+          this.#dependencies.config.http.controlPlaneTimeoutMilliseconds,
+          async (signal) => {
+            const actor = this.#operatorActor(request, "bindings.manage");
+            if (!actor.ok) return actor;
+            const tenantId = parseTenantId(request.params.tenantId);
+            const bindingId = parseBindingId(request.params.bindingId);
+            const bindingVersion = Number(request.params.bindingVersion);
+            if (
+              !tenantId.ok ||
+              !bindingId.ok ||
+              !Number.isSafeInteger(bindingVersion) ||
+              bindingVersion < 1
+            ) {
+              return { error: hostError("NOT_FOUND", "binding_not_found"), ok: false };
+            }
+            const body = await this.#json(request, signal);
+            if (!body.ok) return body;
+            const decision = this.#validator.validate(LifecycleDecisionSchema, body.value);
+            if (!decision.ok) return decision;
+            const result = await this.#dependencies.control.transitionBinding(
+              {
+                action: request.params.action,
+                actor: {
+                  actorIdHash: actor.value.actorIdHash,
+                  reasonCode: decision.value.reasonCode,
+                },
+                bindingId: bindingId.value,
+                bindingVersion,
+                expectedVersion: decision.value.expectedVersion,
+                tenantId: tenantId.value,
+              },
+              signal,
+            );
+            if (result.ok) reply.code(200).send(result.value);
+            return result;
+          },
+        ),
+    );
+
+    this.#server.post<{ Params: TenantIntentParams }>(
+      "/v1/operator/tenants/:tenantId/outbound-intents/:intentId/quarantine-decisions",
+      { schema: { params: TenantIntentParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "operator.quarantine.outbound.decide",
+          this.#dependencies.config.http.controlPlaneTimeoutMilliseconds,
+          async (signal) => {
+            const body = await this.#json(request, signal);
+            if (!body.ok) return body;
+            const decision = this.#validator.validate(OutboundQuarantineDecisionSchema, body.value);
+            if (!decision.ok) return decision;
+            const actor = this.#operatorActor(
+              request,
+              decision.value.action === "authorize_retry"
+                ? "quarantine.retry"
+                : "quarantine.decide",
+            );
+            if (!actor.ok) return actor;
+            const tenantId = parseTenantId(request.params.tenantId);
+            const intentId = parseIntentId(request.params.intentId);
+            if (!tenantId.ok || !intentId.ok) {
+              return { error: hostError("NOT_FOUND", "intent_not_found"), ok: false };
+            }
+            const result = await this.#dependencies.control.decideOutboundQuarantine(
+              {
+                action: decision.value.action,
+                actor: {
+                  actorIdHash: actor.value.actorIdHash,
+                  reasonCode: decision.value.reasonCode,
+                },
+                evidence: decision.value.evidence,
+                expectedFence: decision.value.expectedFence,
+                expectedVersion: decision.value.expectedVersion,
+                intentId: intentId.value,
+                tenantId: tenantId.value,
+              },
+              signal,
+            );
+            if (result.ok) reply.code(200).send(result.value);
+            return result;
+          },
+        ),
+    );
+
+    this.#server.post<{ Params: TenantReceiptParams }>(
+      "/v1/operator/tenants/:tenantId/inbound-receipts/:receiptId/quarantine-decisions",
+      { schema: { params: TenantReceiptParamsSchema } },
+      async (request, reply) =>
+        this.#run(
+          request,
+          reply,
+          "operator.quarantine.inbound.decide",
+          this.#dependencies.config.http.controlPlaneTimeoutMilliseconds,
+          async (signal) => {
+            const actor = this.#operatorActor(request, "quarantine.decide");
+            if (!actor.ok) return actor;
+            const tenantId = parseTenantId(request.params.tenantId);
+            const receiptId = parseReceiptId(request.params.receiptId);
+            if (!tenantId.ok || !receiptId.ok) {
+              return { error: hostError("NOT_FOUND", "receipt_not_found"), ok: false };
+            }
+            const body = await this.#json(request, signal);
+            if (!body.ok) return body;
+            const decision = this.#validator.validate(InboundQuarantineDecisionSchema, body.value);
+            if (!decision.ok) return decision;
+            const result = await this.#dependencies.control.decideInboundQuarantine(
+              {
+                action: decision.value.action,
+                actor: {
+                  actorIdHash: actor.value.actorIdHash,
+                  reasonCode: decision.value.reasonCode,
+                },
+                evidence: decision.value.evidence,
+                expectedFence: decision.value.expectedFence,
+                expectedVersion: decision.value.expectedVersion,
+                receiptId: receiptId.value,
+                tenantId: tenantId.value,
+              },
+              signal,
+            );
+            if (result.ok) reply.code(200).send(result.value);
+            return result;
+          },
+        ),
     );
 
     this.#server.post<{ Params: ProviderInstanceParams }>(
@@ -757,7 +1156,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
       operationName,
       this.#dependencies.config.http.controlPlaneTimeoutMilliseconds,
       async (signal, requestId) => {
-        const actor = this.#operatorActor(request);
+        const actor = this.#operatorActor(request, "bindings.manage");
         if (!actor.ok) return actor;
         const instance = this.#dependencies.catalog.resolveInstanceId(
           request.params.providerInstanceId,
@@ -859,6 +1258,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
   #tenantActor(
     request: FastifyRequest,
     tenantIdValue: string,
+    scope: AuthScope,
   ): Result<
     AuthenticatedActor & { readonly tenantId: NonNullable<AuthenticatedActor["tenantId"]> },
     MailEdgeError
@@ -868,6 +1268,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
     const actor = this.#dependencies.authenticator.authenticate(
       request.headers.authorization,
       "tenant",
+      scope,
       tenantId.value,
     );
     return !actor.ok || actor.value.tenantId === undefined
@@ -875,8 +1276,15 @@ export class ReferenceHttpServer implements LifecycleComponent {
       : { ok: true, value: { ...actor.value, tenantId: actor.value.tenantId } };
   }
 
-  #operatorActor(request: FastifyRequest): Result<AuthenticatedActor, MailEdgeError> {
-    return this.#dependencies.authenticator.authenticate(request.headers.authorization, "operator");
+  #operatorActor(
+    request: FastifyRequest,
+    scope: AuthScope,
+  ): Result<AuthenticatedActor, MailEdgeError> {
+    return this.#dependencies.authenticator.authenticate(
+      request.headers.authorization,
+      "operator",
+      scope,
+    );
   }
 
   async #run<T>(

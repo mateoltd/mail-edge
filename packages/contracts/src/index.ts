@@ -41,6 +41,29 @@ export {
   Sha256Schema,
 } from "./common.schema.js";
 export type {
+  BindingControlIdentityV1,
+  BindingControlViewV1,
+  BindingLifecycleAction,
+  BindingLifecycleDecisionV1,
+  InboundQuarantineAction,
+  InboundQuarantineDecisionV1,
+  InboundQuarantineViewV1,
+  OutboundQuarantineAction,
+  OutboundQuarantineDecisionV1,
+  OutboundQuarantineViewV1,
+} from "./control.schema.js";
+export {
+  bindingLifecycleActions,
+  BindingControlViewV1Schema,
+  BindingLifecycleDecisionV1Schema,
+  inboundQuarantineActions,
+  InboundQuarantineDecisionV1Schema,
+  InboundQuarantineViewV1Schema,
+  outboundQuarantineActions,
+  OutboundQuarantineDecisionV1Schema,
+  OutboundQuarantineViewV1Schema,
+} from "./control.schema.js";
+export type {
   DsnNotify,
   DsnNotifyAtom,
   SmtpBodyMode,
@@ -61,6 +84,20 @@ export type {
   HeaderPatchPlanV1,
   HeaderPatchReason,
 } from "./header-patch.schema.js";
+export type {
+  ApplicationAckV1,
+  RecipientRouteRequestV1,
+  RecipientRouteResponseV1,
+  ReverseRouteRequestV1,
+  ReverseRouteResolutionV1,
+} from "./host-callback.schema.js";
+export {
+  ApplicationAckV1Schema,
+  RecipientRouteRequestV1Schema,
+  RecipientRouteResponseV1Schema,
+  ReverseRouteRequestV1Schema,
+  ReverseRouteResolutionV1Schema,
+} from "./host-callback.schema.js";
 export {
   headerPatchReasons,
   HeaderPatchOperationV1Schema,
@@ -136,6 +173,7 @@ export {
   deliveryCertainties,
   MailEdgeError,
   mailEdgeErrorCodes,
+  mailEdgeErrorCodeFromProblemCode,
   MailEdgeProblemV1Schema,
   mailEdgeProblemCodes,
   projectProblem,
@@ -157,6 +195,18 @@ export {
 export type { Result, ValidationError, ValidationIssue } from "./result.js";
 export { err, ok, validationError } from "./result.js";
 export { contractSchemas } from "./schemas.js";
+export type {
+  HostSignatureClaimsV1,
+  HostSignatureHttpHeadersV1,
+  HostSignatureV1,
+  HostSignedOperation,
+} from "./host.schema.js";
+export {
+  hostSignatureHttpHeadersV1,
+  hostSignedOperations,
+  HostSignatureClaimsV1Schema,
+  HostSignatureV1Schema,
+} from "./host.schema.js";
 export {
   ContractValidator,
   createContractValidator,
@@ -166,6 +216,8 @@ export {
 export type {
   AuditEventV1,
   ApplicationDeliveryState,
+  ApplicationDeliveryCallbackV1,
+  ApplicationDestinationV1,
   ApplicationDeliveryV1,
   ApplicationFeedbackV1,
   IdempotencyRecordV1,
@@ -188,6 +240,8 @@ export {
   AuditEventV1Schema,
   applicationDeliveryStates,
   ApplicationDeliveryV1Schema,
+  ApplicationDestinationV1Schema,
+  ApplicationDeliveryCallbackV1Schema,
   ApplicationFeedbackV1Schema,
   IdempotencyRecordV1Schema,
   inboundReceiptStates,

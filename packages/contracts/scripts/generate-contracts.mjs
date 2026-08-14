@@ -56,10 +56,115 @@ for (const schema of contractSchemas) {
 const components = Object.fromEntries(
   contractSchemas.map((schema) => [componentName(schema), rewriteReferences(schema)]),
 );
+const hostHeader = (name, description, schema) => ({
+  description,
+  in: "header",
+  name,
+  required: true,
+  schema,
+});
+const hostSignatureParameters = [
+  hostHeader("X-Mail-Edge-Signature-Version", "Frozen protocol version.", { const: "v1" }),
+  hostHeader("X-Mail-Edge-Signature-Algorithm", "Frozen MAC algorithm.", {
+    const: "hmac-sha256",
+  }),
+  hostHeader("X-Mail-Edge-Key-Id", "Rotation key identifier selected before verification.", {
+    maxLength: 128,
+    minLength: 1,
+    type: "string",
+  }),
+  hostHeader("X-Mail-Edge-Signature-Audience", "Exact configured receiving service audience.", {
+    maxLength: 128,
+    minLength: 1,
+    type: "string",
+  }),
+  hostHeader("X-Mail-Edge-Subject-Id", "Operation-bound durable workflow subject.", {
+    maxLength: 128,
+    minLength: 1,
+    type: "string",
+  }),
+  hostHeader("X-Mail-Edge-Nonce", "Unique unpadded base64url nonce consumed by the replay store.", {
+    maxLength: 128,
+    minLength: 16,
+    pattern: "^[A-Za-z0-9_-]{16,128}$",
+    type: "string",
+  }),
+  hostHeader("X-Mail-Edge-Body-Sha256", "Lowercase SHA-256 of the exact HTTP body bytes.", {
+    pattern: "^[0-9a-f]{64}$",
+    type: "string",
+  }),
+  hostHeader(
+    "X-Mail-Edge-Operation",
+    "Exact callback operation; cross-operation replay is forbidden.",
+    {
+      enum: ["application_delivery", "application_feedback", "recipient_route", "reverse_route"],
+      type: "string",
+    },
+  ),
+  hostHeader(
+    "X-Mail-Edge-Timestamp",
+    "RFC 3339 signing instant within the receiver's bounded skew.",
+    {
+      format: "date-time",
+      type: "string",
+    },
+  ),
+  hostHeader(
+    "X-Mail-Edge-Signature",
+    "Unpadded base64url HMAC-SHA256 over the canonical HostSignatureV1 domain and claims.",
+    { maxLength: 43, minLength: 43, pattern: "^[A-Za-z0-9_-]{43}$", type: "string" },
+  ),
+];
+const hostCallback = ({ operationId, operation, request, response }) => ({
+  post: {
+    description:
+      "Verify the exact body digest, audience, operation, subject, timestamp, key id, and MAC before atomically consuming the nonce. Active and retiring keys may overlap during rotation. Reject expired, replayed, mismatched, unknown-key, redirected, oversized, or malformed requests without side effects. Return a bounded application/json response and echo X-Mail-Edge-Subject-Id.",
+    operationId,
+    parameters: hostSignatureParameters,
+    requestBody: {
+      content: { "application/json": { schema: { $ref: `#/components/schemas/${request}` } } },
+      required: true,
+    },
+    responses: {
+      200: {
+        content: { "application/json": { schema: { $ref: `#/components/schemas/${response}` } } },
+        description:
+          "Durably authenticated result; the subject response header must exactly match.",
+        headers: {
+          "X-Mail-Edge-Subject-Id": {
+            description: "Exact signed request subject.",
+            required: true,
+            schema: { type: "string" },
+          },
+        },
+      },
+      400: { $ref: "#/components/responses/HostProblem" },
+      401: { $ref: "#/components/responses/HostProblem" },
+      409: { $ref: "#/components/responses/HostProblem" },
+      429: { $ref: "#/components/responses/HostProblem" },
+      503: { $ref: "#/components/responses/HostProblem" },
+    },
+    "x-mail-edge-operation": operation,
+    "x-mail-edge-replay-semantics":
+      "Nonce consumption is atomic after signature verification and before business side effects; duplicate nonces fail closed.",
+  },
+});
 expected.set(
   openApiPath,
   serialize({
-    components: { schemas: components },
+    components: {
+      responses: {
+        HostProblem: {
+          content: {
+            "application/problem+json": {
+              schema: { $ref: "#/components/schemas/MailEdgeProblemV1" },
+            },
+          },
+          description: "Bounded RFC 9457 failure with no secrets, raw content, or addresses.",
+        },
+      },
+      schemas: components,
+    },
     info: {
       description: "Versioned provider-neutral Mail Edge wire contracts.",
       license: { name: "Apache-2.0", identifier: "Apache-2.0" },
@@ -68,7 +173,75 @@ expected.set(
     },
     jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
     openapi: "3.1.0",
-    paths: {},
+    paths: {
+      "/v1/raw-access-grants/{grantId}/raw": {
+        get: {
+          description:
+            "Stream the exact raw message under a short-lived tenant, subject, audience, and raw_download-operation grant. Redirects, ranges, and content encodings are rejected; single-use grants are atomically consumed and all grants are fenced and revocable.",
+          operationId: "downloadRawMessageByGrant",
+          parameters: [
+            {
+              in: "path",
+              name: "grantId",
+              required: true,
+              schema: { $ref: "#/components/schemas/RawAccessGrantId" },
+            },
+            hostHeader("Authorization", "MailEdgeRaw followed by the opaque grant token.", {
+              pattern: "^MailEdgeRaw [A-Za-z0-9_-]{43,128}$",
+              type: "string",
+            }),
+            hostHeader("X-Mail-Edge-Signature-Audience", "Exact grant audience.", {
+              type: "string",
+            }),
+            hostHeader("X-Mail-Edge-Subject-Id", "Exact grant subject.", { type: "string" }),
+            hostHeader("X-Mail-Edge-Operation", "Grant-bound operation.", {
+              const: "raw_download",
+            }),
+          ],
+          responses: {
+            200: {
+              content: { "message/rfc822": { schema: { format: "binary", type: "string" } } },
+              description: "Constant-memory authenticated byte stream with Content-Length.",
+              headers: {
+                "Accept-Ranges": { schema: { const: "none" } },
+                "Cache-Control": { schema: { const: "no-store, private" } },
+              },
+            },
+            400: { $ref: "#/components/responses/HostProblem" },
+            401: { $ref: "#/components/responses/HostProblem" },
+            404: { $ref: "#/components/responses/HostProblem" },
+            409: { $ref: "#/components/responses/HostProblem" },
+            410: { $ref: "#/components/responses/HostProblem" },
+          },
+        },
+      },
+    },
+    webhooks: {
+      applicationDelivery: hostCallback({
+        operation: "application_delivery",
+        operationId: "receiveApplicationDelivery",
+        request: "ApplicationDeliveryCallbackV1",
+        response: "ApplicationAckV1",
+      }),
+      applicationFeedback: hostCallback({
+        operation: "application_feedback",
+        operationId: "receiveApplicationFeedback",
+        request: "ApplicationFeedbackV1",
+        response: "ApplicationAckV1",
+      }),
+      recipientRoute: hostCallback({
+        operation: "recipient_route",
+        operationId: "resolveRecipientRoute",
+        request: "RecipientRouteRequestV1",
+        response: "RecipientRouteResponseV1",
+      }),
+      reverseRoute: hostCallback({
+        operation: "reverse_route",
+        operationId: "resolveReverseRoute",
+        request: "ReverseRouteRequestV1",
+        response: "ReverseRouteResolutionV1",
+      }),
+    },
   }),
 );
 

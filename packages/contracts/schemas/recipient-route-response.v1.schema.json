@@ -1,0 +1,19 @@
+{
+  "$id": "urn:mail-edge:schema:v1:recipient-route-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "destinations": {
+      "items": {
+        "$ref": "urn:mail-edge:schema:v1:application-destination"
+      },
+      "maxItems": 128,
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "destinations"
+  ],
+  "type": "object"
+}

@@ -25,7 +25,9 @@ import {
   PostgresDatabase,
   PostgresDurableRuntimeStore,
   PostgresMigrationRunner,
+  PostgresRawAccessGrantRepository,
   PostgresUnitOfWork,
+  type SensitiveValueDigester,
   type SensitiveValueKeyProvider,
 } from "../../src/index.js";
 
@@ -155,6 +157,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
   let database: PostgresDatabase;
   let unitOfWork: PostgresUnitOfWork;
   let store: PostgresDurableRuntimeStore;
+  let digester: SensitiveValueDigester;
   let connectionString: string;
 
   const openRuntime = async (): Promise<void> => {
@@ -173,9 +176,10 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
     const keys: SensitiveValueKeyProvider = {
       resolveKey: async () => Uint8Array.from(Buffer.from("73".repeat(32), "hex")),
     };
+    digester = new HmacSensitiveValueDigester(keys);
     store = new PostgresDurableRuntimeStore({
       cipher: new AesGcmSensitiveValueCipher(keys),
-      digester: new HmacSensitiveValueDigester(keys),
+      digester,
       unitOfWork,
     });
   };
@@ -196,7 +200,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO mail_edge_runtime",
     );
     await owner.query(
-      "GRANT EXECUTE ON FUNCTION mail_edge_locate_workflow(text, uuid), mail_edge_active_tenants(uuid, integer) TO mail_edge_runtime",
+      "GRANT EXECUTE ON FUNCTION mail_edge_locate_workflow(text, uuid), mail_edge_active_tenants(uuid, integer), mail_edge_locate_raw_access_grant(uuid) TO mail_edge_runtime",
     );
     await owner.query("INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active')", [tenantId]);
     await owner.query(
@@ -516,7 +520,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       throw new TypeError("Application delivery claim missing.");
     }
     const applicationDeliveryClaim = deliveryClaim.value;
-    expect(applicationDeliveryClaim.destination).toEqual({
+    expect(applicationDeliveryClaim.delivery.destination).toEqual({
       deliveryMode: "push",
       destinationId: "runtime-application",
       opaqueToken: "first-token",
@@ -559,7 +563,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
           tenantId,
           (context, transactionSignal) =>
             store.createOutboundIntent(
-              { envelope, idempotencyKey: key, raw, tenantId },
+              { envelope, idempotencyKey: key, raw, tenantId, transmissionRaw: raw },
               intentId,
               "2026-08-14T02:00:00.000Z",
               context,
@@ -836,7 +840,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
           tenantId,
           (context, transactionSignal) =>
             store.createOutboundIntent(
-              { envelope, idempotencyKey: sharedRawKey, raw, tenantId },
+              { envelope, idempotencyKey: sharedRawKey, raw, tenantId, transmissionRaw: raw },
               sharedRawIntentId,
               "2026-08-14T02:02:00.000Z",
               context,
@@ -987,7 +991,19 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
     const applied = await unitOfWork.executeForTenant(
       tenantId,
       (context, transactionSignal) =>
-        store.applyFeedback(feedbackClaim, "2026-08-14T03:00:03.000Z", context, transactionSignal),
+        store.settleFeedbackApplication(
+          feedbackClaim,
+          {
+            acknowledgement: {
+              acceptedAt: "2026-08-14T03:00:03.000Z",
+              deliveryId: must(parseDeliveryId(feedbackClaim.event.feedbackEventId)),
+            },
+            state: "delivered",
+          },
+          "2026-08-14T03:00:03.000Z",
+          context,
+          transactionSignal,
+        ),
       signal,
     );
     expect(applied).toEqual({ ok: true, value: undefined });
@@ -1019,5 +1035,165 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       signal,
     );
     expect(exhaustedClaim).toEqual({ ok: true, value: null });
+  });
+
+  test("fences raw grants across subject mismatch, replay, expiry, revocation, and tenant scope", async () => {
+    let currentTime = "2026-08-14T04:00:00.000Z";
+    let identityOrdinal = 300;
+    let tokenOrdinal = 0;
+    const repository = new PostgresRawAccessGrantRepository({
+      audiences: { resolve: () => ({ ok: true, value: "runtime-host" }) },
+      clock: { now: () => currentTime },
+      digester,
+      ids: {
+        next: () => {
+          identityOrdinal += 1;
+          return `018f6f6a-7b2c-7000-8000-${String(identityOrdinal).padStart(12, "0")}`;
+        },
+      },
+      lifetimeMilliseconds: 1_000,
+      tokens: {
+        nextToken: () => {
+          tokenOrdinal += 1;
+          return `${String(tokenOrdinal).padStart(2, "0")}${"A".repeat(41)}`;
+        },
+      },
+      unitOfWork,
+    });
+    const signal = new AbortController().signal;
+    const issue = (subjectId: string, singleUse: boolean) =>
+      repository.issueForSubject(
+        {
+          purpose: "operator_review",
+          raw,
+          singleUse,
+          subjectId,
+          tenantId,
+          actor: {
+            actorIdHash: "a1".repeat(32),
+            actorType: "operator",
+            reasonCode: "integration_test",
+          },
+        },
+        signal,
+      );
+    const singleUse = await issue("operator-review-001", true);
+    if (!singleUse.ok) throw singleUse.error;
+    await expect(
+      repository.authorize(
+        singleUse.value.grantId,
+        singleUse.value.opaqueToken,
+        { audience: "runtime-host", operation: "raw_download", subjectId: "substituted-subject" },
+        signal,
+      ),
+    ).resolves.toMatchObject({ error: { code: "AUTHORIZATION_FAILED" }, ok: false });
+    await expect(
+      repository.authorize(
+        singleUse.value.grantId,
+        singleUse.value.opaqueToken,
+        {
+          audience: "runtime-host",
+          operation: "raw_download",
+          subjectId: singleUse.value.subjectId,
+        },
+        signal,
+      ),
+    ).resolves.toMatchObject({ ok: true, value: { tenantId } });
+    await expect(
+      repository.authorize(
+        singleUse.value.grantId,
+        singleUse.value.opaqueToken,
+        {
+          audience: "runtime-host",
+          operation: "raw_download",
+          subjectId: singleUse.value.subjectId,
+        },
+        signal,
+      ),
+    ).resolves.toMatchObject({ error: { code: "AUTHORIZATION_FAILED" }, ok: false });
+
+    const reusable = await issue("reconciliation-001", false);
+    if (!reusable.ok) throw reusable.error;
+    const reusableExpectation = {
+      audience: "runtime-host",
+      operation: "raw_download" as const,
+      subjectId: reusable.value.subjectId,
+    };
+    const firstAuthorization = await repository.authorize(
+      reusable.value.grantId,
+      reusable.value.opaqueToken,
+      reusableExpectation,
+      signal,
+    );
+    const secondAuthorization = await repository.authorize(
+      reusable.value.grantId,
+      reusable.value.opaqueToken,
+      reusableExpectation,
+      signal,
+    );
+    expect(firstAuthorization).toMatchObject({ ok: true, value: { fence: 1 } });
+    expect(secondAuthorization).toMatchObject({ ok: true, value: { fence: 2 } });
+    await expect(
+      repository.revoke(
+        tenantId,
+        reusable.value.grantId,
+        2,
+        {
+          actorIdHash: "a1".repeat(32),
+          actorType: "operator",
+          reasonCode: "integration_test",
+        },
+        signal,
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(
+      repository.authorize(
+        reusable.value.grantId,
+        reusable.value.opaqueToken,
+        reusableExpectation,
+        signal,
+      ),
+    ).resolves.toMatchObject({ error: { code: "AUTHORIZATION_FAILED" }, ok: false });
+
+    const expiring = await issue("operator-review-expiring", true);
+    if (!expiring.ok) throw expiring.error;
+    currentTime = "2026-08-14T04:00:01.001Z";
+    await expect(
+      repository.authorize(
+        expiring.value.grantId,
+        expiring.value.opaqueToken,
+        {
+          audience: "runtime-host",
+          operation: "raw_download",
+          subjectId: expiring.value.subjectId,
+        },
+        signal,
+      ),
+    ).resolves.toMatchObject({ error: { code: "AUTHORIZATION_FAILED" }, ok: false });
+
+    const otherTenantId = must(parseTenantId("018f6f6a-7b2c-7000-8000-000000000299"));
+    await owner.query("INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active')", [
+      otherTenantId,
+    ]);
+    await expect(
+      repository.issueForSubject(
+        {
+          purpose: "operator_review",
+          raw,
+          singleUse: true,
+          subjectId: "cross-tenant-subject",
+          tenantId: otherTenantId,
+          actor: {
+            actorIdHash: "a1".repeat(32),
+            actorType: "operator",
+            reasonCode: "integration_test",
+          },
+        },
+        signal,
+      ),
+    ).resolves.toMatchObject({ error: { code: "NOT_FOUND" }, ok: false });
   });
 });

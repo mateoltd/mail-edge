@@ -1,0 +1,32 @@
+{
+  "$id": "urn:mail-edge:schema:v1:reverse-route-resolution",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "envelope": {
+      "$ref": "urn:mail-edge:schema:v1:smtp-envelope"
+    },
+    "policyCode": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "visibleHeaderFields": {
+      "items": {
+        "maxLength": 998,
+        "minLength": 1,
+        "pattern": "^[^\\r\\n]+$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "type": "array"
+    }
+  },
+  "required": [
+    "envelope",
+    "visibleHeaderFields",
+    "policyCode"
+  ],
+  "type": "object"
+}

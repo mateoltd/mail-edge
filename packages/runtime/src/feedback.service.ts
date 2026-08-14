@@ -6,13 +6,19 @@ import {
   type Result,
   type TenantId,
   type WorkflowWakeupV1,
+  type ApplicationFeedbackV1,
 } from "@mail-edge/contracts";
-import type { Clock, TenantUnitOfWorkFactory, WakeupScheduler } from "@mail-edge/core";
+import type {
+  ApplicationDeliverySink,
+  Clock,
+  TenantUnitOfWorkFactory,
+  WakeupScheduler,
+} from "@mail-edge/core";
 import { validateProviderFeedbackBatch } from "@mail-edge/provider";
 import type { ProviderReplayIdentityV1 } from "@mail-edge/provider";
 
 import { observeSafely, operationSignal } from "./internal.js";
-import { assertDurableRuntimeConfig, type DurableRuntimeConfig } from "./policy.js";
+import { assertDurableRuntimeConfig, decideRetry, type DurableRuntimeConfig } from "./policy.js";
 import type {
   FeedbackCommitResult,
   FeedbackWorkflowWriter,
@@ -97,8 +103,10 @@ export class DurableFeedbackWorker {
   readonly #limiter: BoundedWorkLimiter;
   readonly #locator: WorkflowTenantLocator;
   readonly #observability: RuntimeObservabilityPort;
+  readonly #sink: ApplicationDeliverySink;
   readonly #store: FeedbackWorkflowWriter;
   readonly #transactions: TenantUnitOfWorkFactory;
+  readonly #wakeups: WakeupScheduler;
 
   constructor(input: {
     readonly clock: Clock;
@@ -106,8 +114,10 @@ export class DurableFeedbackWorker {
     readonly limiter: BoundedWorkLimiter;
     readonly locator: WorkflowTenantLocator;
     readonly observability: RuntimeObservabilityPort;
+    readonly sink: ApplicationDeliverySink;
     readonly store: FeedbackWorkflowWriter;
     readonly transactions: TenantUnitOfWorkFactory;
+    readonly wakeups: WakeupScheduler;
   }) {
     assertDurableRuntimeConfig(input.config);
     this.#clock = input.clock;
@@ -115,8 +125,10 @@ export class DurableFeedbackWorker {
     this.#limiter = input.limiter;
     this.#locator = input.locator;
     this.#observability = input.observability;
+    this.#sink = input.sink;
     this.#store = input.store;
     this.#transactions = input.transactions;
+    this.#wakeups = input.wakeups;
   }
 
   async handle(wakeup: WorkflowWakeupV1, signal: AbortSignal): Promise<void> {
@@ -184,12 +196,52 @@ export class DurableFeedbackWorker {
     if (!claim.ok) return claim;
     if (claim.value === null) return { ok: true, value: undefined };
     const feedbackClaim = claim.value;
-    return this.#transactions
-      .forTenant(tenantId)
-      .execute(
-        (context, transactionSignal) =>
-          this.#store.applyFeedback(feedbackClaim, this.#clock.now(), context, transactionSignal),
-        signal,
+    const event = feedbackClaim.event;
+    const applicationFeedback: ApplicationFeedbackV1 = Object.freeze({
+      feedbackEventId: event.feedbackEventId,
+      intentId: feedbackClaim.intentId,
+      kind: event.kind,
+      normalizedEvidence: event.normalizedEvidence,
+      occurredAt: event.occurredAt,
+      schemaVersion: "v1",
+      tenantId,
+      ...(event.attemptId === undefined ? {} : { attemptId: event.attemptId }),
+      ...(event.recipient === undefined ? {} : { recipient: event.recipient }),
+    });
+    const delivered = await this.#sink.deliverFeedback(applicationFeedback, signal);
+    const decision = delivered.ok
+      ? undefined
+      : decideRetry(
+          {
+            attemptOrdinal: feedbackClaim.failureCount + 1,
+            certainty: "not_sent",
+            errorRetryable: delivered.error.retryable,
+            now: this.#clock.now(),
+            stableKey: event.feedbackEventId,
+          },
+          this.#config.retry,
+        );
+    return this.#transactions.forTenant(tenantId).execute(async (context, transactionSignal) => {
+      const settled = await this.#store.settleFeedbackApplication(
+        feedbackClaim,
+        delivered.ok
+          ? { acknowledgement: delivered.value, state: "delivered" }
+          : decision?.retry === true
+            ? {
+                errorCode: delivered.error.code,
+                nextActionAt: decision.nextActionAt,
+                state: "retry_wait",
+              }
+            : { errorCode: delivered.error.code, nextActionAt: null, state: "dead_letter" },
+        this.#clock.now(),
+        context,
+        transactionSignal,
       );
+      if (!settled.ok) return settled;
+      if (!delivered.ok && decision?.retry === true) {
+        return this.#wakeups.schedule(wakeup, context, transactionSignal);
+      }
+      return { ok: true, value: undefined };
+    }, signal);
   }
 }

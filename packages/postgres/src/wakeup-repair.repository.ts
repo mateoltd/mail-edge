@@ -81,11 +81,18 @@ export class PostgresWakeupRepairRepository {
               .execute(),
             transaction
               .selectFrom("providerFeedbackEvents")
-              .select(["feedbackEventId", "receivedAt"])
+              .select(["feedbackEventId", "receivedAt", "applicationNextActionAt"])
               .where("tenantId", "=", tenantId)
               .where("projectedAt", "is", null)
-              .where("receivedAt", "<=", new Date(scannedAt))
-              .orderBy("receivedAt")
+              .where("applicationTerminalAt", "is", null)
+              .where(
+                (expression) => expression.fn.coalesce("applicationNextActionAt", "receivedAt"),
+                "<=",
+                new Date(scannedAt),
+              )
+              .orderBy((expression) =>
+                expression.fn.coalesce("applicationNextActionAt", "receivedAt"),
+              )
               .limit(limit)
               .execute(),
           ]);
@@ -118,7 +125,7 @@ export class PostgresWakeupRepairRepository {
               }),
             })),
             ...feedback.map((row) => ({
-              dueAt: row.receivedAt,
+              dueAt: row.applicationNextActionAt ?? row.receivedAt,
               id: row.feedbackEventId,
               wakeup: workflowWakeup({
                 feedbackEventId: row.feedbackEventId,

@@ -4,8 +4,11 @@
 
 ```ts
 
+import type { ApplicationAckV1 as ApplicationAckV1_2 } from '@mail-edge/contracts';
+import type { ApplicationDeliveryCallbackV1 } from '@mail-edge/contracts';
 import { ApplicationDeliveryState } from '@mail-edge/contracts';
 import type { ApplicationDeliveryV1 } from '@mail-edge/contracts';
+import { ApplicationDestinationV1 } from '@mail-edge/contracts';
 import type { ApplicationFeedbackV1 } from '@mail-edge/contracts';
 import { AttemptId } from '@mail-edge/contracts';
 import type { AuditEventV1 } from '@mail-edge/contracts';
@@ -16,8 +19,11 @@ import { BoundedBodyCollector } from '@mail-edge/contracts';
 import type { ConformanceEvidenceV1 } from '@mail-edge/contracts';
 import { DEFAULT_MAX_RAW_MESSAGE_BYTES } from '@mail-edge/contracts';
 import { DeliveryCertainty } from '@mail-edge/contracts';
-import type { DeliveryId } from '@mail-edge/contracts';
 import { HeaderPatchPlanV1 } from '@mail-edge/contracts';
+import { HostSignatureClaimsV1 } from '@mail-edge/contracts';
+import { HostSignatureHttpHeadersV1 } from '@mail-edge/contracts';
+import { HostSignatureV1 } from '@mail-edge/contracts';
+import { HostSignedOperation } from '@mail-edge/contracts';
 import { IdempotencyKey } from '@mail-edge/contracts';
 import { IdempotencyRecordV1 } from '@mail-edge/contracts';
 import { InboundReceiptState } from '@mail-edge/contracts';
@@ -48,6 +54,8 @@ import { ReceiptId } from '@mail-edge/contracts';
 import type { RecipientDeliveryProjectionV1 } from '@mail-edge/contracts';
 import type { RecipientTransportState } from '@mail-edge/contracts';
 import { Result } from '@mail-edge/contracts';
+import type { ReverseRouteRequestV1 as ReverseRouteRequestV1_2 } from '@mail-edge/contracts';
+import type { ReverseRouteResolutionV1 as ReverseRouteResolutionV1_2 } from '@mail-edge/contracts';
 import { RouteBindingSnapshotV1 } from '@mail-edge/contracts';
 import { RouteBindingV1 } from '@mail-edge/contracts';
 import type { RouteRequirementsV1 } from '@mail-edge/contracts';
@@ -74,12 +82,7 @@ export interface ActivationEvaluation {
 }
 
 // @public (undocumented)
-export interface ApplicationAckV1 {
-    // (undocumented)
-    readonly acceptedAt: string;
-    // (undocumented)
-    readonly deliveryId: DeliveryId;
-}
+export type ApplicationAckV1 = ApplicationAckV1_2;
 
 // @public (undocumented)
 export type ApplicationDeliveryEvent = "claim" | "retry" | "due" | "ack" | "dead_letter";
@@ -87,20 +90,12 @@ export type ApplicationDeliveryEvent = "claim" | "retry" | "due" | "ack" | "dead
 // @public (undocumented)
 export interface ApplicationDeliverySink {
     // (undocumented)
-    deliver(input: ApplicationDeliveryV1, signal: AbortSignal): Promise<Result<ApplicationAckV1, MailEdgeError>>;
+    deliver(input: ApplicationDeliveryCallbackV1, signal: AbortSignal): Promise<Result<ApplicationAckV1, MailEdgeError>>;
     // (undocumented)
     deliverFeedback(input: ApplicationFeedbackV1, signal: AbortSignal): Promise<Result<ApplicationAckV1, MailEdgeError>>;
 }
 
-// @public (undocumented)
-export interface ApplicationDestinationV1 {
-    // (undocumented)
-    readonly deliveryMode: "push" | "pull";
-    // (undocumented)
-    readonly destinationId: string;
-    // (undocumented)
-    readonly opaqueToken: string;
-}
+export { ApplicationDestinationV1 }
 
 // @public (undocumented)
 export interface AuditPort {
@@ -397,27 +392,7 @@ export interface HeaderPatchPlanner {
     compile(resolution: ReverseRouteResolutionV1, source: RawMessageRefV1): Result<HeaderPatchPlanV1, MailEdgeError>;
 }
 
-// @public (undocumented)
-export interface HostSignatureClaimsV1 {
-    // (undocumented)
-    readonly algorithm: "hmac-sha256";
-    // (undocumented)
-    readonly audience: string;
-    // (undocumented)
-    readonly bodySha256: string;
-    // (undocumented)
-    readonly keyId: string;
-    // (undocumented)
-    readonly nonce: string;
-    // (undocumented)
-    readonly operation: HostSignedOperation;
-    // (undocumented)
-    readonly schemaVersion: "v1";
-    // (undocumented)
-    readonly subjectId: string;
-    // (undocumented)
-    readonly timestamp: string;
-}
+export { HostSignatureClaimsV1 }
 
 // @public (undocumented)
 export interface HostSignatureExpectation {
@@ -437,14 +412,14 @@ export interface HostSignatureExpectation {
     readonly subjectId: string;
 }
 
-// @public (undocumented)
-export interface HostSignatureV1 extends HostSignatureClaimsV1 {
-    // (undocumented)
-    readonly signature: string;
-}
+export { HostSignatureHttpHeadersV1 }
 
-// @public (undocumented)
-export type HostSignedOperation = "application_delivery" | "application_feedback" | "recipient_route" | "reverse_route";
+// @public
+export const hostSignatureToHttpHeaders: (signed: HostSignatureV1) => Result<HostSignatureHttpHeadersV1, MailEdgeError>;
+
+export { HostSignatureV1 }
+
+export { HostSignedOperation }
 
 // @public (undocumented)
 export interface IdempotencyCandidate {
@@ -572,6 +547,7 @@ export interface OutboundIntentPort {
         readonly raw: RawMessageRefV1;
         readonly envelope: SmtpEnvelopeV1;
         readonly idempotencyKey: IdempotencyKey;
+        readonly opaqueReplyToken?: string;
     }, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
 }
 
@@ -724,6 +700,12 @@ export interface ProviderRegistryPort {
 // @public
 export const providerScopedIdentityDigest: (providerInstanceId: ProviderInstanceId, providerIdentity: string) => string;
 
+// @public
+export interface RawAccessGrantIssuer {
+    // (undocumented)
+    issueForApplicationDelivery(delivery: ApplicationDeliveryV1, signal: AbortSignal): Promise<Result<RawAccessGrantV1, MailEdgeError>>;
+}
+
 export { RawMessageIntegrityError }
 
 export { RawMessageIntegrityErrorOptions }
@@ -860,26 +842,10 @@ export class ReverseRoutePlanningService {
 }
 
 // @public (undocumented)
-export interface ReverseRouteRequestV1 {
-    // (undocumented)
-    readonly envelope: SmtpEnvelopeV1;
-    // (undocumented)
-    readonly opaqueReplyToken: string;
-    // (undocumented)
-    readonly raw: RawMessageRefV1;
-    // (undocumented)
-    readonly tenantId: TenantId;
-}
+export type ReverseRouteRequestV1 = ReverseRouteRequestV1_2;
 
 // @public (undocumented)
-export interface ReverseRouteResolutionV1 {
-    // (undocumented)
-    readonly envelope: SmtpEnvelopeV1;
-    // (undocumented)
-    readonly policyCode: string;
-    // (undocumented)
-    readonly visibleHeaderFields: readonly string[];
-}
+export type ReverseRouteResolutionV1 = ReverseRouteResolutionV1_2;
 
 // @public (undocumented)
 export interface ReverseRouteResolver {

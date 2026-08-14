@@ -1,0 +1,35 @@
+{
+  "$id": "urn:mail-edge:schema:v1:application-destination",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "deliveryMode": {
+      "anyOf": [
+        {
+          "const": "push",
+          "type": "string"
+        },
+        {
+          "const": "pull",
+          "type": "string"
+        }
+      ]
+    },
+    "destinationId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "opaqueToken": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "destinationId",
+    "deliveryMode",
+    "opaqueToken"
+  ],
+  "type": "object"
+}

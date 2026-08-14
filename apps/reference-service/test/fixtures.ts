@@ -12,10 +12,9 @@ import {
   type ProviderCapabilityDescriptorV1,
   type Result,
 } from "@mail-edge/contracts";
-import type { Clock } from "@mail-edge/core";
+import type { BlobStorePort, Clock } from "@mail-edge/core";
 import { ProviderAdapterRegistry } from "@mail-edge/provider";
 import type {
-  InboundIngressCommit,
   InboundIngestionServices,
   ProviderAdapterRegistration,
   ProviderFeedbackV1,
@@ -29,7 +28,11 @@ import type { ReferenceServiceConfig } from "../src/config.js";
 import { hostError } from "../src/errors.js";
 import { ReferenceHttpServer } from "../src/http-server.js";
 import { ProviderInstanceCatalog } from "../src/instance-catalog.js";
-import type { ReferenceServiceWorkflowPort } from "../src/ports.js";
+import type {
+  ControlServicePort,
+  RawAccessServicePort,
+  ReferenceServiceWorkflowPort,
+} from "../src/ports.js";
 import { DirectorySecretResolver } from "../src/secrets.js";
 import { HostTracer } from "../src/telemetry.js";
 
@@ -48,6 +51,7 @@ const receiptId = unwrap(parseReceiptId("018f1f2e-7b4a-7c11-8a00-000000000009"))
 const feedbackEventId = unwrap(parseFeedbackEventId("018f1f2e-7b4a-7c11-8a00-000000000010"));
 
 export const operatorToken = "operator-token-that-is-at-least-thirty-two-bytes";
+export const privilegedOperatorToken = "privileged-operator-token-at-least-thirty-two-bytes";
 export const tenantToken = "tenant-token-that-is-at-least-thirty-two-bytes-001";
 const otherTenantToken = "tenant-token-that-is-at-least-thirty-two-bytes-002";
 
@@ -114,29 +118,8 @@ export interface AdapterState {
   ready: boolean;
 }
 
-const adapterRegistration = (state: AdapterState): ProviderAdapterRegistration => ({
-  descriptor,
-  feedback: {
-    descriptor,
-    async ingestFeedback(request, context, collector, signal) {
-      const collected = await collector.collectSmallBody(request, 8, signal);
-      if (!collected.ok) return collected;
-      const event: ProviderFeedbackV1 = Object.freeze({
-        feedbackEventId,
-        kind: "delivered",
-        normalizedEvidence: Object.freeze({ evidenceCode: "provider_event", source: "fixture" }),
-        occurredAt: "2026-08-14T09:59:00.000Z",
-        providerEventKey: "event-1",
-        providerId,
-        providerInstanceId: context.providerInstanceId,
-        receivedAt: "2026-08-14T10:00:00.000Z",
-        schemaVersion: "v1",
-      });
-      return { ok: true, value: Object.freeze({ events: Object.freeze([event]) }) };
-    },
-  },
-  identity: { adapterVersion: "1.0.0", mode: "http", providerId },
-  inbound: {
+const adapterRegistration = (state: AdapterState): ProviderAdapterRegistration => {
+  const inbound: ProviderAdapterRegistration["inbound"] = {
     descriptor,
     async ingest(request, context, services, signal) {
       state.ingressEntered = true;
@@ -155,16 +138,6 @@ const adapterRegistration = (state: AdapterState): ProviderAdapterRegistration =
       };
       const inspected = await services.replay.inspect(replay, signal);
       if (!inspected.ok) return inspected;
-      if (state.malformed) {
-        return {
-          ok: true,
-          value: {
-            duplicate: false,
-            receiptId,
-            response: { class: "success", statusCode: 203 },
-          },
-        } as unknown as Result<InboundIngressCommit, MailEdgeError>;
-      }
       return {
         ok: true,
         value: {
@@ -174,16 +147,62 @@ const adapterRegistration = (state: AdapterState): ProviderAdapterRegistration =
         },
       };
     },
-  },
-  lifecycle: {
-    close: () => Promise.resolve({ ok: true, value: undefined }),
-    start: () => Promise.resolve({ ok: true, value: undefined }),
-  },
-});
+  };
+  const adversarialInbound = new Proxy(inbound, {
+    get(target, property) {
+      if (property === "ingest") {
+        return async (...input: Parameters<typeof target.ingest>) => {
+          if (state.malformed) {
+            return {
+              ok: true,
+              value: {
+                duplicate: false,
+                receiptId,
+                response: { class: "success", statusCode: 203 },
+              },
+            };
+          }
+          return await target.ingest(...input);
+        };
+      }
+      if (property === "descriptor") return target.descriptor;
+      return undefined;
+    },
+  });
+  return {
+    descriptor,
+    feedback: {
+      descriptor,
+      async ingestFeedback(request, context, collector, signal) {
+        const collected = await collector.collectSmallBody(request, 8, signal);
+        if (!collected.ok) return collected;
+        const event: ProviderFeedbackV1 = Object.freeze({
+          feedbackEventId,
+          kind: "delivered",
+          normalizedEvidence: Object.freeze({ evidenceCode: "provider_event", source: "fixture" }),
+          occurredAt: "2026-08-14T09:59:00.000Z",
+          providerEventKey: "event-1",
+          providerId,
+          providerInstanceId: context.providerInstanceId,
+          receivedAt: "2026-08-14T10:00:00.000Z",
+          schemaVersion: "v1",
+        });
+        return { ok: true, value: Object.freeze({ events: Object.freeze([event]) }) };
+      },
+    },
+    identity: { adapterVersion: "1.0.0", mode: "http", providerId },
+    inbound: adversarialInbound,
+    lifecycle: {
+      close: () => Promise.resolve({ ok: true, value: undefined }),
+      start: () => Promise.resolve({ ok: true, value: undefined }),
+    },
+  };
+};
 
 export const testConfig = (secretDirectory: string): ReferenceServiceConfig => ({
   authentication: {
     operatorTokenSecrets: ["secret://operator"],
+    privilegedOperatorTokenSecrets: ["secret://privileged-operator"],
     tenants: [
       { tenantId, tokenSecrets: ["secret://tenant-one"] },
       { tenantId: otherTenantId, tokenSecrets: ["secret://tenant-two"] },
@@ -294,6 +313,7 @@ export const createHttpFixture = async (): Promise<{
   const directory = await mkdtemp(join(tmpdir(), "mail-edge-reference-test-"));
   await Promise.all([
     writeFile(join(directory, "operator"), operatorToken),
+    writeFile(join(directory, "privileged-operator"), privilegedOperatorToken),
     writeFile(join(directory, "tenant-one"), tenantToken),
     writeFile(join(directory, "tenant-two"), otherTenantToken),
   ]);
@@ -337,11 +357,33 @@ export const createHttpFixture = async (): Promise<{
   const registration = adapterRegistration(state);
   const registry = new ProviderAdapterRegistry([registration]);
   const catalog = new ProviderInstanceCatalog(config.providerInstances);
+  const unavailableRaw = (): Promise<Result<never, MailEdgeError>> =>
+    Promise.resolve({ error: hostError("NOT_FOUND", "raw_not_used"), ok: false });
+  const blobStore: BlobStorePort = Object.freeze({
+    getAvailableReference: unavailableRaw,
+    openRaw: unavailableRaw,
+    stages: Object.freeze({ reserve: unavailableRaw }),
+  });
+  const rawAccess: RawAccessServicePort = Object.freeze({
+    authorize: unavailableRaw,
+    issueForSubject: unavailableRaw,
+    revoke: unavailableRaw,
+  });
+  const control: ControlServicePort = Object.freeze({
+    decideInboundQuarantine: unavailableRaw,
+    decideOutboundQuarantine: unavailableRaw,
+    inspectBinding: unavailableRaw,
+    inspectInboundQuarantine: unavailableRaw,
+    inspectOutboundQuarantine: unavailableRaw,
+    transitionBinding: unavailableRaw,
+  });
   const http = new ReferenceHttpServer({
     authenticator,
+    blobStore,
     catalog,
     clock,
     config,
+    control,
     gate: new BoundedConcurrencyGate(4, 2),
     readiness: () =>
       Promise.resolve(
@@ -350,6 +392,7 @@ export const createHttpFixture = async (): Promise<{
           : { error: hostError("HOST_UNAVAILABLE", "test_not_ready"), ok: false },
       ),
     registry,
+    rawAccess,
     sdk: {} as MailEdgeSdk,
     shutdownSignal: new AbortController().signal,
     tracer: new HostTracer("reference-test"),

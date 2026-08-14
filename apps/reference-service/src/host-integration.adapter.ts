@@ -1,19 +1,23 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import {
   MailEdgeError,
-  SmtpEnvelopeV1Schema,
+  ApplicationAckV1Schema,
+  RecipientRouteResponseV1Schema,
+  ReverseRouteResolutionV1Schema,
   parseDeliveryId,
-  type ApplicationDeliveryV1,
+  type ApplicationDeliveryCallbackV1,
+  type ApplicationDestinationV1,
   type ApplicationFeedbackV1,
   type Result,
   type TenantId,
+  type HostSignedOperation,
   validateContract,
 } from "@mail-edge/contracts";
+import { createHostSignature, hostSignatureToHttpHeaders } from "@mail-edge/core";
 import type {
   ApplicationAckV1,
   ApplicationDeliverySink,
-  ApplicationDestinationV1,
   Clock,
   RecipientRouter,
   ReverseRouteRequestV1,
@@ -47,14 +51,6 @@ const hostFailure = (reason: string, retryable: boolean, cause?: unknown): MailE
     retryable,
     safeDetails: { reason },
   });
-
-const boundedString = (value: unknown, maximum: number): string | undefined =>
-  typeof value === "string" &&
-  value.length > 0 &&
-  value.length <= maximum &&
-  !/[\r\n\0]/u.test(value)
-    ? value
-    : undefined;
 
 const collectJson = async (
   response: Response,
@@ -111,30 +107,16 @@ const collectJson = async (
 const parseDestinations = (
   value: Readonly<Record<string, unknown>>,
 ): Result<readonly ApplicationDestinationV1[], MailEdgeError> => {
-  const candidates = value["destinations"];
-  if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 100) {
-    return { error: hostFailure("destinations_count", false), ok: false };
-  }
-  const destinations: ApplicationDestinationV1[] = [];
+  const validated = validateContract(RecipientRouteResponseV1Schema, value);
+  if (!validated.ok) return { error: hostFailure("destination_shape", false), ok: false };
   const identities = new Set<string>();
-  for (const candidate of candidates) {
-    const item = record(candidate);
-    const destinationId = boundedString(item?.["destinationId"], 256);
-    const opaqueToken = boundedString(item?.["opaqueToken"], 4096);
-    if (
-      item === undefined ||
-      Object.keys(item).length !== 3 ||
-      destinationId === undefined ||
-      opaqueToken === undefined ||
-      item["deliveryMode"] !== "push" ||
-      identities.has(destinationId)
-    ) {
+  for (const destination of validated.value.destinations) {
+    if (destination.deliveryMode !== "push" || identities.has(destination.destinationId)) {
       return { error: hostFailure("destination_shape", false), ok: false };
     }
-    identities.add(destinationId);
-    destinations.push(Object.freeze({ deliveryMode: "push", destinationId, opaqueToken }));
+    identities.add(destination.destinationId);
   }
-  return { ok: true, value: Object.freeze(destinations) };
+  return { ok: true, value: validated.value.destinations };
 };
 
 /** Signed, deadline-bound host routing, reverse-route, delivery, and feedback adapter. */
@@ -168,6 +150,7 @@ export class SignedHostIntegrationAdapter
       input.tenantId,
       "recipientRouterUrl",
       Object.freeze({ ...input, schemaVersion: "v1" }),
+      "recipient_route",
       input.receiptId,
       signal,
     );
@@ -182,44 +165,31 @@ export class SignedHostIntegrationAdapter
       input.tenantId,
       "reverseRouteUrl",
       input,
+      "reverse_route",
       input.raw.blobId,
       signal,
     );
     if (!response.ok) return response;
-    const envelope = validateContract(SmtpEnvelopeV1Schema, response.value["envelope"]);
-    const fields = response.value["visibleHeaderFields"];
-    const policyCode = boundedString(response.value["policyCode"], 128);
-    if (
-      !envelope.ok ||
-      !Array.isArray(fields) ||
-      fields.length > 64 ||
-      fields.some((field) => boundedString(field, 998) === undefined) ||
-      policyCode === undefined
-    ) {
+    const validated = validateContract(ReverseRouteResolutionV1Schema, response.value);
+    if (!validated.ok) {
       return { error: hostFailure("reverse_route_shape", false), ok: false };
     }
-    return {
-      ok: true,
-      value: Object.freeze({
-        envelope: envelope.value,
-        policyCode,
-        visibleHeaderFields: Object.freeze(fields.map((field) => String(field))),
-      }),
-    };
+    return validated;
   }
 
   async deliver(
-    input: ApplicationDeliveryV1,
+    input: ApplicationDeliveryCallbackV1,
     signal: AbortSignal,
   ): Promise<Result<ApplicationAckV1, MailEdgeError>> {
     const response = await this.#post(
-      input.tenantId,
+      input.delivery.tenantId,
       "deliveryUrl",
       input,
-      input.deliveryId,
+      "application_delivery",
+      input.delivery.deliveryId,
       signal,
     );
-    return response.ok ? this.#ack(response.value, input.deliveryId) : response;
+    return response.ok ? this.#ack(response.value, input.delivery.deliveryId) : response;
   }
 
   async deliverFeedback(
@@ -232,6 +202,7 @@ export class SignedHostIntegrationAdapter
       input.tenantId,
       "feedbackUrl",
       input,
+      "application_feedback",
       input.feedbackEventId,
       signal,
     );
@@ -242,23 +213,19 @@ export class SignedHostIntegrationAdapter
     value: Readonly<Record<string, unknown>>,
     deliveryId: ApplicationAckV1["deliveryId"],
   ): Result<ApplicationAckV1, MailEdgeError> {
-    const acceptedAt = boundedString(value["acceptedAt"], 40);
-    if (
-      Object.keys(value).length !== 2 ||
-      value["deliveryId"] !== deliveryId ||
-      acceptedAt === undefined ||
-      !Number.isFinite(Date.parse(acceptedAt))
-    ) {
+    const validated = validateContract(ApplicationAckV1Schema, value);
+    if (!validated.ok || validated.value.deliveryId !== deliveryId) {
       return { error: hostFailure("ack_shape", false), ok: false };
     }
-    return { ok: true, value: Object.freeze({ acceptedAt, deliveryId }) };
+    return validated;
   }
 
   async #post(
     tenantId: TenantId,
     urlField: "recipientRouterUrl" | "reverseRouteUrl" | "deliveryUrl" | "feedbackUrl",
     value: unknown,
-    operationId: string,
+    operation: HostSignedOperation,
+    subjectId: string,
     callerSignal: AbortSignal,
   ): Promise<Result<Readonly<Record<string, unknown>>, MailEdgeError>> {
     const config = this.#configs.get(tenantId);
@@ -271,11 +238,25 @@ export class SignedHostIntegrationAdapter
     const nonce = randomBytes(24).toString("base64url");
     const secret = await this.#secrets.resolve(config.signingSecret, signal);
     if (!secret.ok) return secret;
-    let signature: string;
+    let signatureHeaders: ReturnType<typeof hostSignatureToHttpHeaders>;
     try {
-      signature = createHmac("sha256", secret.value)
-        .update(`${timestamp}\n${nonce}\n${operationId}\n${bodyDigest}`, "utf8")
-        .digest("hex");
+      const signed = createHostSignature(
+        Object.freeze({
+          algorithm: "hmac-sha256",
+          audience: config.audience,
+          bodySha256: bodyDigest,
+          keyId: config.signingKeyId,
+          nonce,
+          operation,
+          schemaVersion: "v1",
+          subjectId,
+          timestamp,
+        }),
+        secret.value,
+      );
+      if (!signed.ok) return signed;
+      signatureHeaders = hostSignatureToHttpHeaders(signed.value);
+      if (!signatureHeaders.ok) return signatureHeaders;
     } finally {
       secret.value.fill(0);
     }
@@ -283,12 +264,9 @@ export class SignedHostIntegrationAdapter
       const response = await this.#fetch(config[urlField], {
         body,
         headers: {
+          accept: "application/json",
           "content-type": "application/json",
-          "x-mail-edge-body-sha256": bodyDigest,
-          "x-mail-edge-id": operationId,
-          "x-mail-edge-nonce": nonce,
-          "x-mail-edge-signature": signature,
-          "x-mail-edge-timestamp": timestamp,
+          ...signatureHeaders.value,
         },
         method: "POST",
         redirect: "error",
@@ -296,11 +274,27 @@ export class SignedHostIntegrationAdapter
       });
       if (response.status < 200 || response.status > 299) {
         await response.body?.cancel("host_status_rejected");
-        return { error: hostFailure("response_status", response.status >= 500), ok: false };
+        return {
+          error: hostFailure(
+            "response_status",
+            response.status === 408 ||
+              response.status === 425 ||
+              response.status === 429 ||
+              response.status >= 500,
+          ),
+          ok: false,
+        };
       }
-      if (response.headers.get("x-mail-edge-id") !== operationId) {
+      if (response.headers.get("x-mail-edge-subject-id") !== subjectId) {
         await response.body?.cancel("host_ack_identity_mismatch");
         return { error: hostFailure("response_identity", false), ok: false };
+      }
+      if (
+        response.headers.get("content-encoding") !== null ||
+        response.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json"
+      ) {
+        await response.body?.cancel("host_ack_media_type_mismatch");
+        return { error: hostFailure("response_media_type", false), ok: false };
       }
       return await collectJson(response, config.maximumResponseBytes, signal);
     } catch (cause) {

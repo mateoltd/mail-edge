@@ -1,5 +1,6 @@
 import type {
   ApplicationDeliveryV1,
+  ApplicationDestinationV1,
   AttemptId,
   DeliveryId,
   FeedbackEventId,
@@ -18,12 +19,7 @@ import type {
   WorkflowWakeupV1,
   RawMessageRefV1,
 } from "@mail-edge/contracts";
-import type {
-  ApplicationAckV1,
-  ApplicationDestinationV1,
-  UnitOfWorkContext,
-  WakeupScheduler,
-} from "@mail-edge/core";
+import type { ApplicationAckV1, UnitOfWorkContext, WakeupScheduler } from "@mail-edge/core";
 import type {
   InboundReceiptCommitInput,
   ProviderAdapterRegistration,
@@ -146,7 +142,6 @@ export interface InboundRoutingWriter {
 /** Durable destination and delivery claim loaded only after its tenant is known. @public */
 export interface ApplicationDeliveryClaim {
   readonly delivery: ApplicationDeliveryV1;
-  readonly destination: ApplicationDestinationV1;
   readonly fence: number;
   readonly leaseExpiresAt: string;
 }
@@ -182,6 +177,30 @@ export interface CreateOutboundIntentInput {
   readonly raw: RawMessageRefV1;
   readonly envelope: SmtpEnvelopeV1;
   readonly idempotencyKey: IdempotencyKey;
+  readonly transmissionRaw: RawMessageRefV1;
+  readonly reverseRoutePlanDigest?: string;
+}
+
+/** Host-authorized reply preparation completed before durable intent creation. @public */
+export interface ReverseRoutePreparationPort {
+  prepare(
+    input: {
+      readonly tenantId: TenantId;
+      readonly raw: RawMessageRefV1;
+      readonly envelope: SmtpEnvelopeV1;
+      readonly opaqueReplyToken: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    Result<
+      {
+        readonly envelope: SmtpEnvelopeV1;
+        readonly transmissionRaw: RawMessageRefV1;
+        readonly planDigest: string;
+      },
+      MailEdgeError
+    >
+  >;
 }
 
 /** Atomic exact-route intent writer. @public */
@@ -263,6 +282,7 @@ export interface FeedbackApplicationClaim {
   readonly tenantId: TenantId;
   readonly intentId: IntentId;
   readonly fence: number;
+  readonly failureCount: number;
   readonly leaseExpiresAt: string;
 }
 
@@ -283,8 +303,15 @@ export interface FeedbackWorkflowWriter {
     context: UnitOfWorkContext,
     signal: AbortSignal,
   ): Promise<Result<FeedbackApplicationClaim | null, MailEdgeError>>;
-  applyFeedback(
+  settleFeedbackApplication(
     claim: FeedbackApplicationClaim,
+    settlement:
+      | { readonly state: "delivered"; readonly acknowledgement: ApplicationAckV1 }
+      | {
+          readonly state: "retry_wait" | "dead_letter";
+          readonly nextActionAt: string | null;
+          readonly errorCode: string;
+        },
     now: string,
     context: UnitOfWorkContext,
     signal: AbortSignal,
