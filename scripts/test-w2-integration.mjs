@@ -121,7 +121,7 @@ const main = async () => {
       statementTimeoutMilliseconds: 10_000,
     });
     await database.start(signal);
-    const unitOfWork = new PostgresUnitOfWork(database.kysely, 10_000);
+    const unitOfWork = new PostgresUnitOfWork(database.kysely, 10_000, database.canceler);
     const repository = new PostgresBlobRepository(unitOfWork);
     const faultingMetadata = bindRepositoryWithCommitFault(repository);
 

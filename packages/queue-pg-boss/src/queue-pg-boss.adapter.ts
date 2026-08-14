@@ -38,6 +38,8 @@ const queueNames: Readonly<Record<WakeupType, string>> = Object.freeze({
 const validateConfig = (config: PgBossWakeupConfig): void => {
   const queryTimeoutMilliseconds = config.queryTimeoutMilliseconds ?? 30_000;
   if (
+    config.connectionString.length < 1 ||
+    config.connectionString.length > 8192 ||
     !/^[a-z][a-z0-9_]{0,62}$/u.test(config.schema) ||
     !/^[a-z][a-z0-9_-]{0,62}$/u.test(config.applicationName) ||
     !Number.isSafeInteger(config.maximumPoolSize) ||
@@ -45,10 +47,16 @@ const validateConfig = (config: PgBossWakeupConfig): void => {
     config.maximumPoolSize > 100 ||
     !Number.isSafeInteger(config.connectionTimeoutMilliseconds) ||
     config.connectionTimeoutMilliseconds < 1 ||
+    config.connectionTimeoutMilliseconds > 86_400_000 ||
     !Number.isSafeInteger(queryTimeoutMilliseconds) ||
     queryTimeoutMilliseconds < 1 ||
+    queryTimeoutMilliseconds > 86_400_000 ||
+    !Number.isFinite(config.pollingIntervalSeconds) ||
     config.pollingIntervalSeconds < 0.5 ||
+    config.pollingIntervalSeconds > 3600 ||
+    !Number.isFinite(config.notifyPollingIntervalSeconds) ||
     config.notifyPollingIntervalSeconds < 0.5 ||
+    config.notifyPollingIntervalSeconds > 3600 ||
     !Number.isSafeInteger(config.workerConcurrency) ||
     config.workerConcurrency < 1 ||
     config.workerConcurrency > 100 ||
@@ -57,8 +65,10 @@ const validateConfig = (config: PgBossWakeupConfig): void => {
     config.workerBatchSize > 100 ||
     !Number.isSafeInteger(config.gracefulStopMilliseconds) ||
     config.gracefulStopMilliseconds < 1 ||
+    config.gracefulStopMilliseconds > 86_400_000 ||
     !Number.isSafeInteger(config.jobRetentionSeconds) ||
-    config.jobRetentionSeconds < 1
+    config.jobRetentionSeconds < 1 ||
+    config.jobRetentionSeconds > 31_536_000
   ) {
     throw new TypeError("pg-boss wakeup configuration is invalid or unbounded.");
   }

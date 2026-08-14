@@ -133,6 +133,7 @@ export interface RawBlobIntegrityClaim {
 export interface StoredBlobRecord {
   readonly raw: ResultValue<Awaited<ReturnType<BlobStorePort["getAvailableReference"]>>>;
   readonly tenantId: BlobTenantId;
+  readonly sourceStageId: string;
   readonly purpose: BlobReservation["purpose"];
   readonly objectKey: string;
   readonly objectVersion?: string;
@@ -163,6 +164,15 @@ export interface PendingBlobPromotion {
   readonly expectedVersion: number;
   readonly finalObjectKey: string;
   readonly finalObjectVersion?: string;
+  readonly scratchObjectKey: string;
+  readonly scratchObjectVersion?: string;
+  readonly expectedSize: number;
+  readonly expectedSha256: string;
+  readonly kmsKeyRef: string;
+  readonly wrappedDek: Uint8Array;
+  readonly encryptionFormatVersion: number;
+  readonly encryptionMetadata: Readonly<Record<string, unknown>>;
+  readonly purpose: BlobReservation["purpose"];
 }
 
 /** @public */
@@ -172,6 +182,21 @@ export interface AbandonedBlobStage {
   readonly expectedVersion: number;
   readonly objectKey: string;
   readonly objectVersion?: string;
+  readonly state: "abandoned" | "promoted";
+}
+
+/** Fresh exact-object integrity proof accepted by the metadata restoration fence. @public */
+export interface RawBlobRestorationProof {
+  readonly tenantId: BlobTenantId;
+  readonly blobId: string;
+  readonly expectedVersion: number;
+  readonly objectKey: string;
+  readonly objectVersion?: string;
+  readonly size: number;
+  readonly sha256: string;
+  readonly encryptionFormatVersion: number;
+  readonly encryptionHeaderSha256: string;
+  readonly verifiedAt: string;
 }
 
 /** Metadata operations are short PostgreSQL transactions owned by the injected repository. @public */
@@ -213,6 +238,11 @@ export interface BlobMetadataStore {
     occurredAt: string,
     signal: AbortSignal,
   ): Promise<DriverResult<{ readonly optimisticVersion: number }>>;
+  replaceMissingFinalObject(
+    input: BlobFinalObject & { readonly missingFinalObjectVersion?: string },
+    occurredAt: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<{ readonly optimisticVersion: number }>>;
   abandonStage(
     tenantId: BlobTenantId,
     stageId: string,
@@ -230,6 +260,12 @@ export interface BlobMetadataStore {
     occurredAt: string,
     signal: AbortSignal,
   ): Promise<DriverResult<void>>;
+  restoreCorrupt(
+    proof: RawBlobRestorationProof,
+    restoredAt: string,
+    retainUntil: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<StoredBlobRecord>>;
   listPendingPromotions(
     tenantId: BlobTenantId,
     limit: number,
@@ -286,6 +322,11 @@ export interface BlobMetadataStore {
   markObjectDeleted(
     claim: BlobPurgeClaim,
     occurredAt: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<void>>;
+  revalidatePurgeClaim(
+    claim: BlobPurgeClaim,
+    now: string,
     signal: AbortSignal,
   ): Promise<DriverResult<void>>;
   completePurge(

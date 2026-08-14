@@ -192,6 +192,7 @@ export async function* decryptFrames(
   identity: EncryptionIdentity,
   expectedSha256: string,
   expectedBytes: number,
+  expectedHeaderSha256?: string,
 ): AsyncIterable<Uint8Array> {
   const reader = new ByteReader(source);
   const plaintextDigest = createHash("sha256");
@@ -210,7 +211,8 @@ export async function* decryptFrames(
       key.byteLength !== 32 ||
       !Number.isSafeInteger(expectedBytes) ||
       expectedBytes < 0 ||
-      !/^[0-9a-f]{64}$/u.test(expectedSha256)
+      !/^[0-9a-f]{64}$/u.test(expectedSha256) ||
+      (expectedHeaderSha256 !== undefined && !/^[a-f0-9]{64}$/u.test(expectedHeaderSha256))
     ) {
       throw failure("invalid_encryption_input");
     }
@@ -225,6 +227,14 @@ export async function* decryptFrames(
         throw failure("noncanonical_encryption_header", cause);
       }
       throw cause;
+    }
+    if (expectedHeaderSha256 !== undefined) {
+      if (!timingSafeEqual(header.digest, Buffer.from(expectedHeaderSha256, "hex"))) {
+        throw failure(
+          "encryption_header_identity_mismatch",
+          new TypeError("Encrypted blob header does not match PostgreSQL."),
+        );
+      }
     }
     let finalFrame = false;
     while (!finalFrame) {

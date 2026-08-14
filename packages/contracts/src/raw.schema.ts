@@ -11,6 +11,7 @@ export const DEFAULT_MAX_RAW_MESSAGE_BYTES = 25 * 1024 * 1024;
 export const rawMessageIntegrityReasons = Object.freeze([
   "invalid_encryption_input",
   "noncanonical_encryption_header",
+  "encryption_header_identity_mismatch",
   "noncanonical_frame_shape",
   "frame_authentication_failed",
   "encrypted_stream_truncated",

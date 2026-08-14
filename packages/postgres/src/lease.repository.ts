@@ -11,6 +11,7 @@ import { sql } from "kysely";
 
 import type { PostgresUnitOfWork } from "./database.service.js";
 import { postgresError, staleFenceError } from "./errors.js";
+import { immutableClone, safeInteger } from "./mapping.js";
 
 /** @public */
 export interface InboundDeliveryLease {
@@ -36,6 +37,17 @@ export interface OutboundSettlement {
   readonly lastErrorCode?: string;
 }
 
+/** Last durable fence proof that callers must obtain immediately before provider I/O. @public */
+export interface OutboundDispatchAuthorization {
+  readonly attemptId: string;
+  readonly intentId: string;
+  readonly tenantId: TenantId;
+  readonly fence: number;
+  readonly leaseExpiresAt: string;
+  readonly transmissionBlobId: string;
+  readonly blobVersion: number;
+}
+
 const leaseExpiry = (now: string, leaseMilliseconds: number): string => {
   if (!Number.isSafeInteger(leaseMilliseconds) || leaseMilliseconds < 1) {
     throw new TypeError("Lease duration must be a positive safe integer.");
@@ -43,15 +55,24 @@ const leaseExpiry = (now: string, leaseMilliseconds: number): string => {
   return new Date(new Date(now).getTime() + leaseMilliseconds).toISOString();
 };
 
-const validateSettlement = (settlement: OutboundSettlement): void => {
+const validateSettlement = (settlement: OutboundSettlement): Result<void, MailEdgeError> => {
   if (
     (settlement.state === "provider_accepted" && settlement.certainty !== "accepted") ||
     (settlement.state === "quarantined_unknown" && settlement.certainty !== "unknown") ||
     ((settlement.state === "retry_wait" || settlement.state === "failed_not_sent") &&
       settlement.certainty !== "not_sent")
   ) {
-    throw new TypeError("Outbound settlement state and delivery certainty are inconsistent.");
+    return {
+      error: new MailEdgeError({
+        code: "VALIDATION_FAILED",
+        deliveryCertainty: "not_sent",
+        message: "Outbound settlement state and delivery certainty are inconsistent.",
+        retryable: false,
+      }),
+      ok: false,
+    };
   }
+  return { ok: true, value: undefined };
 };
 
 /** Durable claims, leases, and fencing. External side effects happen only after these methods commit. @public */
@@ -82,7 +103,7 @@ export class PostgresLeaseRepository {
       };
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, tenantId);
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
       const current = await transaction
         .selectFrom("inboundDeliveries")
         .select(["attemptCount", "claimedUntil", "fence", "receiptId", "state"])
@@ -102,7 +123,7 @@ export class PostgresLeaseRepository {
       ) {
         return { ok: true, value: null };
       }
-      const fence = Number(current.fence) + 1;
+      const fence = safeInteger(current.fence) + 1;
       const expiresAt = leaseExpiry(now, leaseMilliseconds);
       const updated = await transaction
         .updateTable("inboundDeliveries")
@@ -150,8 +171,8 @@ export class PostgresLeaseRepository {
       return { error: staleFenceError(fence), ok: false };
     }
     try {
-      const updated = await this.#unitOfWork
-        .transaction(context, tenantId)
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
+      const updated = await transaction
         .updateTable("inboundDeliveries")
         .set({
           claimedUntil: null,
@@ -188,7 +209,14 @@ export class PostgresLeaseRepository {
       return { error: staleFenceError(attempt.fence), ok: false };
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, attempt.tenantId);
+      const transaction = await this.#unitOfWork.transaction(context, attempt.tenantId);
+      const blob = await transaction
+        .selectFrom("rawBlobs")
+        .select("status")
+        .where("tenantId", "=", attempt.tenantId)
+        .where("blobId", "=", attempt.transmissionRaw.blobId)
+        .forUpdate()
+        .executeTakeFirst();
       const intent = await transaction
         .selectFrom("outboundIntents")
         .select(["optimisticVersion", "state"])
@@ -198,6 +226,7 @@ export class PostgresLeaseRepository {
         .executeTakeFirst();
       if (
         intent?.state !== "ready" ||
+        blob?.status !== "available" ||
         Number(intent.optimisticVersion) !== expectedIntentVersion ||
         attempt.state !== "dispatching" ||
         attempt.deliveryCertainty !== "not_sent"
@@ -219,7 +248,7 @@ export class PostgresLeaseRepository {
         .where("tenantId", "=", attempt.tenantId)
         .where("intentId", "=", attempt.intentId)
         .executeTakeFirst();
-      const nextFence = Number(previousFence?.maximumFence ?? 0) + 1;
+      const nextFence = safeInteger(previousFence?.maximumFence ?? 0) + 1;
       if (attempt.fence !== nextFence) {
         return { error: staleFenceError(attempt.fence), ok: false };
       }
@@ -250,6 +279,7 @@ export class PostgresLeaseRepository {
           providerMessageIdHash: null,
           recipientGroup: group,
           recipientGroupDigest: groupDigest,
+          routeSnapshot: attempt.routeBinding as unknown as Readonly<Record<string, unknown>>,
           responseEvidence: null,
           state: "dispatching",
           tenantId: attempt.tenantId,
@@ -275,7 +305,7 @@ export class PostgresLeaseRepository {
       }
       return {
         ok: true,
-        value: Object.freeze({ attempt, leaseExpiresAt: expiresAt }),
+        value: immutableClone({ attempt, leaseExpiresAt: expiresAt }),
       };
     } catch (cause) {
       return { error: postgresError(cause, "outbound_attempt_claim"), ok: false };
@@ -293,12 +323,13 @@ export class PostgresLeaseRepository {
     context: UnitOfWorkContext,
     signal: AbortSignal,
   ): Promise<Result<void, MailEdgeError>> {
-    validateSettlement(settlement);
+    const validation = validateSettlement(settlement);
+    if (!validation.ok) return validation;
     if (signal.aborted) {
       return { error: staleFenceError(fence), ok: false };
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, tenantId);
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
       const attempt = await transaction
         .updateTable("outboundAttempts")
         .set({
@@ -344,6 +375,84 @@ export class PostgresLeaseRepository {
     }
   }
 
+  async revalidateOutboundDispatch(
+    tenantId: TenantId,
+    intentId: string,
+    attemptId: string,
+    fence: number,
+    now: string,
+    context: UnitOfWorkContext,
+    signal: AbortSignal,
+  ): Promise<Result<OutboundDispatchAuthorization, MailEdgeError>> {
+    if (signal.aborted) return { error: staleFenceError(fence), ok: false };
+    try {
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
+      const identity = await transaction
+        .selectFrom("outboundAttempts")
+        .select("transmissionBlobId")
+        .where("tenantId", "=", tenantId)
+        .where("intentId", "=", intentId)
+        .where("attemptId", "=", attemptId)
+        .executeTakeFirst();
+      if (identity === undefined) return { error: staleFenceError(fence), ok: false };
+      const blob = await transaction
+        .selectFrom("rawBlobs")
+        .select(["status", "optimisticVersion"])
+        .where("tenantId", "=", tenantId)
+        .where("blobId", "=", identity.transmissionBlobId)
+        .forShare()
+        .executeTakeFirst();
+      const attempt = await transaction
+        .selectFrom("outboundAttempts")
+        .innerJoin("outboundIntents", (join) =>
+          join
+            .onRef("outboundIntents.tenantId", "=", "outboundAttempts.tenantId")
+            .onRef("outboundIntents.intentId", "=", "outboundAttempts.intentId"),
+        )
+        .select([
+          "outboundAttempts.attemptId",
+          "outboundAttempts.intentId",
+          "outboundAttempts.fence",
+          "outboundAttempts.claimedUntil",
+          "outboundAttempts.transmissionBlobId",
+          "outboundAttempts.state as attemptState",
+          "outboundIntents.state as intentState",
+          "outboundIntents.currentAttemptId",
+        ])
+        .where("outboundAttempts.tenantId", "=", tenantId)
+        .where("outboundAttempts.intentId", "=", intentId)
+        .where("outboundAttempts.attemptId", "=", attemptId)
+        .forUpdate(["outboundAttempts", "outboundIntents"])
+        .executeTakeFirst();
+      if (
+        attempt?.attemptState !== "dispatching" ||
+        attempt.intentState !== "dispatching" ||
+        attempt.currentAttemptId !== attemptId ||
+        safeInteger(attempt.fence) !== fence ||
+        attempt.claimedUntil === null ||
+        attempt.claimedUntil.getTime() <= new Date(now).getTime() ||
+        blob?.status !== "available" ||
+        attempt.transmissionBlobId !== identity.transmissionBlobId
+      ) {
+        return { error: staleFenceError(fence), ok: false };
+      }
+      return {
+        ok: true,
+        value: Object.freeze({
+          attemptId,
+          blobVersion: safeInteger(blob.optimisticVersion),
+          fence,
+          intentId,
+          leaseExpiresAt: attempt.claimedUntil.toISOString(),
+          tenantId,
+          transmissionBlobId: attempt.transmissionBlobId,
+        }),
+      };
+    } catch (cause) {
+      return { error: postgresError(cause, "outbound_dispatch_revalidate"), ok: false };
+    }
+  }
+
   async quarantineExpiredOutboundDispatches(
     tenantId: TenantId,
     now: string,
@@ -358,7 +467,7 @@ export class PostgresLeaseRepository {
       throw new TypeError("Expired-dispatch batch limit must be between 1 and 1000.");
     }
     try {
-      const transaction = this.#unitOfWork.transaction(context, tenantId);
+      const transaction = await this.#unitOfWork.transaction(context, tenantId);
       const expired = await transaction
         .selectFrom("outboundAttempts")
         .select(["attemptId", "intentId"])

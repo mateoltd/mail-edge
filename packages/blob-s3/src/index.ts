@@ -41,5 +41,6 @@ export type {
   EnvelopeKeyService,
   PendingBlobPromotion,
   RawBlobIntegrityClaim,
+  RawBlobRestorationProof,
   StoredBlobRecord,
 } from "./types.js";

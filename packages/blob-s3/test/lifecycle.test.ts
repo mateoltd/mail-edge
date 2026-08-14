@@ -188,9 +188,13 @@ describe("encrypted stage lifecycle", () => {
   });
 });
 
-const availableRecord = (sha256: string, size: number): StoredBlobRecord => ({
+const availableRecord = (
+  sha256: string,
+  size: number,
+  headerSha256 = "00".repeat(32),
+): StoredBlobRecord => ({
   encryptionFormatVersion: 1,
-  encryptionMetadata: {},
+  encryptionMetadata: { headerSha256 },
   kmsKeyRef: "test-key",
   objectKey: "mail-edge/raw/message.meb",
   optimisticVersion: 0,
@@ -203,6 +207,7 @@ const availableRecord = (sha256: string, size: number): StoredBlobRecord => ({
     size,
   },
   status: "available",
+  sourceStageId: stageId,
   tenantId,
   wrappedDek: Uint8Array.of(1),
 });
@@ -281,6 +286,31 @@ describe("lazy encrypted reads", () => {
     expect([...key]).toEqual(Array.from({ length: 32 }, () => 0));
   });
 
+  it("quarantines a record whose durable encryption-header identity is missing", async () => {
+    const key = randomBytes(32);
+    const claims: unknown[] = [];
+    const body = await openBody(
+      openStore({
+        key,
+        markCorrupt: async (claim) => {
+          claims.push(claim);
+          return success(undefined);
+        },
+        record: { ...availableRecord("00".repeat(32), 0), encryptionMetadata: {} },
+        send: async () => {
+          throw new Error("S3 must not be acquired without durable header identity");
+        },
+        unwrapCalls: { value: 0 },
+      }),
+    );
+    await expect(body[Symbol.asyncIterator]().next()).rejects.toMatchObject({
+      reason: "invalid_encryption_input",
+      verifiedPrefixBytes: 0,
+    });
+    expect(claims).toEqual([{ blobId: stageId, expectedVersion: 0, tenantId }]);
+    expect([...key]).toEqual(Array.from({ length: 32 }, () => 0));
+  });
+
   it("destroys the response and zeroizes its key on completion and explicit abandonment", async () => {
     const plaintext = Buffer.from("owned response");
     const encryptionKey = randomBytes(32);
@@ -312,7 +342,7 @@ describe("lazy encrypted reads", () => {
       const body = await openBody(
         openStore({
           key,
-          record: availableRecord(digest, plaintext.byteLength),
+          record: availableRecord(digest, plaintext.byteLength, header.digest.toString("hex")),
           send: async () => ({ Body: responseBody }),
           unwrapCalls: { value: 0 },
         }),
@@ -413,7 +443,11 @@ describe("lazy encrypted reads", () => {
           quarantineClaims.push(claim);
           return success(undefined);
         },
-        record: availableRecord(digest, plaintextPrefix.byteLength + tail.byteLength),
+        record: availableRecord(
+          digest,
+          plaintextPrefix.byteLength + tail.byteLength,
+          header.digest.toString("hex"),
+        ),
         send: async () => ({
           Body: {
             destroy: () => undefined,
@@ -456,7 +490,11 @@ describe("lazy encrypted reads", () => {
         markCorrupt: async () => {
           throw new Error("database unavailable");
         },
-        record: availableRecord(createHash("sha256").update("payload").digest("hex"), 7),
+        record: availableRecord(
+          createHash("sha256").update("payload").digest("hex"),
+          7,
+          header.digest.toString("hex"),
+        ),
         send: async () => ({
           Body: {
             async *[Symbol.asyncIterator]() {

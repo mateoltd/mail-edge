@@ -3,6 +3,7 @@ export type {
   BlobIngestStageTable,
   BlobIngestStageUpdate,
   DatabaseJsonValue,
+  DomainClaimTable,
   InboundDeliveryRow,
   InboundDeliveryTable,
   InboundReceiptRow,
@@ -17,17 +18,23 @@ export type {
   OutboundAttemptTable,
   OutboundIntentRow,
   OutboundIntentTable,
+  ProviderInstanceTable,
   ProviderFeedbackEvent,
   ProviderFeedbackEventTable,
   RawBlob,
   RawBlobTable,
   RawBlobUpdate,
   RouteBinding,
+  RouteBindingCheckTable,
   RouteBindingTable,
   Tenant,
   TenantTable,
 } from "./database.schema.js";
-export type { PostgresDatabaseConfig, PostgresSqlResult } from "./database.service.js";
+export type {
+  PostgresDatabaseConfig,
+  PostgresQueryCanceler,
+  PostgresSqlResult,
+} from "./database.service.js";
 export {
   PostgresDatabase,
   PostgresTenantUnitOfWork,
@@ -46,6 +53,7 @@ export type {
   LegalHoldInput,
   PendingBlobPromotion,
   RawBlobIntegrityClaim,
+  RawBlobRestorationProof,
   StoredBlobRecord,
 } from "./blob.repository.js";
 export {
@@ -57,6 +65,7 @@ export {
 export type {
   InboundDeliveryLease,
   OutboundAttemptLease,
+  OutboundDispatchAuthorization,
   OutboundSettlement,
 } from "./lease.repository.js";
 export { PostgresLeaseRepository } from "./lease.repository.js";

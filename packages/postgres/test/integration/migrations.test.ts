@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -26,7 +31,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       .start();
     const runner = new PostgresMigrationRunner({ connectionString: container.getConnectionUri() });
     const first = await runner.migrate(new AbortController().signal);
-    expect(first.applied).toHaveLength(3);
+    expect(first.applied).toHaveLength(4);
     const second = await runner.migrate(new AbortController().signal);
     expect(second.applied).toHaveLength(0);
     pool = new Pool({ connectionString: container.getConnectionUri() });
@@ -51,6 +56,10 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       {
         name: "0003_verified_blob_availability.sql",
         sha256: "7e92541c6637aba575686a677e275b471868b16a7742e6aca5e25e7cc1791abd",
+      },
+      {
+        name: "0004_storage_integrity_hardening.sql",
+        sha256: "6d21a802ab5093531899e7ef5d04ea90b8216c113d3c2e122598d8a08fb13849",
       },
     ]);
   });
@@ -143,6 +152,45 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
     await pool.query(
       `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO mail_edge_app`,
     );
+    await pool.query(
+      `INSERT INTO blob_ingest_stages
+        (stage_id, tenant_id, purpose, object_key, final_object_key, state,
+         expected_max_bytes, observed_bytes, observed_sha256, encryption_key_ref,
+         wrapped_dek, encryption_metadata, expires_at)
+       VALUES
+        ('018f4f6a-7b2c-7000-8000-000000000031', $1, 'inbound', 'scratch/rls-a',
+         'raw/rls-a', 'promoted', 1, 1, decode(repeat('41', 32), 'hex'), 'kms://key',
+         decode('11', 'hex'), '{"formatVersion":1,"purpose":"inbound"}', now() + interval '1 day'),
+        ('018f4f6a-7b2c-7000-8000-000000000032', $2, 'inbound', 'scratch/rls-b',
+         'raw/rls-b', 'promoted', 1, 1, decode(repeat('42', 32), 'hex'), 'kms://key',
+         decode('11', 'hex'), '{"formatVersion":1,"purpose":"inbound"}', now() + interval '1 day')`,
+      [tenantA, tenantB],
+    );
+    await pool.query(
+      `INSERT INTO raw_blobs
+        (blob_id, tenant_id, source_stage_id, sha256, size_bytes, media_type, object_key,
+         encryption_format_version, wrapped_dek, kms_key_ref, encryption_metadata, status,
+         available_at, retain_until)
+       VALUES
+        ('018f4f6a-7b2c-7000-8000-000000000031', $1,
+         '018f4f6a-7b2c-7000-8000-000000000031', decode(repeat('41', 32), 'hex'), 1,
+         'message/rfc822', 'raw/rls-a', 1, decode('11', 'hex'), 'kms://key',
+         '{"formatVersion":1,"purpose":"inbound"}', 'available', now(), now() + interval '1 day'),
+        ('018f4f6a-7b2c-7000-8000-000000000032', $2,
+         '018f4f6a-7b2c-7000-8000-000000000032', decode(repeat('42', 32), 'hex'), 1,
+         'message/rfc822', 'raw/rls-b', 1, decode('11', 'hex'), 'kms://key',
+         '{"formatVersion":1,"purpose":"inbound"}', 'available', now(), now() + interval '1 day')`,
+      [tenantA, tenantB],
+    );
+    await pool.query(
+      `INSERT INTO legal_holds (legal_hold_id, tenant_id, blob_id, reason_code, created_by)
+       VALUES
+        ('018f4f6a-7b2c-7000-8000-000000000041', $1,
+         '018f4f6a-7b2c-7000-8000-000000000031', 'test', 'test'),
+        ('018f4f6a-7b2c-7000-8000-000000000042', $2,
+         '018f4f6a-7b2c-7000-8000-000000000032', 'test', 'test')`,
+      [tenantA, tenantB],
+    );
     const appPool = new Pool({
       connectionString: container
         .getConnectionUri()
@@ -157,6 +205,10 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
           "SELECT tenant_id FROM tenants ORDER BY tenant_id",
         );
         expect(first.rows.map((row) => row.tenant_id)).toEqual([tenantA]);
+        const references = await client.query<{ tenant_id: string }>(
+          "SELECT tenant_id FROM raw_blob_reference_summary ORDER BY tenant_id",
+        );
+        expect(references.rows.map((row) => row.tenant_id)).toEqual([tenantA]);
         await client.query("COMMIT");
 
         await client.query("BEGIN");
@@ -183,6 +235,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
     await pool.query("SELECT mail_edge_ensure_monthly_partitions(clock_timestamp())");
     await pool.query("SELECT mail_edge_ensure_monthly_partitions(clock_timestamp())");
     const coverage = await pool.query<{
+      force_row_security: boolean;
       policy_count: string;
       relname: string;
       row_security: boolean;
@@ -190,6 +243,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       `SELECT
          table_row.relname,
          table_row.relrowsecurity AS row_security,
+         table_row.relforcerowsecurity AS force_row_security,
          count(policy_row.policyname)::text AS policy_count
        FROM pg_class table_row
        JOIN pg_namespace namespace_row ON namespace_row.oid = table_row.relnamespace
@@ -202,14 +256,152 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
         AND policy_row.tablename = table_row.relname
        WHERE namespace_row.nspname = 'public'
          AND table_row.relkind IN ('r', 'p')
-       GROUP BY table_row.relname, table_row.relrowsecurity
+       GROUP BY table_row.relname, table_row.relrowsecurity, table_row.relforcerowsecurity
        ORDER BY table_row.relname`,
     );
     expect(coverage.rows.length).toBeGreaterThan(0);
     expect(
-      coverage.rows.filter((table) => !table.row_security || Number(table.policy_count) < 1),
+      coverage.rows.filter(
+        (table) =>
+          !table.row_security || !table.force_row_security || Number(table.policy_count) < 1,
+      ),
     ).toEqual([]);
+    const views = await pool.query<{ relname: string; reloptions: string[] }>(
+      `SELECT relname, coalesce(reloptions, ARRAY[]::text[]) AS reloptions
+       FROM pg_class
+       WHERE relname IN ('raw_blob_references', 'raw_blob_reference_summary')
+       ORDER BY relname`,
+    );
+    expect(views.rows).toHaveLength(2);
+    for (const view of views.rows) {
+      expect(view.reloptions).toContain("security_barrier=true");
+      expect(view.reloptions).toContain("security_invoker=true");
+    }
+    await expect(
+      pool.query(
+        `INSERT INTO audit_events
+          (audit_id, tenant_id, actor_type, actor_id_hash, action, target_type, metadata)
+         VALUES ('018f4f6a-7b2c-7000-8000-000000000051', NULL, 'system',
+           decode(repeat('51', 32), 'hex'), 'test.tenantless', 'runtime', '{}')`,
+      ),
+    ).rejects.toMatchObject({ code: "23502" });
   });
+
+  test("installs every state-dependent claimed-until constraint", async () => {
+    const constraints = await pool.query<{ conname: string }>(
+      `SELECT conname
+       FROM pg_constraint
+       WHERE conname = ANY($1::text[])
+       ORDER BY conname`,
+      [
+        [
+          "blob_deletions_claimed_until_state",
+          "inbound_deliveries_claimed_until_state",
+          "inbound_receipts_claimed_until_state",
+          "outbound_attempts_claimed_until_state",
+        ],
+      ],
+    );
+    expect(constraints.rows.map((row) => row.conname)).toEqual([
+      "blob_deletions_claimed_until_state",
+      "inbound_deliveries_claimed_until_state",
+      "inbound_receipts_claimed_until_state",
+      "outbound_attempts_claimed_until_state",
+    ]);
+  });
+
+  test("times out migration-lock acquisition on its dedicated short deadline", async () => {
+    const holder = await pool.connect();
+    try {
+      await holder.query("SELECT pg_advisory_lock($1::bigint)", ["1299704476190857521"]);
+      const startedAt = Date.now();
+      await expect(
+        new PostgresMigrationRunner(
+          { connectionString: container.getConnectionUri() },
+          undefined,
+          100,
+        ).migrate(new AbortController().signal),
+      ).rejects.toMatchObject({ name: "TimeoutError" });
+      expect(Date.now() - startedAt).toBeLessThan(2_000);
+    } finally {
+      await holder.query("SELECT pg_advisory_unlock($1::bigint)", ["1299704476190857521"]);
+      holder.release();
+    }
+  });
+
+  test("rejects non-finite and unsafe PostgreSQL configuration", () => {
+    const valid = {
+      applicationName: "config-test",
+      connectionString: container.getConnectionUri(),
+      connectionTimeoutMilliseconds: 1_000,
+      idleTimeoutMilliseconds: 1_000,
+      maximumPoolSize: 1,
+      maximumSchemaEpoch: 1,
+      minimumSchemaEpoch: 1,
+      statementTimeoutMilliseconds: 1_000,
+    };
+    expect(() => new PostgresDatabase({ ...valid, maximumPoolSize: Number.NaN })).toThrow(
+      TypeError,
+    );
+    expect(
+      () =>
+        new PostgresMigrationRunner({
+          connectionString: container.getConnectionUri(),
+          query_timeout: Number.POSITIVE_INFINITY,
+        }),
+    ).toThrow(TypeError);
+  });
+
+  test("cancels active migration SQL and rolls its transaction back", async () => {
+    const databaseName = "mail_edge_migration_cancel";
+    await pool.query(`CREATE DATABASE ${databaseName}`);
+    const directory = await mkdtemp(join(tmpdir(), "mail-edge-migration-cancel-"));
+    const connectionString = container
+      .getConnectionUri()
+      .replace(/\/mail_edge$/u, `/${databaseName}`);
+    try {
+      const name = "0001_cancel.sql";
+      const sql = "CREATE TABLE cancellation_probe (id integer); SELECT pg_sleep(30);\n";
+      const sha256 = createHash("sha256").update(sql).digest("hex");
+      await writeFile(join(directory, name), sql, "utf8");
+      await writeFile(
+        join(directory, "checksums.json"),
+        `${JSON.stringify({ algorithm: "sha256", migrations: [{ name, sha256 }] }, null, 2)}\n`,
+        "utf8",
+      );
+      const controller = new AbortController();
+      const startedAt = Date.now();
+      const migrating = new PostgresMigrationRunner(
+        {
+          connectionString,
+          query_timeout: 30_000,
+          statement_timeout: 30_000,
+        },
+        directory,
+      ).migrate(controller.signal);
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      controller.abort(new DOMException("test migration cancellation", "AbortError"));
+      await expect(migrating).rejects.toMatchObject({ code: "57014" });
+      expect(Date.now() - startedAt).toBeLessThan(5_000);
+      const canceledPool = new Pool({ connectionString });
+      try {
+        const state = await canceledPool.query<{
+          migration_count: string;
+          probe: string | null;
+        }>(
+          `SELECT
+             (SELECT count(*) FROM mail_edge_migrations)::text AS migration_count,
+             to_regclass('public.cancellation_probe')::text AS probe`,
+        );
+        expect(state.rows[0]).toEqual({ migration_count: "0", probe: null });
+      } finally {
+        await canceledPool.end();
+      }
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+      await pool.query(`DROP DATABASE ${databaseName}`);
+    }
+  }, 30_000);
 
   test("keeps the expand migration compatible with the prior application epoch", async () => {
     const epoch = await pool.query<{ epoch: number; minimum_application_epoch: number }>(
@@ -263,6 +455,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
       expect(upgraded.applied.map((migration) => migration.name)).toEqual([
         "0002_retention_repair_expand.sql",
         "0003_verified_blob_availability.sql",
+        "0004_storage_integrity_hardening.sql",
       ]);
       const priorAfterUpgrade = new PostgresDatabase({
         applicationName: "prior-after-upgrade-test",
@@ -359,7 +552,7 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
            (SELECT epoch FROM mail_edge_schema_epoch WHERE singleton) AS schema_epoch`,
       );
       expect(evidence.rows[0]).toEqual({
-        migration_count: "3",
+        migration_count: "4",
         schema_epoch: 1,
         tenant_count: "2",
       });
@@ -368,7 +561,3 @@ describe("PostgreSQL migrations", { concurrent: false }, () => {
     }
   }, 30_000);
 });
-import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";

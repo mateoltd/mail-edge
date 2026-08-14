@@ -42,6 +42,7 @@ import type {
   DriverResult,
   EnvelopeKeyService,
   PendingBlobPromotion,
+  RawBlobRestorationProof,
   StoredBlobRecord,
 } from "./types.js";
 
@@ -196,6 +197,17 @@ const destroyResponseBody = (value: unknown, cause?: unknown): void => {
   }
 };
 
+const isMissingObject = (cause: unknown): boolean =>
+  typeof cause === "object" &&
+  cause !== null &&
+  (("name" in cause &&
+    (cause.name === "NotFound" || cause.name === "NoSuchKey" || cause.name === "NoSuchVersion")) ||
+    ("$metadata" in cause &&
+      typeof cause.$metadata === "object" &&
+      cause.$metadata !== null &&
+      "httpStatusCode" in cause.$metadata &&
+      cause.$metadata.httpStatusCode === 404));
+
 class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
   readonly #clock: BlobClock;
   readonly #config: Readonly<EncryptedS3BlobStoreConfig>;
@@ -245,7 +257,7 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
     operationSignal.addEventListener("abort", cancel, { once: true });
     try {
       if (operationSignal.aborted) throw operationSignal.reason;
-      key = await this.#keyService.unwrap(
+      const unwrapped = await this.#keyService.unwrap(
         this.#record.wrappedDek,
         this.#record.kmsKeyRef,
         {
@@ -256,6 +268,16 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
         },
         operationSignal,
       );
+      key = Uint8Array.from(unwrapped);
+      unwrapped.fill(0);
+      const headerSha256 = this.#record.encryptionMetadata["headerSha256"];
+      if (typeof headerSha256 !== "string") {
+        throw new RawMessageIntegrityError({
+          cause: new TypeError("Stored blob is missing its encryption-header identity."),
+          reason: "invalid_encryption_input",
+          verifiedPrefixBytes: 0,
+        });
+      }
       const response = await this.#s3.send(
         new GetObjectCommand({
           Bucket: this.#config.bucket,
@@ -277,6 +299,7 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
         },
         this.#record.raw.sha256,
         this.#record.raw.size,
+        headerSha256,
       );
     } catch (cause) {
       if (cause instanceof RawMessageIntegrityError) {
@@ -416,6 +439,7 @@ class EncryptedStageWriter implements BlobStageWriter {
         Key: input.scratchKey,
         Metadata: {
           "mail-edge-format": String(ENCRYPTION_FORMAT_VERSION),
+          "mail-edge-header-sha256": input.header.digest.toString("hex"),
           "mail-edge-stage-id": input.reservation.stageId,
         },
         ...objectSse(input.config),
@@ -583,7 +607,14 @@ class EncryptedStageWriter implements BlobStageWriter {
           Bucket: this.#bucket,
           CopySource: exactCopySource(this.#bucket, this.#scratchKey, uploaded.VersionId),
           Key: finalObjectKey,
-          MetadataDirective: "COPY",
+          Metadata: {
+            "mail-edge-format": String(ENCRYPTION_FORMAT_VERSION),
+            "mail-edge-header-sha256": this.#header.digest.toString("hex"),
+            "mail-edge-plaintext-sha256": digest,
+            "mail-edge-plaintext-size": String(this.#observedBytes),
+            "mail-edge-stage-id": this.#reservation.stageId,
+          },
+          MetadataDirective: "REPLACE",
           Tagging: `mail-edge-stage-id=${encodeURIComponent(this.#reservation.stageId)}`,
           TaggingDirective: "REPLACE",
           ...objectSse(this.#config),
@@ -594,14 +625,7 @@ class EncryptedStageWriter implements BlobStageWriter {
         throw new TypeError("Promoted S3 object did not receive an immutable version.");
       }
       this.#state.finalObjectCreated = true;
-      await this.#s3.send(
-        new HeadObjectCommand({
-          Bucket: this.#bucket,
-          Key: finalObjectKey,
-          ...(copied.VersionId === undefined ? {} : { VersionId: copied.VersionId }),
-        }),
-        { abortSignal: operationSignal },
-      );
+      await this.#verifyFinalObject(finalObjectKey, copied.VersionId, digest, operationSignal);
       if (copied.VersionId !== undefined) {
         const recorded = await this.#metadata.recordFinalObject(
           {
@@ -653,6 +677,18 @@ class EncryptedStageWriter implements BlobStageWriter {
             ...(uploaded.VersionId === undefined ? {} : { VersionId: uploaded.VersionId }),
           }),
           { abortSignal: cleanupSignal },
+        );
+        await this.#metadata.completeStageCleanup(
+          {
+            expectedVersion: this.#state.optimisticVersion + 1,
+            objectKey: this.#scratchKey,
+            ...(uploaded.VersionId === undefined ? {} : { objectVersion: uploaded.VersionId }),
+            stageId: this.#reservation.stageId,
+            state: "promoted",
+            tenantId: this.#reservation.tenantId,
+          },
+          this.#clock.now(),
+          cleanupSignal,
         );
       } catch {
         // The promoted stage ledger makes this exact scratch version recoverable.
@@ -757,6 +793,48 @@ class EncryptedStageWriter implements BlobStageWriter {
     }
   }
 
+  async #verifyFinalObject(
+    key: string,
+    version: string | undefined,
+    expectedSha256: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let body: unknown;
+    try {
+      const response = await this.#s3.send(
+        new GetObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+          ...(version === undefined ? {} : { VersionId: version }),
+        }),
+        { abortSignal: signal },
+      );
+      body = response.Body;
+      if (
+        response.Metadata?.["mail-edge-stage-id"] !== this.#reservation.stageId ||
+        response.Metadata["mail-edge-format"] !== String(ENCRYPTION_FORMAT_VERSION) ||
+        response.Metadata["mail-edge-plaintext-sha256"] !== expectedSha256 ||
+        response.Metadata["mail-edge-plaintext-size"] !== String(this.#observedBytes) ||
+        response.Metadata["mail-edge-header-sha256"] !== this.#header.digest.toString("hex")
+      ) {
+        throw new TypeError("Promoted S3 object metadata does not match the durable stage.");
+      }
+      for await (const chunk of decryptFrames(
+        asyncBody(body),
+        Uint8Array.from(this.#dek),
+        this.#identity,
+        expectedSha256,
+        this.#observedBytes,
+        this.#header.digest.toString("hex"),
+      )) {
+        // Full consumption is the exact plaintext size, digest, header, and frame proof.
+        void chunk;
+      }
+    } finally {
+      destroyResponseBody(body);
+    }
+  }
+
   async #flushFrame(finalFrame: boolean, signal: AbortSignal): Promise<void> {
     const encrypted = encryptFrame(
       this.#plainFrame.subarray(0, this.#pendingBytes),
@@ -842,7 +920,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
       });
       const blobId = checkedReservation.stageId;
       const now = this.#clock.now();
-      envelopeKey = await this.#keyService.generate(
+      const generated = await this.#keyService.generate(
         {
           blobId,
           formatVersion: ENCRYPTION_FORMAT_VERSION,
@@ -851,6 +929,13 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
         },
         operationSignal,
       );
+      envelopeKey = {
+        keyReference: generated.keyReference,
+        plaintextKey: Uint8Array.from(generated.plaintextKey),
+        wrappedKey: Uint8Array.from(generated.wrappedKey),
+      };
+      generated.plaintextKey.fill(0);
+      generated.wrappedKey.fill(0);
       const nonceSeed = randomBytes(32);
       const header = createEncryptionHeader(nonceSeed, this.#config.encryptionFrameBytes);
       nonceSeed.fill(0);
@@ -860,6 +945,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
           encryptionMetadata: Object.freeze({
             formatVersion: ENCRYPTION_FORMAT_VERSION,
             frameBytes: this.#config.encryptionFrameBytes,
+            headerSha256: header.digest.toString("hex"),
             purpose: checkedReservation.purpose,
           }),
           expectedMaximumBytes: checkedReservation.maximumBytes,
@@ -871,7 +957,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
           purpose: checkedReservation.purpose,
           stageId: checkedReservation.stageId,
           tenantId: checkedReservation.tenantId,
-          wrappedDek: envelopeKey.wrappedKey,
+          wrappedDek: Uint8Array.from(envelopeKey.wrappedKey),
         },
         operationSignal,
       );
@@ -1021,6 +1107,12 @@ export class EncryptedS3BlobStore implements BlobStorePort {
   ): Promise<DriverResult<void>> {
     const operationSignal = boundedOperationSignal(this.#config, signal);
     try {
+      const revalidated = await this.#metadata.revalidatePurgeClaim(
+        claim,
+        this.#clock.now(),
+        operationSignal,
+      );
+      if (!revalidated.ok) return revalidated;
       await this.#s3.send(
         new DeleteObjectCommand({
           Bucket: this.#bucket,
@@ -1051,15 +1143,101 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     }
   }
 
+  async restoreCorrupt(
+    tenantId: BlobTenantId,
+    blobId: BlobId,
+    expectedVersion: number,
+    retainUntil: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<StoredBlobRecord>> {
+    const operationSignal = boundedOperationSignal(this.#config, signal);
+    const record = await this.#metadata.getBlob(tenantId, blobId, operationSignal);
+    if (!record.ok) return record;
+    if (record.value.status !== "corrupt" || record.value.optimisticVersion !== expectedVersion) {
+      return {
+        error: this.#errors.create({
+          code: "CONFLICT",
+          message: "Only the expected corrupt blob version can be restored.",
+          operation: "blob_restore_corrupt",
+          retryable: false,
+        }),
+        ok: false,
+      };
+    }
+    try {
+      await this.#verifyStoredObject(record.value, operationSignal);
+      const verifiedAt = this.#clock.now();
+      const headerSha256 = record.value.encryptionMetadata["headerSha256"];
+      if (typeof headerSha256 !== "string") {
+        throw new TypeError("Stored blob is missing its encryption-header identity.");
+      }
+      const proof: RawBlobRestorationProof = Object.freeze({
+        blobId,
+        encryptionFormatVersion: record.value.encryptionFormatVersion,
+        encryptionHeaderSha256: headerSha256,
+        expectedVersion,
+        objectKey: record.value.objectKey,
+        ...(record.value.objectVersion === undefined
+          ? {}
+          : { objectVersion: record.value.objectVersion }),
+        sha256: record.value.raw.sha256,
+        size: record.value.raw.size,
+        tenantId,
+        verifiedAt,
+      });
+      return await this.#metadata.restoreCorrupt(
+        proof,
+        this.#clock.now(),
+        retainUntil,
+        operationSignal,
+      );
+    } catch (cause) {
+      return {
+        error: asFailure(
+          this.#errors,
+          "blob_restore_corrupt",
+          "Exact corrupt S3 object failed fresh integrity verification.",
+          cause,
+          false,
+        ),
+        ok: false,
+      };
+    }
+  }
+
   async repairPromotion(
     pending: PendingBlobPromotion,
     signal: AbortSignal,
   ): Promise<DriverResult<StoredBlobRecord>> {
     const operationSignal = boundedOperationSignal(this.#config, signal);
     try {
-      const finalObjectVersion = await this.#resolvePromotionVersion(pending, operationSignal);
+      let finalObjectVersion = await this.#resolvePromotionVersion(pending, operationSignal);
       let expectedVersion = pending.expectedVersion;
-      if (pending.finalObjectVersion === undefined && finalObjectVersion !== undefined) {
+      if (finalObjectVersion === undefined) {
+        const copied = await this.#copyScratchObject(pending, operationSignal);
+        finalObjectVersion = copied.VersionId;
+        if (this.#config.requireObjectVersion && finalObjectVersion === undefined) {
+          throw new TypeError("Recreated promoted object did not receive an immutable version.");
+        }
+        if (finalObjectVersion !== undefined) {
+          const replaced = await this.#metadata.replaceMissingFinalObject(
+            {
+              expectedVersion,
+              finalObjectKey: pending.finalObjectKey,
+              finalObjectVersion,
+              ...(pending.finalObjectVersion === undefined
+                ? {}
+                : { missingFinalObjectVersion: pending.finalObjectVersion }),
+              stageId: pending.stageId,
+              tenantId: pending.tenantId,
+            },
+            this.#clock.now(),
+            operationSignal,
+          );
+          if (!replaced.ok) return replaced;
+          expectedVersion = replaced.value.optimisticVersion;
+        }
+      } else if (pending.finalObjectVersion === undefined) {
         const recorded = await this.#metadata.recordFinalObject(
           {
             expectedVersion,
@@ -1074,8 +1252,9 @@ export class EncryptedS3BlobStore implements BlobStorePort {
         if (!recorded.ok) return recorded;
         expectedVersion = recorded.value.optimisticVersion;
       }
+      await this.#verifyPromotionObject(pending, finalObjectVersion, operationSignal);
       const availableAt = this.#clock.now();
-      return await this.#metadata.commitPromotion(
+      const committed = await this.#metadata.commitPromotion(
         {
           availableAt,
           blobId: pending.blobId,
@@ -1090,6 +1269,9 @@ export class EncryptedS3BlobStore implements BlobStorePort {
         },
         operationSignal,
       );
+      if (!committed.ok) return committed;
+      await this.#cleanupPromotedScratch(pending, expectedVersion + 1);
+      return committed;
     } catch (cause) {
       return {
         error: asFailure(
@@ -1108,22 +1290,34 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     signal: AbortSignal,
   ): Promise<string | undefined> {
     if (pending.finalObjectVersion !== undefined) {
-      await this.#s3.send(
-        new HeadObjectCommand({
-          Bucket: this.#bucket,
-          Key: pending.finalObjectKey,
-          VersionId: pending.finalObjectVersion,
-        }),
-        { abortSignal: signal },
-      );
-      return pending.finalObjectVersion;
+      try {
+        const head = await this.#s3.send(
+          new HeadObjectCommand({
+            Bucket: this.#bucket,
+            Key: pending.finalObjectKey,
+            VersionId: pending.finalObjectVersion,
+          }),
+          { abortSignal: signal },
+        );
+        this.#assertPromotionMetadata(pending, head.Metadata);
+        return pending.finalObjectVersion;
+      } catch (cause) {
+        if (isMissingObject(cause)) return undefined;
+        throw cause;
+      }
     }
     if (!this.#config.requireObjectVersion) {
-      const head = await this.#s3.send(
-        new HeadObjectCommand({ Bucket: this.#bucket, Key: pending.finalObjectKey }),
-        { abortSignal: signal },
-      );
-      return head.VersionId;
+      try {
+        const head = await this.#s3.send(
+          new HeadObjectCommand({ Bucket: this.#bucket, Key: pending.finalObjectKey }),
+          { abortSignal: signal },
+        );
+        this.#assertPromotionMetadata(pending, head.Metadata);
+        return head.VersionId;
+      } catch (cause) {
+        if (isMissingObject(cause)) return undefined;
+        throw cause;
+      }
     }
     let keyMarker: string | undefined;
     let versionIdMarker: string | undefined;
@@ -1147,7 +1341,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
           }),
           { abortSignal: signal },
         );
-        if (head.Metadata?.["mail-edge-stage-id"] === pending.stageId) {
+        if (this.#promotionMetadataMatches(pending, head.Metadata)) {
           return version.VersionId;
         }
       }
@@ -1158,7 +1352,227 @@ export class EncryptedS3BlobStore implements BlobStorePort {
       keyMarker = listed.NextKeyMarker;
       versionIdMarker = listed.NextVersionIdMarker;
     }
-    throw new TypeError("No exact promoted S3 object version matches the durable stage.");
+    return undefined;
+  }
+
+  async #copyScratchObject(
+    pending: PendingBlobPromotion,
+    signal: AbortSignal,
+  ): Promise<{ readonly VersionId: string | undefined }> {
+    if (this.#config.requireObjectVersion && pending.scratchObjectVersion === undefined) {
+      throw new TypeError("Promotion repair requires the exact scratch object version.");
+    }
+    const copied = await this.#s3.send(
+      new CopyObjectCommand({
+        Bucket: this.#bucket,
+        CopySource: exactCopySource(
+          this.#bucket,
+          pending.scratchObjectKey,
+          pending.scratchObjectVersion,
+        ),
+        Key: pending.finalObjectKey,
+        Metadata: this.#promotionMetadata(pending),
+        MetadataDirective: "REPLACE",
+        Tagging: `mail-edge-stage-id=${encodeURIComponent(pending.stageId)}`,
+        TaggingDirective: "REPLACE",
+        ...objectSse(this.#config),
+      }),
+      { abortSignal: signal },
+    );
+    return { VersionId: copied.VersionId };
+  }
+
+  #promotionMetadata(pending: PendingBlobPromotion): Readonly<Record<string, string>> {
+    const headerSha256 = pending.encryptionMetadata["headerSha256"];
+    if (typeof headerSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(headerSha256)) {
+      throw new TypeError("Promoting stage has no valid encryption-header identity.");
+    }
+    return {
+      "mail-edge-format": String(pending.encryptionFormatVersion),
+      "mail-edge-header-sha256": headerSha256,
+      "mail-edge-plaintext-sha256": pending.expectedSha256,
+      "mail-edge-plaintext-size": String(pending.expectedSize),
+      "mail-edge-stage-id": pending.stageId,
+    };
+  }
+
+  #promotionMetadataMatches(
+    pending: PendingBlobPromotion,
+    metadata: Readonly<Record<string, string>> | undefined,
+  ): boolean {
+    if (metadata === undefined) return false;
+    const expected = this.#promotionMetadata(pending);
+    return Object.entries(expected).every(([key, value]) => metadata[key] === value);
+  }
+
+  #assertPromotionMetadata(
+    pending: PendingBlobPromotion,
+    metadata: Readonly<Record<string, string>> | undefined,
+  ): void {
+    if (!this.#promotionMetadataMatches(pending, metadata)) {
+      throw new TypeError("Promoted S3 object metadata does not match the durable stage.");
+    }
+  }
+
+  async #verifyPromotionObject(
+    pending: PendingBlobPromotion,
+    version: string | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
+    await this.#verifyEncryptedObject(
+      {
+        blobId: pending.blobId,
+        encryptionFormatVersion: pending.encryptionFormatVersion,
+        encryptionMetadata: pending.encryptionMetadata,
+        expectedSha256: pending.expectedSha256,
+        expectedSize: pending.expectedSize,
+        key: pending.finalObjectKey,
+        kmsKeyRef: pending.kmsKeyRef,
+        purpose: pending.purpose,
+        stageId: pending.stageId,
+        tenantId: pending.tenantId,
+        ...(version === undefined ? {} : { version }),
+        wrappedDek: pending.wrappedDek,
+      },
+      signal,
+    );
+  }
+
+  async #verifyStoredObject(record: StoredBlobRecord, signal: AbortSignal): Promise<void> {
+    await this.#verifyEncryptedObject(
+      {
+        blobId: record.raw.blobId,
+        encryptionFormatVersion: record.encryptionFormatVersion,
+        encryptionMetadata: record.encryptionMetadata,
+        expectedSha256: record.raw.sha256,
+        expectedSize: record.raw.size,
+        key: record.objectKey,
+        kmsKeyRef: record.kmsKeyRef,
+        purpose: record.purpose,
+        stageId: record.sourceStageId,
+        tenantId: record.tenantId,
+        ...(record.objectVersion === undefined ? {} : { version: record.objectVersion }),
+        wrappedDek: record.wrappedDek,
+      },
+      signal,
+    );
+  }
+
+  async #verifyEncryptedObject(
+    input: {
+      readonly blobId: string;
+      readonly encryptionFormatVersion: number;
+      readonly encryptionMetadata: Readonly<Record<string, unknown>>;
+      readonly expectedSha256: string;
+      readonly expectedSize: number;
+      readonly key: string;
+      readonly kmsKeyRef: string;
+      readonly purpose: BlobReservation["purpose"];
+      readonly stageId: string;
+      readonly tenantId: BlobTenantId;
+      readonly version?: string;
+      readonly wrappedDek: Uint8Array;
+    },
+    signal: AbortSignal,
+  ): Promise<void> {
+    const headerSha256 = input.encryptionMetadata["headerSha256"];
+    if (typeof headerSha256 !== "string") {
+      throw new TypeError("Stored blob is missing its encryption-header identity.");
+    }
+    let key: Uint8Array | undefined;
+    let body: unknown;
+    try {
+      const unwrapped = await this.#keyService.unwrap(
+        input.wrappedDek,
+        input.kmsKeyRef,
+        {
+          blobId: input.blobId,
+          formatVersion: input.encryptionFormatVersion,
+          purpose: input.purpose,
+          tenantId: input.tenantId,
+        },
+        signal,
+      );
+      key = Uint8Array.from(unwrapped);
+      unwrapped.fill(0);
+      const response = await this.#s3.send(
+        new GetObjectCommand({
+          Bucket: this.#bucket,
+          Key: input.key,
+          ...(input.version === undefined ? {} : { VersionId: input.version }),
+        }),
+        { abortSignal: signal },
+      );
+      body = response.Body;
+      const expectedMetadata = {
+        "mail-edge-format": String(input.encryptionFormatVersion),
+        "mail-edge-header-sha256": headerSha256,
+        "mail-edge-plaintext-sha256": input.expectedSha256,
+        "mail-edge-plaintext-size": String(input.expectedSize),
+        "mail-edge-stage-id": input.stageId,
+      };
+      if (
+        Object.entries(expectedMetadata).some(
+          ([metadataKey, value]) => response.Metadata?.[metadataKey] !== value,
+        )
+      ) {
+        throw new TypeError("Stored S3 object metadata does not match PostgreSQL.");
+      }
+      for await (const chunk of decryptFrames(
+        asyncBody(body),
+        key,
+        {
+          blobId: input.blobId,
+          purpose: input.purpose,
+          tenantId: input.tenantId,
+        },
+        input.expectedSha256,
+        input.expectedSize,
+        headerSha256,
+      )) {
+        // Full consumption proves authenticated frames, plaintext size, digest, and header.
+        void chunk;
+      }
+      key = undefined;
+    } finally {
+      key?.fill(0);
+      destroyResponseBody(body);
+    }
+  }
+
+  async #cleanupPromotedScratch(
+    pending: PendingBlobPromotion,
+    promotedVersion: number,
+  ): Promise<void> {
+    const signal = cleanupSignal(this.#config);
+    try {
+      await this.#s3.send(
+        new DeleteObjectCommand({
+          Bucket: this.#bucket,
+          Key: pending.scratchObjectKey,
+          ...(pending.scratchObjectVersion === undefined
+            ? {}
+            : { VersionId: pending.scratchObjectVersion }),
+        }),
+        { abortSignal: signal },
+      );
+      await this.#metadata.completeStageCleanup(
+        {
+          expectedVersion: promotedVersion,
+          objectKey: pending.scratchObjectKey,
+          ...(pending.scratchObjectVersion === undefined
+            ? {}
+            : { objectVersion: pending.scratchObjectVersion }),
+          stageId: pending.stageId,
+          state: "promoted",
+          tenantId: pending.tenantId,
+        },
+        this.#clock.now(),
+        signal,
+      );
+    } catch {
+      // cleanup_completed_at remains null, so the stage cleanup worker retries exact identity.
+    }
   }
 }
 

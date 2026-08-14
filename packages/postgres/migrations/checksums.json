@@ -12,6 +12,10 @@
     {
       "name": "0003_verified_blob_availability.sql",
       "sha256": "7e92541c6637aba575686a677e275b471868b16a7742e6aca5e25e7cc1791abd"
+    },
+    {
+      "name": "0004_storage_integrity_hardening.sql",
+      "sha256": "6d21a802ab5093531899e7ef5d04ea90b8216c113d3c2e122598d8a08fb13849"
     }
   ]
 }

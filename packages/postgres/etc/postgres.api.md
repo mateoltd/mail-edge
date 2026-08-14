@@ -51,6 +51,8 @@ export interface AbandonedBlobStage {
     // (undocumented)
     readonly stageId: string;
     // (undocumented)
+    readonly state: "abandoned" | "promoted";
+    // (undocumented)
     readonly tenantId: TenantId;
 }
 
@@ -92,7 +94,7 @@ interface AuditEventTable {
     // (undocumented)
     readonly targetType: string;
     // (undocumented)
-    readonly tenantId: string | null;
+    readonly tenantId: string;
 }
 
 // @public
@@ -308,6 +310,22 @@ export const createPostgresRepositories: (unitOfWork: PostgresUnitOfWork, cipher
 export type DatabaseJsonValue = JsonValue;
 
 // @public (undocumented)
+export interface DomainClaimTable {
+    // (undocumented)
+    readonly domainALabel: string;
+    // (undocumented)
+    readonly expiresAt: Timestamp | null;
+    // (undocumented)
+    readonly tenantId: string;
+    // (undocumented)
+    readonly verificationDigest: Uint8Array;
+    // (undocumented)
+    readonly verificationMethod: string;
+    // (undocumented)
+    readonly verifiedAt: Timestamp | null;
+}
+
+// @public (undocumented)
 type GeneratedTimestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 
 // @public (undocumented)
@@ -483,6 +501,8 @@ export interface MailEdgeDatabase {
     // (undocumented)
     readonly blobOrphanObservations: BlobOrphanObservationTable;
     // (undocumented)
+    readonly domainClaims: DomainClaimTable;
+    // (undocumented)
     readonly inboundDeliveries: InboundDeliveryTable;
     // Warning: (ae-forgotten-export) The symbol "InboundReceiptDedupTable" needs to be exported by the entry point index.d.ts
     //
@@ -498,12 +518,16 @@ export interface MailEdgeDatabase {
     readonly outboundIntents: OutboundIntentTable;
     // (undocumented)
     readonly providerFeedbackEvents: ProviderFeedbackEventTable;
+    // (undocumented)
+    readonly providerInstances: ProviderInstanceTable;
     // Warning: (ae-forgotten-export) The symbol "RawBlobReferenceSummaryTable" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
     readonly rawBlobReferenceSummary: RawBlobReferenceSummaryTable;
     // (undocumented)
     readonly rawBlobs: RawBlobTable;
+    // (undocumented)
+    readonly routeBindingChecks: RouteBindingCheckTable;
     // (undocumented)
     readonly routeBindings: RouteBindingTable;
     // (undocumented)
@@ -591,9 +615,29 @@ export interface OutboundAttemptTable {
     // (undocumented)
     readonly responseEvidence: JsonObject | null;
     // (undocumented)
+    readonly routeSnapshot: JsonObject;
+    // (undocumented)
     readonly state: "dispatching" | "provider_accepted" | "retry_wait" | "failed_not_sent" | "quarantined_unknown";
     // (undocumented)
     readonly tenantId: string;
+    // (undocumented)
+    readonly transmissionBlobId: string;
+}
+
+// @public
+export interface OutboundDispatchAuthorization {
+    // (undocumented)
+    readonly attemptId: string;
+    // (undocumented)
+    readonly blobVersion: number;
+    // (undocumented)
+    readonly fence: number;
+    // (undocumented)
+    readonly intentId: string;
+    // (undocumented)
+    readonly leaseExpiresAt: string;
+    // (undocumented)
+    readonly tenantId: TenantId;
     // (undocumented)
     readonly transmissionBlobId: string;
 }
@@ -656,15 +700,33 @@ export interface PendingBlobPromotion {
     // (undocumented)
     readonly blobId: string;
     // (undocumented)
+    readonly encryptionFormatVersion: number;
+    // (undocumented)
+    readonly encryptionMetadata: Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly expectedSha256: string;
+    // (undocumented)
+    readonly expectedSize: number;
+    // (undocumented)
     readonly expectedVersion: number;
     // (undocumented)
     readonly finalObjectKey: string;
     // (undocumented)
     readonly finalObjectVersion?: string;
     // (undocumented)
+    readonly kmsKeyRef: string;
+    // (undocumented)
+    readonly purpose: "inbound" | "outbound_upload" | "derived";
+    // (undocumented)
+    readonly scratchObjectKey: string;
+    // (undocumented)
+    readonly scratchObjectVersion?: string;
+    // (undocumented)
     readonly stageId: string;
     // (undocumented)
     readonly tenantId: TenantId;
+    // (undocumented)
+    readonly wrappedDek: Uint8Array;
 }
 
 // @public
@@ -730,16 +792,26 @@ export class PostgresBlobRepository {
     // (undocumented)
     releaseLegalHold(tenantId: TenantId, legalHoldId: string, actor: string, occurredAt: string, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
     // (undocumented)
+    replaceMissingFinalObject(input: BlobFinalObject & {
+        readonly missingFinalObjectVersion?: string;
+    }, occurredAt: string, signal: AbortSignal): Promise<Result<{
+        readonly optimisticVersion: number;
+    }, MailEdgeError>>;
+    // (undocumented)
     reserveStage(input: BlobStageCreation, signal: AbortSignal): Promise<Result<{
         readonly optimisticVersion: number;
     }, MailEdgeError>>;
     // (undocumented)
-    restoreCorrupt(claim: RawBlobIntegrityClaim, retainUntil: string, signal: AbortSignal): Promise<Result<StoredBlobRecord, MailEdgeError>>;
+    restoreCorrupt(proof: RawBlobRestorationProof, restoredAt: string, retainUntil: string, signal: AbortSignal): Promise<Result<StoredBlobRecord, MailEdgeError>>;
+    // (undocumented)
+    revalidatePurgeClaim(claim: BlobPurgeClaim, now: string, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
 }
 
 // @public
 export class PostgresDatabase {
     constructor(config: PostgresDatabaseConfig);
+    // (undocumented)
+    get canceler(): PostgresQueryCanceler;
     // (undocumented)
     close(signal: AbortSignal): Promise<void>;
     // (undocumented)
@@ -801,6 +873,8 @@ export class PostgresLeaseRepository {
     // (undocumented)
     quarantineExpiredOutboundDispatches(tenantId: TenantId, now: string, limit: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<readonly string[], MailEdgeError>>;
     // (undocumented)
+    revalidateOutboundDispatch(tenantId: TenantId, intentId: string, attemptId: string, fence: number, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundDispatchAuthorization, MailEdgeError>>;
+    // (undocumented)
     settleInboundDelivery(tenantId: TenantId, deliveryId: string, fence: number, state: "delivered" | "retry_wait" | "dead_letter", occurredAt: string, nextActionAt: string | null, lastErrorCode: string | null, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
     // (undocumented)
     settleOutboundAttempt(tenantId: TenantId, attemptId: string, intentId: string, fence: number, expectedIntentVersion: number, settlement: OutboundSettlement, occurredAt: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
@@ -808,7 +882,7 @@ export class PostgresLeaseRepository {
 
 // @public
 export class PostgresMigrationRunner {
-    constructor(clientConfig: ClientConfig, migrationsDirectory?: string);
+    constructor(clientConfig: ClientConfig, migrationsDirectory?: string, lockTimeoutMilliseconds?: number);
     // (undocumented)
     migrate(signal: AbortSignal): Promise<MigrationResult>;
 }
@@ -831,6 +905,12 @@ export class PostgresOutboundIntentRepository implements OutboundIntentRepositor
     insert(intent: OutboundIntentV1, idempotency: IdempotencyRecordV1, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
     // (undocumented)
     update(intent: OutboundIntentV1, expectedVersion: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
+}
+
+// @public
+export interface PostgresQueryCanceler {
+    // (undocumented)
+    cancel(backendProcessId: number, backendTransactionId: string, signal: AbortSignal): Promise<void>;
 }
 
 // @public
@@ -857,7 +937,7 @@ export class PostgresTenantUnitOfWork implements UnitOfWork {
 
 // @public
 export class PostgresUnitOfWork implements TenantUnitOfWorkFactory {
-    constructor(database: Kysely<MailEdgeDatabase>, statementTimeoutMilliseconds: number);
+    constructor(database: Kysely<MailEdgeDatabase>, statementTimeoutMilliseconds: number, canceler: PostgresQueryCanceler);
     // (undocumented)
     execute<T>(operation: (context: UnitOfWorkContext, signal: AbortSignal) => Promise<Result<T, MailEdgeError>>, signal: AbortSignal): Promise<Result<T, MailEdgeError>>;
     // (undocumented)
@@ -866,8 +946,10 @@ export class PostgresUnitOfWork implements TenantUnitOfWorkFactory {
     executeSql<Row extends QueryResultRow = QueryResultRow>(context: UnitOfWorkContext, text: string, values: readonly unknown[], signal: AbortSignal): Promise<PostgresSqlResult<Row>>;
     // (undocumented)
     forTenant(tenantId: TenantId): UnitOfWork;
+    // @internal
+    readTransaction<T>(context: UnitOfWorkContext, tenantId: TenantId, operation: (transaction: Transaction<MailEdgeDatabase>) => Promise<T>, signal: AbortSignal): Promise<T>;
     // (undocumented)
-    transaction(context: UnitOfWorkContext, expectedTenantId?: TenantId): Transaction<MailEdgeDatabase>;
+    transaction(context: UnitOfWorkContext, expectedTenantId?: TenantId): Promise<Transaction<MailEdgeDatabase>>;
 }
 
 // @public
@@ -911,6 +993,26 @@ export interface ProviderFeedbackEventTable {
 }
 
 // @public (undocumented)
+export interface ProviderInstanceTable {
+    // (undocumented)
+    readonly configRef: string;
+    // (undocumented)
+    readonly createdAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly providerId: string;
+    // (undocumented)
+    readonly providerInstanceId: string;
+    // (undocumented)
+    readonly region: string | null;
+    // (undocumented)
+    readonly secretRef: string;
+    // (undocumented)
+    readonly state: "enabled" | "disabled";
+    // (undocumented)
+    readonly tenantId: string;
+}
+
+// @public (undocumented)
 export type RawBlob = Selectable<RawBlobTable>;
 
 // @public (undocumented)
@@ -933,12 +1035,32 @@ interface RawBlobReferenceSummaryTable {
     readonly tenantId: string;
 }
 
+// @public
+export interface RawBlobRestorationProof extends RawBlobIntegrityClaim {
+    // (undocumented)
+    readonly encryptionFormatVersion: number;
+    // (undocumented)
+    readonly encryptionHeaderSha256: string;
+    // (undocumented)
+    readonly objectKey: string;
+    // (undocumented)
+    readonly objectVersion?: string;
+    // (undocumented)
+    readonly sha256: string;
+    // (undocumented)
+    readonly size: number;
+    // (undocumented)
+    readonly verifiedAt: string;
+}
+
 // @public (undocumented)
 export interface RawBlobTable {
     // (undocumented)
     readonly availableAt: Timestamp;
     // (undocumented)
     readonly blobId: string;
+    // (undocumented)
+    readonly corruptionDetectedAt: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
     // (undocumented)
     readonly createdAt: GeneratedTimestamp;
     // (undocumented)
@@ -947,6 +1069,8 @@ export interface RawBlobTable {
     readonly encryptionFormatVersion: number;
     // (undocumented)
     readonly encryptionMetadata: JsonObject;
+    // (undocumented)
+    readonly integrityVerifiedAt: ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
     // (undocumented)
     readonly kmsKeyRef: string;
     // (undocumented)
@@ -978,6 +1102,32 @@ export type RawBlobUpdate = Updateable<RawBlobTable>;
 
 // @public (undocumented)
 export type RouteBinding = Selectable<RouteBindingTable>;
+
+// @public (undocumented)
+export interface RouteBindingCheckTable {
+    // (undocumented)
+    readonly bindingId: string;
+    // (undocumented)
+    readonly bindingVersion: string;
+    // (undocumented)
+    readonly checkId: string;
+    // (undocumented)
+    readonly checkKind: "capability" | "dns" | "control_plane" | "live_conformance" | "drift";
+    // (undocumented)
+    readonly createdAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly evidenceAt: Timestamp;
+    // (undocumented)
+    readonly expiresAt: Timestamp;
+    // (undocumented)
+    readonly outcome: "pass" | "fail" | "expired";
+    // (undocumented)
+    readonly report: JsonObject;
+    // (undocumented)
+    readonly reportDigest: Uint8Array;
+    // (undocumented)
+    readonly tenantId: string;
+}
 
 // @public (undocumented)
 export interface RouteBindingTable {
@@ -1069,6 +1219,8 @@ export interface StoredBlobRecord {
     readonly purpose: "inbound" | "outbound_upload" | "derived";
     // (undocumented)
     readonly raw: RawMessageRefV1;
+    // (undocumented)
+    readonly sourceStageId: string;
     // (undocumented)
     readonly status: "available" | "purge_pending" | "deleted" | "corrupt";
     // (undocumented)
