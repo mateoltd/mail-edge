@@ -1,9 +1,20 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { ConfigurationError, parseReferenceServiceConfig } from "../src/config.js";
 import { testConfig } from "./fixtures.js";
 
 describe("reference service configuration", () => {
+  it("keeps the checked example complete and fail-closed", () => {
+    const example: unknown = JSON.parse(
+      readFileSync(new URL("../local/config.example.json", import.meta.url), "utf8"),
+    );
+    const config = parseReferenceServiceConfig(example);
+
+    expect(config.production?.hostIntegration[0]?.audience).toBe("mail-edge-host-v1");
+  });
+
   it("deep-freezes strict validated configuration", () => {
     const config = parseReferenceServiceConfig(testConfig("/tmp/reference-service-secrets"));
     expect(Object.isFrozen(config)).toBe(true);

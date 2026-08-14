@@ -102,7 +102,7 @@
       "feedbackLeaseMilliseconds": 60000,
       "reconciliationLeaseMilliseconds": 60000,
       "reconciliationWindowMilliseconds": 86400000,
-      "reconciliationEvidenceMaximumAgeMilliseconds": 604800000,
+      "reconciliationEvidenceMaximumAgeMilliseconds": 86400000,
       "recoveryBatchSize": 100,
       "maximumConcurrentWork": 32,
       "retry": {
@@ -129,6 +129,7 @@
         "reverseRouteUrl": "https://application.example.test/mail-edge/reverse-route",
         "deliveryUrl": "https://application.example.test/mail-edge/delivery",
         "feedbackUrl": "https://application.example.test/mail-edge/feedback",
+        "audience": "mail-edge-host-v1",
         "signingSecret": "secret://host-signing-key",
         "signingKeyId": "host-key-2026-08",
         "timeoutMilliseconds": 10000,
