@@ -61,6 +61,8 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 binding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -204,6 +206,8 @@ domainALabel: TUnsafe<string>;
 direction: TUnion<TLiteral<"inbound" | "outbound">[]>;
 providerId: TUnsafe<ProviderId>;
 adapterVersion: TString;
+adapterMode: TOptional<TString>;
+dispatchTransport: TOptional<TUnion<[TLiteral<"http">, TLiteral<"smtp">]>>;
 providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerResourceIds: TUnsafe<    {
 [x: string]: string;
@@ -404,6 +408,8 @@ providerId: TUnsafe<ProviderId>;
 providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerReceiptKey: TString;
 binding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -480,6 +486,8 @@ size: number;
 mediaType: "message/rfc822";
 }>;
 binding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -528,6 +536,8 @@ address: string;
 smtpUtf8: boolean;
 }>;
 primaryBinding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -545,6 +555,8 @@ configRevision: string;
 createdAt: string;
 }>;
 fallbackBindings: TArray<TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -610,6 +622,8 @@ address: string;
 smtpUtf8: boolean;
 }>;
 routeBinding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -654,6 +668,8 @@ tenantId: TUnsafe<TenantId>;
 ordinal: TInteger;
 fence: TInteger;
 routeBinding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -1103,6 +1119,8 @@ tenantId: TUnsafe<TenantId>;
 ordinal: TInteger;
 fence: TInteger;
 routeBinding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -1191,6 +1209,8 @@ address: string;
 smtpUtf8: boolean;
 }>;
 primaryBinding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -1208,6 +1228,8 @@ configRevision: string;
 createdAt: string;
 }>;
 fallbackBindings: TArray<TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -1279,6 +1301,8 @@ address: string;
 smtpUtf8: boolean;
 }>;
 routeBinding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;
@@ -1676,6 +1700,8 @@ domainALabel: TUnsafe<string>;
 direction: TUnion<TLiteral<"inbound" | "outbound">[]>;
 providerId: TUnsafe<ProviderId>;
 adapterVersion: TString;
+adapterMode: TOptional<TString>;
+dispatchTransport: TOptional<TUnion<[TLiteral<"http">, TLiteral<"smtp">]>>;
 providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerResourceIds: TUnsafe<    {
 [x: string]: string;
@@ -1702,6 +1728,8 @@ domainALabel: TUnsafe<string>;
 direction: TUnion<TLiteral<"inbound" | "outbound">[]>;
 providerId: TUnsafe<ProviderId>;
 adapterVersion: TString;
+adapterMode: TOptional<TString>;
+dispatchTransport: TOptional<TUnion<[TLiteral<"http">, TLiteral<"smtp">]>>;
 providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerResourceIds: TUnsafe<    {
 [x: string]: string;
@@ -1852,6 +1880,8 @@ providerId: TUnsafe<ProviderId>;
 providerInstanceId: TUnsafe<ProviderInstanceId>;
 providerReceiptKey: TString;
 binding: TUnsafe<    {
+adapterMode?: string;
+dispatchTransport?: "http" | "smtp";
 schemaVersion: "v1";
 bindingId: BindingId;
 bindingVersion: number;

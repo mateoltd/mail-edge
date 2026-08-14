@@ -8,6 +8,7 @@
     { "path": "packages/blob-s3" },
     { "path": "packages/queue-pg-boss" },
     { "path": "packages/provider" },
+    { "path": "packages/runtime" },
     { "path": "packages/conformance" },
     { "path": "packages/provider-mailgun" },
     { "path": "packages/mime" },

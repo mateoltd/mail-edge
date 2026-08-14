@@ -6,5 +6,10 @@
     "tsBuildInfoFile": "postgres.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../contracts" }, { "path": "../core" }]
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../core" },
+    { "path": "../provider" },
+    { "path": "../runtime" }
+  ]
 }

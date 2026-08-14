@@ -75,6 +75,7 @@ import * as postgresRoot from "@mail-edge/postgres";
 import * as providerRoot from "@mail-edge/provider";
 import * as providerMailgunRoot from "@mail-edge/provider-mailgun";
 import * as queuePgBossRoot from "@mail-edge/queue-pg-boss";
+import * as runtimeRoot from "@mail-edge/runtime";
 import * as sdkRoot from "@mail-edge/sdk";
 import { createContractValidator, parseProviderId, SmtpEnvelopeV1Schema } from "@mail-edge/contracts";
 import { canonicalizeSmtpEnvelope } from "@mail-edge/core";
@@ -84,7 +85,7 @@ import { ProviderConformanceKit } from "@mail-edge/conformance";
 import { conformanceTarget } from "@mail-edge/conformance/examples/third-party-adapter";
 import { registerMailgun } from "@mail-edge/provider-mailgun/examples/register";
 
-for (const root of [blobS3Root, conformanceRoot, contractsRoot, coreRoot, mimeRoot, postgresRoot, providerMailgunRoot, providerRoot, queuePgBossRoot, sdkRoot]) {
+for (const root of [blobS3Root, conformanceRoot, contractsRoot, coreRoot, mimeRoot, postgresRoot, providerMailgunRoot, providerRoot, queuePgBossRoot, runtimeRoot, sdkRoot]) {
   assert.ok(Object.keys(root).length > 0);
 }
 assert.equal(parseProviderId("clean-room-provider").ok, true);
@@ -119,6 +120,7 @@ import { createMailgunProviderRegistration, type MailgunProviderConfig } from "@
 import type { ProviderConformanceTarget } from "@mail-edge/conformance";
 import type { PostgresBlobRepository } from "@mail-edge/postgres";
 import type { PgBossWakeupConfig } from "@mail-edge/queue-pg-boss";
+import type { DurableRuntimeStore, RuntimeObservabilityPort } from "@mail-edge/runtime";
 
 type AssertAssignable<Target, Source extends Target> = true;
 type BlobMetadataOperations = BlobMetadataStore;
@@ -145,6 +147,8 @@ declare const registration: ProviderAdapterRegistration;
 declare const tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
 declare const queueConfig: PgBossWakeupConfig;
 declare const mailgunConfig: MailgunProviderConfig;
+declare const runtimeStore: DurableRuntimeStore;
+declare const runtimeObservability: RuntimeObservabilityPort;
 builder
   .withBlobStore(blobStore)
   .withProviderRegistry(providerRegistry)
@@ -159,6 +163,8 @@ void headerPatcher;
 void queueConfig;
 void mailgunConfig;
 void createMailgunProviderRegistration;
+void runtimeStore;
+void runtimeObservability;
 const postgresSatisfiesNeutral: PostgresSatisfiesNeutralBlobMetadata = true;
 const neutralSatisfiesPostgres: NeutralBlobMetadataSatisfiesPostgres = true;
 void postgresSatisfiesNeutral;

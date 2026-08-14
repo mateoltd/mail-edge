@@ -15,12 +15,16 @@ export type {
   NewRawBlob,
   NewTenant,
   OutboundAttemptRow,
+  OutboundAttemptRecipientTable,
   OutboundAttemptTable,
   OutboundIntentRow,
   OutboundIntentTable,
   ProviderInstanceTable,
   ProviderFeedbackEvent,
   ProviderFeedbackEventTable,
+  ProviderFeedbackDedupTable,
+  RecipientDeliveryProjectionTable,
+  ReconciliationDecisionTable,
   RawBlob,
   RawBlobTable,
   RawBlobUpdate,
@@ -29,6 +33,7 @@ export type {
   RouteBindingTable,
   Tenant,
   TenantTable,
+  WebhookReplayNonceTable,
 } from "./database.schema.js";
 export type {
   PostgresDatabaseConfig,
@@ -69,9 +74,13 @@ export type {
   OutboundSettlement,
 } from "./lease.repository.js";
 export { PostgresLeaseRepository } from "./lease.repository.js";
-export type { SensitiveValueCipher } from "./workflow.repository.js";
+export type { SensitiveValueCipher, SensitiveValueDigester } from "./workflow.repository.js";
 export type { SensitiveValueKeyProvider } from "./sensitive-value-cipher.adapter.js";
-export { AesGcmSensitiveValueCipher } from "./sensitive-value-cipher.adapter.js";
+export {
+  AesGcmSensitiveValueCipher,
+  HmacSensitiveValueDigester,
+} from "./sensitive-value-cipher.adapter.js";
+export { PostgresDurableRuntimeStore } from "./runtime.repository.js";
 export {
   availableBlobIdentity,
   createPostgresRepositories,

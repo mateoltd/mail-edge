@@ -60,12 +60,11 @@ evidence accepts only documented deployment dimensions and hashes their values w
 domain-separated SHA-256 policy, preventing credentials and arbitrary environment values from
 entering the report.
 
-## W5-W8 reconciliation composition gate
+## W5-W8 reconciliation transaction boundary
 
-This repository slice exposes reconciliation queries, evidence evaluation, and fenced workflow
-reducers, but it has no orchestration writer that consumes a reconciliation result. A later W5-W8
-composition must enforce the following at its actual transaction boundary; the provider evaluator
-alone is not authorization to write:
+`PostgresDurableRuntimeStore.applyReconciliation` closes the former composition gap. The provider
+evaluator still is not authorization to write: the concrete writer enforces all of the following in
+the transaction that changes durable state:
 
 1. Retain the exact query context plus the orchestration claim fence, and require its attempt ID,
    route binding identity, tenant, and claimed fence to equal the currently persisted attempt.
@@ -74,6 +73,10 @@ alone is not authorization to write:
 3. Re-read the attempt and binding in the write transaction, reject superseded attempts or changed
    binding/config revisions, and apply only authoritative certainty declared by that exact adapter
    descriptor.
-4. Persist the reducer transition with the current attempt ID, fence, and expected workflow version
-   atomically. A conflict or stale observation preserves `quarantined_unknown`; it never retries or
-   resolves a newer attempt.
+4. Persist the reducer transition, decision evidence, current attempt ID, dispatch fence,
+   reconciliation claim fence, and expected workflow version atomically. A conflict or stale
+   observation preserves `quarantined_unknown`; it never retries or resolves a newer attempt.
+
+The runtime retains adapter mode, dispatch transport, configuration revision, capability digest, and
+the exact query window in its claim. Unknown or non-authoritative evidence clears no quarantine and
+schedules no dispatch.

@@ -1979,6 +1979,12 @@
         "$id": "urn:mail-edge:schema:v1:route-binding",
         "additionalProperties": false,
         "properties": {
+          "adapterMode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "type": "string"
+          },
           "adapterVersion": {
             "maxLength": 64,
             "minLength": 1,
@@ -2011,6 +2017,18 @@
               },
               {
                 "const": "outbound",
+                "type": "string"
+              }
+            ]
+          },
+          "dispatchTransport": {
+            "anyOf": [
+              {
+                "const": "http",
+                "type": "string"
+              },
+              {
+                "const": "smtp",
                 "type": "string"
               }
             ]
@@ -2099,6 +2117,12 @@
         "$id": "urn:mail-edge:schema:v1:route-binding-snapshot",
         "additionalProperties": false,
         "properties": {
+          "adapterMode": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+            "type": "string"
+          },
           "adapterVersion": {
             "maxLength": 64,
             "minLength": 1,
@@ -2131,6 +2155,18 @@
               },
               {
                 "const": "outbound",
+                "type": "string"
+              }
+            ]
+          },
+          "dispatchTransport": {
+            "anyOf": [
+              {
+                "const": "http",
+                "type": "string"
+              },
+              {
+                "const": "smtp",
                 "type": "string"
               }
             ]

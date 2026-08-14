@@ -4,29 +4,51 @@
 
 ```ts
 
+import { ActiveTenantSource } from '@mail-edge/runtime';
+import { ApplicationAckV1 } from '@mail-edge/core';
+import { ApplicationDeliveryClaim } from '@mail-edge/runtime';
 import { AttemptId } from '@mail-edge/contracts';
 import { AuditEventV1 } from '@mail-edge/contracts';
 import type { AuditPort } from '@mail-edge/core';
 import { ClientConfig } from 'pg';
 import type { ColumnType } from 'kysely';
+import { CreateOutboundIntentInput } from '@mail-edge/runtime';
+import { DeliveryId } from '@mail-edge/contracts';
+import { DurableRuntimeStore } from '@mail-edge/runtime';
+import { FeedbackApplicationClaim } from '@mail-edge/runtime';
+import { FeedbackCommitResult } from '@mail-edge/runtime';
+import { FeedbackEventId } from '@mail-edge/contracts';
 import type { Generated } from 'kysely';
 import { IdempotencyRecordV1 } from '@mail-edge/contracts';
 import type { IdempotencyRepository } from '@mail-edge/core';
+import { InboundDeliveryTarget } from '@mail-edge/runtime';
+import { InboundFinalizationCommit } from '@mail-edge/runtime';
+import { InboundReceiptCommitInput } from '@mail-edge/provider';
 import type { InboundReceiptRepository } from '@mail-edge/core';
+import { InboundRoutingClaim } from '@mail-edge/runtime';
 import type { Insertable } from 'kysely';
 import { IntentId } from '@mail-edge/contracts';
 import { Kysely } from 'kysely';
+import { LeaseRecoveryResult } from '@mail-edge/runtime';
 import { MailEdgeError } from '@mail-edge/contracts';
 import type { MailEdgeRepositories } from '@mail-edge/core';
 import type { OutboundAttemptRepository } from '@mail-edge/core';
 import { OutboundAttemptV1 } from '@mail-edge/contracts';
+import { OutboundDispatchAuthorization as OutboundDispatchAuthorization_2 } from '@mail-edge/runtime';
+import { OutboundDispatchClaim } from '@mail-edge/runtime';
+import { OutboundDispatchSettlement } from '@mail-edge/runtime';
 import type { OutboundIntentRepository } from '@mail-edge/core';
 import { OutboundIntentV1 } from '@mail-edge/contracts';
 import { Pool } from 'pg';
 import { PoolConfig } from 'pg';
+import { ProviderAdapterRegistration } from '@mail-edge/provider';
+import { ProviderFeedbackV1 } from '@mail-edge/contracts';
+import { ProviderReconciliationEvidenceV1 } from '@mail-edge/provider';
 import { QueryResultRow } from 'pg';
 import { RawMessageRefV1 } from '@mail-edge/contracts';
 import { ReceiptId } from '@mail-edge/contracts';
+import { ReconciliationApplication } from '@mail-edge/runtime';
+import { ReconciliationClaim } from '@mail-edge/runtime';
 import { Result } from '@mail-edge/contracts';
 import type { RouteBindingRepository } from '@mail-edge/core';
 import { RouteBindingSnapshotV1 } from '@mail-edge/contracts';
@@ -35,10 +57,10 @@ import { TenantId } from '@mail-edge/contracts';
 import type { TenantUnitOfWorkFactory } from '@mail-edge/core';
 import { Transaction } from 'kysely';
 import type { UnitOfWork } from '@mail-edge/core';
-import type { UnitOfWorkContext } from '@mail-edge/core';
+import { UnitOfWorkContext } from '@mail-edge/core';
 import type { Updateable } from 'kysely';
 import { VerifiedInboundReceiptV1 } from '@mail-edge/contracts';
-import type { WorkflowWakeupV1 } from '@mail-edge/contracts';
+import { WorkflowWakeupV1 } from '@mail-edge/contracts';
 
 // @public (undocumented)
 export interface AbandonedBlobStage {
@@ -326,7 +348,17 @@ export interface DomainClaimTable {
 }
 
 // @public (undocumented)
+type GeneratedNullableTimestamp = ColumnType<Date | null, Date | string | null | undefined, Date | string | null>;
+
+// @public (undocumented)
 type GeneratedTimestamp = ColumnType<Date, Date | string | undefined, Date | string>;
+
+// @public
+export class HmacSensitiveValueDigester implements SensitiveValueDigester {
+    constructor(keys: SensitiveValueKeyProvider);
+    // (undocumented)
+    digest(tenantId: TenantId, purpose: Parameters<SensitiveValueDigester["digest"]>[1], plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
+}
 
 // @public (undocumented)
 export interface InboundDeliveryLease {
@@ -346,6 +378,8 @@ export type InboundDeliveryRow = Selectable<InboundDeliveryTable>;
 // @public (undocumented)
 export interface InboundDeliveryTable {
     // (undocumented)
+    readonly acknowledgement: Generated<JsonObject | null>;
+    // (undocumented)
     readonly attemptCount: number;
     // (undocumented)
     readonly claimedUntil: Timestamp | null;
@@ -356,7 +390,13 @@ export interface InboundDeliveryTable {
     // (undocumented)
     readonly deliveryId: string;
     // (undocumented)
+    readonly deliveryMode: Generated<"push" | "pull" | null>;
+    // (undocumented)
+    readonly destinationId: Generated<string | null>;
+    // (undocumented)
     readonly destinationKeyHash: Uint8Array;
+    // (undocumented)
+    readonly destinationTokenCiphertext: Generated<Uint8Array | null>;
     // (undocumented)
     readonly fence: string;
     // (undocumented)
@@ -513,9 +553,13 @@ export interface MailEdgeDatabase {
     // (undocumented)
     readonly legalHolds: LegalHoldTable;
     // (undocumented)
+    readonly outboundAttemptRecipients: OutboundAttemptRecipientTable;
+    // (undocumented)
     readonly outboundAttempts: OutboundAttemptTable;
     // (undocumented)
     readonly outboundIntents: OutboundIntentTable;
+    // (undocumented)
+    readonly providerFeedbackDedup: ProviderFeedbackDedupTable;
     // (undocumented)
     readonly providerFeedbackEvents: ProviderFeedbackEventTable;
     // (undocumented)
@@ -527,11 +571,17 @@ export interface MailEdgeDatabase {
     // (undocumented)
     readonly rawBlobs: RawBlobTable;
     // (undocumented)
+    readonly recipientDeliveryProjection: RecipientDeliveryProjectionTable;
+    // (undocumented)
+    readonly reconciliationDecisions: ReconciliationDecisionTable;
+    // (undocumented)
     readonly routeBindingChecks: RouteBindingCheckTable;
     // (undocumented)
     readonly routeBindings: RouteBindingTable;
     // (undocumented)
     readonly tenants: TenantTable;
+    // (undocumented)
+    readonly webhookReplayNonces: WebhookReplayNonceTable;
     // Warning: (ae-forgotten-export) The symbol "WorkflowWakeupWatermarkTable" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -569,6 +619,24 @@ export interface OutboundAttemptLease {
     readonly attempt: OutboundAttemptV1;
     // (undocumented)
     readonly leaseExpiresAt: string;
+}
+
+// @public (undocumented)
+export interface OutboundAttemptRecipientTable {
+    // (undocumented)
+    readonly attemptId: string;
+    // (undocumented)
+    readonly outcome: "pending" | "accepted" | "rejected" | "delivered" | "deferred" | "bounced" | "complained";
+    // (undocumented)
+    readonly recipientIndex: number | null;
+    // (undocumented)
+    readonly recipientKeyHash: Uint8Array;
+    // (undocumented)
+    readonly statusCode: string | null;
+    // (undocumented)
+    readonly tenantId: string;
+    // (undocumented)
+    readonly updatedAt: GeneratedTimestamp;
 }
 
 // @public (undocumented)
@@ -612,6 +680,16 @@ export interface OutboundAttemptTable {
     readonly recipientGroup: JsonObject;
     // (undocumented)
     readonly recipientGroupDigest: Uint8Array;
+    // Warning: (ae-forgotten-export) The symbol "GeneratedNullableTimestamp" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    readonly reconciliationClaimedUntil: GeneratedNullableTimestamp;
+    // (undocumented)
+    readonly reconciliationFence: Generated<string>;
+    // (undocumented)
+    readonly reconciliationWindowFrom: GeneratedNullableTimestamp;
+    // (undocumented)
+    readonly reconciliationWindowTo: GeneratedNullableTimestamp;
     // (undocumented)
     readonly responseEvidence: JsonObject | null;
     // (undocumented)
@@ -845,6 +923,58 @@ export interface PostgresDatabaseConfig {
 }
 
 // @public
+export class PostgresDurableRuntimeStore implements DurableRuntimeStore, ActiveTenantSource {
+    constructor(input: {
+        readonly unitOfWork: PostgresUnitOfWork;
+        readonly cipher: SensitiveValueCipher;
+        readonly digester: SensitiveValueDigester;
+    });
+    // (undocumented)
+    applyFeedback(claim: FeedbackApplicationClaim, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+    // (undocumented)
+    applyReconciliation(claim: ReconciliationClaim, evidence: ProviderReconciliationEvidenceV1, registration: ProviderAdapterRegistration, now: string, maximumEvidenceAgeMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<ReconciliationApplication, MailEdgeError>>;
+    // (undocumented)
+    claimApplicationDelivery(tenantId: TenantId, deliveryId: DeliveryId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<ApplicationDeliveryClaim | null, MailEdgeError>>;
+    // (undocumented)
+    claimFeedbackApplication(tenantId: TenantId, feedbackEventId: FeedbackEventId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackApplicationClaim | null, MailEdgeError>>;
+    // (undocumented)
+    claimInboundRouting(tenantId: TenantId, receiptId: ReceiptId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<InboundRoutingClaim | null, MailEdgeError>>;
+    // (undocumented)
+    claimReconciliation(tenantId: TenantId, now: string, leaseMilliseconds: number, windowMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<ReconciliationClaim | null, MailEdgeError>>;
+    // (undocumented)
+    commitFeedback(tenantId: TenantId, events: readonly ProviderFeedbackV1[], context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<FeedbackCommitResult, MailEdgeError>>;
+    // (undocumented)
+    createOutboundIntent(input: CreateOutboundIntentInput, intentId: IntentId, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
+    // (undocumented)
+    failInboundRouting(claim: InboundRoutingClaim, nextActionAt: string | null, terminal: boolean, errorCode: string, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+    // (undocumented)
+    finalizeInbound(input: InboundReceiptCommitInput, receiptId: ReceiptId, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<InboundFinalizationCommit, MailEdgeError>>;
+    // (undocumented)
+    finalizeInboundRouting(claim: InboundRoutingClaim, deliveries: readonly InboundDeliveryTarget[], now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<readonly DeliveryId[], MailEdgeError>>;
+    // (undocumented)
+    listActiveTenants(afterTenantId: TenantId | null, limit: number, signal: AbortSignal): Promise<Result<readonly TenantId[], MailEdgeError>>;
+    // (undocumented)
+    locateTenant(wakeup: WorkflowWakeupV1, signal: AbortSignal): Promise<Result<TenantId | null, MailEdgeError>>;
+    // (undocumented)
+    prepareOutboundDispatch(tenantId: TenantId, intentId: IntentId, attemptId: AttemptId, now: string, leaseMilliseconds: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundDispatchClaim | null, MailEdgeError>>;
+    // (undocumented)
+    recoverExpiredLeases(tenantId: TenantId, now: string, limit: number, maximumAttempts: number, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<LeaseRecoveryResult, MailEdgeError>>;
+    // (undocumented)
+    revalidateOutboundDispatch(claim: OutboundDispatchClaim, registration: ProviderAdapterRegistration, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<OutboundDispatchAuthorization_2, MailEdgeError>>;
+    // (undocumented)
+    settleApplicationDelivery(claim: ApplicationDeliveryClaim, settlement: {
+        readonly state: "delivered";
+        readonly acknowledgement: ApplicationAckV1;
+    } | {
+        readonly state: "retry_wait" | "dead_letter";
+        readonly nextActionAt: string | null;
+        readonly errorCode: string;
+    }, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+    // (undocumented)
+    settleOutboundDispatch(claim: OutboundDispatchClaim, settlement: OutboundDispatchSettlement, now: string, context: UnitOfWorkContext, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
+}
+
+// @public
 export class PostgresIdempotencyRepository implements IdempotencyRepository {
     constructor(unitOfWork: PostgresUnitOfWork);
     // (undocumented)
@@ -960,16 +1090,40 @@ export class PostgresWakeupRepairRepository {
 }
 
 // @public (undocumented)
+export interface ProviderFeedbackDedupTable {
+    // (undocumented)
+    readonly eventDigest: Uint8Array | null;
+    // (undocumented)
+    readonly feedbackEventId: string;
+    // (undocumented)
+    readonly firstSeenAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly providerEventKeyHash: Uint8Array;
+    // (undocumented)
+    readonly providerInstanceId: string;
+    // (undocumented)
+    readonly tenantId: string;
+}
+
+// @public (undocumented)
 export type ProviderFeedbackEvent = Selectable<ProviderFeedbackEventTable>;
 
 // @public (undocumented)
 export interface ProviderFeedbackEventTable {
     // (undocumented)
+    readonly applicationFence: Generated<string>;
+    // (undocumented)
     readonly attemptId: string | null;
+    // (undocumented)
+    readonly claimedUntil: GeneratedNullableTimestamp;
     // (undocumented)
     readonly createdAt: GeneratedTimestamp;
     // (undocumented)
+    readonly eventCiphertext: Generated<Uint8Array | null>;
+    // (undocumented)
     readonly feedbackEventId: string;
+    // (undocumented)
+    readonly intentId: Generated<string | null>;
     // (undocumented)
     readonly kind: "accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed";
     // (undocumented)
@@ -981,6 +1135,10 @@ export interface ProviderFeedbackEventTable {
     // (undocumented)
     readonly projectedAt: Timestamp | null;
     // (undocumented)
+    readonly providerEventKeyHash: Generated<Uint8Array | null>;
+    // (undocumented)
+    readonly providerId: Generated<string | null>;
+    // (undocumented)
     readonly providerInstanceId: string;
     // (undocumented)
     readonly providerMessageIdHash: Uint8Array | null;
@@ -988,6 +1146,8 @@ export interface ProviderFeedbackEventTable {
     readonly receivedAt: Timestamp;
     // (undocumented)
     readonly recipientKeyHash: Uint8Array | null;
+    // (undocumented)
+    readonly sequenceHint: Generated<string | null>;
     // (undocumented)
     readonly tenantId: string;
 }
@@ -1101,6 +1261,82 @@ export interface RawBlobTable {
 export type RawBlobUpdate = Updateable<RawBlobTable>;
 
 // @public (undocumented)
+export interface RecipientDeliveryProjectionTable {
+    // (undocumented)
+    readonly clicked: boolean;
+    // (undocumented)
+    readonly complaint: boolean;
+    // (undocumented)
+    readonly contradictions: readonly unknown[];
+    // (undocumented)
+    readonly intentId: string;
+    // (undocumented)
+    readonly lastTransportOccurredAt: Timestamp | null;
+    // (undocumented)
+    readonly latestFeedbackOrderKey: string | null;
+    // (undocumented)
+    readonly opened: boolean;
+    // (undocumented)
+    readonly optimisticVersion: string;
+    // (undocumented)
+    readonly recipientKeyHash: Uint8Array;
+    // (undocumented)
+    readonly suppressed: boolean;
+    // (undocumented)
+    readonly tenantId: string;
+    // (undocumented)
+    readonly transportState: "pending" | "accepted" | "delivered" | "deferred" | "bounced" | "failed_not_sent" | "unknown";
+    // (undocumented)
+    readonly unsubscribed: boolean;
+    // (undocumented)
+    readonly updatedAt: Timestamp;
+}
+
+// @public (undocumented)
+export interface ReconciliationDecisionTable {
+    // (undocumented)
+    readonly actor: string;
+    // (undocumented)
+    readonly adapterMode: string | null;
+    // (undocumented)
+    readonly attemptFence: string;
+    // (undocumented)
+    readonly attemptId: string;
+    // (undocumented)
+    readonly bindingId: string | null;
+    // (undocumented)
+    readonly bindingVersion: string | null;
+    // (undocumented)
+    readonly capabilityDigest: Uint8Array | null;
+    // (undocumented)
+    readonly claimFence: string;
+    // (undocumented)
+    readonly configRevision: string | null;
+    // (undocumented)
+    readonly createdAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly decision: "accepted" | "failed_not_sent" | "authorized_retry" | "quarantined_unknown";
+    // (undocumented)
+    readonly decisionId: string;
+    // (undocumented)
+    readonly evidence: JsonObject;
+    // (undocumented)
+    readonly evidenceDigest: Uint8Array;
+    // (undocumented)
+    readonly expectedIntentVersion: string;
+    // (undocumented)
+    readonly intentId: string;
+    // (undocumented)
+    readonly observedAt: Timestamp | null;
+    // (undocumented)
+    readonly reasonCode: string;
+    // (undocumented)
+    readonly resolved: boolean;
+    // (undocumented)
+    readonly tenantId: string;
+}
+
+// @public (undocumented)
 export type RouteBinding = Selectable<RouteBindingTable>;
 
 // @public (undocumented)
@@ -1134,6 +1370,8 @@ export interface RouteBindingTable {
     // (undocumented)
     readonly activatedAt: Timestamp | null;
     // (undocumented)
+    readonly adapterMode: Generated<string>;
+    // (undocumented)
     readonly adapterVersion: string;
     // (undocumented)
     readonly bindingId: string;
@@ -1151,6 +1389,8 @@ export interface RouteBindingTable {
     readonly createdAt: Timestamp;
     // (undocumented)
     readonly direction: "inbound" | "outbound";
+    // (undocumented)
+    readonly dispatchTransport: Generated<"http" | "smtp">;
     // (undocumented)
     readonly domainALabel: string;
     // (undocumented)
@@ -1184,9 +1424,15 @@ export interface RouteBindingTable {
 // @public
 export interface SensitiveValueCipher {
     // (undocumented)
-    protect(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id", plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
+    protect(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id" | "application_destination" | "feedback_event", plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
     // (undocumented)
-    unprotect(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id", ciphertext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
+    unprotect(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id" | "application_destination" | "feedback_event", ciphertext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
+}
+
+// @public
+export interface SensitiveValueDigester {
+    // (undocumented)
+    digest(tenantId: TenantId, purpose: "idempotency_key" | "provider_receipt_key" | "provider_message_id" | "application_destination" | "feedback_event", plaintext: Uint8Array, signal: AbortSignal): Promise<Uint8Array>;
 }
 
 // @public (undocumented)
@@ -1244,6 +1490,24 @@ export interface TenantTable {
 
 // @public (undocumented)
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
+
+// @public (undocumented)
+export interface WebhookReplayNonceTable {
+    // (undocumented)
+    readonly bodyDigest: Uint8Array | null;
+    // (undocumented)
+    readonly createdAt: GeneratedTimestamp;
+    // (undocumented)
+    readonly expiresAt: Timestamp;
+    // (undocumented)
+    readonly nonceHash: Uint8Array;
+    // (undocumented)
+    readonly providerInstanceId: string;
+    // (undocumented)
+    readonly receiptId: string | null;
+    // (undocumented)
+    readonly tenantId: string;
+}
 
 // @public (undocumented)
 interface WorkflowWakeupWatermarkTable {
