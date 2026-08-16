@@ -30,6 +30,36 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@mail-edge/blob-s3':
+        specifier: workspace:^
+        version: link:packages/blob-s3
+      '@mail-edge/conformance':
+        specifier: workspace:^
+        version: link:packages/conformance
+      '@mail-edge/contracts':
+        specifier: workspace:^
+        version: link:packages/contracts
+      '@mail-edge/core':
+        specifier: workspace:^
+        version: link:packages/core
+      '@mail-edge/postgres':
+        specifier: workspace:^
+        version: link:packages/postgres
+      '@mail-edge/provider':
+        specifier: workspace:^
+        version: link:packages/provider
+      '@mail-edge/provider-cloudflare':
+        specifier: workspace:^
+        version: link:packages/provider-cloudflare
+      '@mail-edge/provider-mailgun':
+        specifier: workspace:^
+        version: link:packages/provider-mailgun
+      '@mail-edge/provider-resend':
+        specifier: workspace:^
+        version: link:packages/provider-resend
+      '@mail-edge/runtime':
+        specifier: workspace:^
+        version: link:packages/runtime
       '@microsoft/api-extractor':
         specifier: 7.58.12
         version: 7.58.12(@types/node@24.13.3)
@@ -42,6 +72,9 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
+      '@types/pg':
+        specifier: 8.21.0
+        version: 8.21.0
       dependency-cruiser:
         specifier: 18.2.0
         version: 18.2.0
@@ -69,6 +102,9 @@ importers:
       publint:
         specifier: 0.3.23
         version: 0.3.23
+      testcontainers:
+        specifier: 12.1.0
+        version: 12.1.0(supports-color@10.2.2)
       turbo:
         specifier: 2.10.9
         version: 2.10.9
@@ -78,6 +114,9 @@ importers:
       typescript-eslint:
         specifier: 8.67.0
         version: 8.67.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3)
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
       yaml:
         specifier: 2.9.0
         version: 2.9.0

@@ -3,8 +3,13 @@
   "ignoreDependencies": ["@cyclonedx/cdxgen", "@zone-eu/mailsplit", "publint"],
   "workspaces": {
     ".": {
-      "entry": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
-      "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"]
+      "entry": [
+        "*.config.mjs",
+        "config/**/*.mjs",
+        "scripts/**/*.mjs",
+        "test/integration/**/*.test.ts"
+      ],
+      "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs", "test/integration/**/*.ts"]
     }
   }
 }
