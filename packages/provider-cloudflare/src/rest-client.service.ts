@@ -128,29 +128,82 @@ const validatePath = (path: string): Result<URL, MailEdgeError> => {
   return { ok: true, value: url };
 };
 
-const requestBodyStream = (
-  body: AsyncIterable<Uint8Array>,
-  onConsumed: ((bytes: number) => void) | undefined,
-): ReadableStream<Uint8Array> => {
-  const iterator = body[Symbol.asyncIterator]();
-  let finished = false;
-  return new ReadableStream<Uint8Array>({
-    async cancel(reason): Promise<void> {
-      if (!finished && iterator.return !== undefined) await iterator.return(reason);
-      finished = true;
-    },
-    async pull(controller): Promise<void> {
-      const next = await iterator.next();
-      if (next.done === true) {
+class FetchRequestBodyTracker {
+  readonly stream: ReadableStream<Uint8Array>;
+  readonly #onPossiblyWritten: ((bytes: number) => void) | undefined;
+  #consumedBytes = 0;
+  #published = false;
+
+  constructor(
+    body: AsyncIterable<Uint8Array>,
+    onPossiblyWritten: ((bytes: number) => void) | undefined,
+  ) {
+    this.#onPossiblyWritten = onPossiblyWritten;
+    const iterator = body[Symbol.asyncIterator]();
+    let finished = false;
+    this.stream = new ReadableStream<Uint8Array>({
+      async cancel(reason): Promise<void> {
+        if (!finished && iterator.return !== undefined) await iterator.return(reason);
         finished = true;
-        controller.close();
-        return;
-      }
-      const immutable = next.value.slice();
-      controller.enqueue(immutable);
-      onConsumed?.(immutable.byteLength);
-    },
-  });
+      },
+      pull: async (controller): Promise<void> => {
+        const next = await iterator.next();
+        if (next.done === true) {
+          finished = true;
+          controller.close();
+          return;
+        }
+        const immutable = next.value.slice();
+        this.#consumedBytes += immutable.byteLength;
+        if (!Number.isSafeInteger(this.#consumedBytes)) {
+          throw new RangeError("Cloudflare request body byte count exceeded the safe range.");
+        }
+        controller.enqueue(immutable);
+      },
+    });
+  }
+
+  publishPossiblyWrittenBytes(): void {
+    if (this.#published || this.#consumedBytes === 0) return;
+    this.#published = true;
+    this.#onPossiblyWritten?.(this.#consumedBytes);
+  }
+}
+
+const preApplicationFailureCodes: readonly string[] = Object.freeze([
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+const failureCode = (cause: unknown): string | undefined => {
+  let current = cause;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (typeof current !== "object" || current === null) return undefined;
+    const code: unknown = Reflect.get(current, "code");
+    if (typeof code === "string") return code;
+    current = Reflect.get(current, "cause");
+  }
+  return undefined;
+};
+
+const provesPreApplicationFailure = (cause: unknown): boolean => {
+  const code = failureCode(cause);
+  return (
+    code !== undefined &&
+    (preApplicationFailureCodes.includes(code) ||
+      code.startsWith("ERR_SSL_") ||
+      code.startsWith("ERR_TLS_"))
+  );
 };
 
 const collectResponse = async (
@@ -213,10 +266,11 @@ export class CloudflareFetchTransport implements CloudflareHttpTransport {
     ) {
       return { error: restFailure("response_limit_invalid", false), ok: false };
     }
-    const body =
+    const trackedBody =
       request.body === undefined
         ? undefined
-        : requestBodyStream(request.body, request.onRequestBodyBytesConsumed);
+        : new FetchRequestBodyTracker(request.body, request.onRequestBodyBytesConsumed);
+    const body = trackedBody?.stream;
     const init: RequestInit & { readonly duplex?: "half" } = {
       ...(body === undefined ? {} : { body, duplex: "half" }),
       headers: request.headers,
@@ -228,11 +282,13 @@ export class CloudflareFetchTransport implements CloudflareHttpTransport {
     try {
       response = await this.#fetch.fetch(new Request(url.value, init));
     } catch (cause) {
+      if (!provesPreApplicationFailure(cause)) trackedBody?.publishPossiblyWrittenBytes();
       return {
         error: restFailure("transport_failed", true, cause),
         ok: false,
       };
     }
+    trackedBody?.publishPossiblyWrittenBytes();
     if (request.discardResponseBody === true) {
       try {
         await response.body?.cancel("response_body_not_required");

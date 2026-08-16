@@ -16,6 +16,23 @@ class RecordingFetch implements CloudflareFetch {
   }
 }
 
+class ConsumingFailureFetch implements CloudflareFetch {
+  readonly #code: string;
+
+  constructor(code: string) {
+    this.#code = code;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.body !== null) {
+      for await (const chunk of request.body) void chunk;
+    }
+    const transport = new Error("coded transport failure");
+    Reflect.set(transport, "code", this.#code);
+    throw new TypeError("fetch failed", { cause: transport });
+  }
+}
+
 describe("Cloudflare REST transport boundary", () => {
   it.each([
     "https://attacker.invalid/client/v4/accounts",
@@ -107,4 +124,35 @@ describe("Cloudflare REST transport boundary", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.safeDetails?.["reason"]).toBe("response_stream_failed");
   });
+
+  it.each([
+    ["ENOTFOUND", 0],
+    ["DEPTH_ZERO_SELF_SIGNED_CERT", 0],
+    ["ECONNRESET", 3],
+  ] as const)(
+    "publishes only transport-ambiguous consumed bytes for %s",
+    async (code, expectedBytes) => {
+      let observedBytes = 0;
+      const result = await new CloudflareFetchTransport(new ConsumingFailureFetch(code)).request(
+        Object.freeze({
+          body: Object.freeze({
+            async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
+              yield Uint8Array.from([1, 2, 3]);
+            },
+          }),
+          headers: Object.freeze({}),
+          maximumResponseBytes: 100,
+          method: "POST",
+          onRequestBodyBytesConsumed: (bytes: number) => {
+            observedBytes += bytes;
+          },
+          path: "/client/v4/accounts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/email/sending/send_raw",
+        }),
+        new AbortController().signal,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(observedBytes).toBe(expectedBytes);
+    },
+  );
 });
