@@ -1,0 +1,74 @@
+{
+  "baseSha": "762948e1f9ccb57a025151ab824e4a040a30d272",
+  "executed": true,
+  "executions": [
+    {
+      "artifactSha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "distinctStates": 618041,
+      "errors": 0,
+      "maxDepth": 23,
+      "scope": {
+        "configPath": "formal/tla/MailEdgeOperations.cfg",
+        "configSha256": "5fc6fe8433c35febe3be7efce8aef89ece2b0f1291d8b84c6003a4e77f66d12f",
+        "modelPath": "formal/tla/MailEdgeOperations.tla",
+        "modelSha256": "9f6677ac43e30924e9b79977e4e2c47fe2679d0e0c5860f5e97234660f3df188",
+        "properties": [
+          "AcceptedIsConsistent",
+          "AuthoritativeReconciliation",
+          "BindingGenerationIdentity",
+          "CrossedBoundaryNeverProvedNotSent",
+          "CurrentAttemptIntegrity",
+          "DurableBeforeProviderCall",
+          "FenceMonotonic",
+          "NoFallbackRefinement",
+          "OneActiveExactRoute",
+          "PinnedGenerationImmutable",
+          "QuarantineIntegrity",
+          "TypeOK",
+          "UnknownRetryRequiresExplicitAuthority"
+        ]
+      },
+      "statesGenerated": 7880014,
+      "status": "passed",
+      "tool": "tlc",
+      "version": "1.7.4"
+    },
+    {
+      "artifactSha256": "6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d",
+      "checks": 14,
+      "counterexamples": 0,
+      "scope": {
+        "configPath": null,
+        "configSha256": null,
+        "modelPath": "formal/alloy/mail-edge-structure.als",
+        "modelSha256": "96e8fd6bd88cedb8f3c719d93a27e4837953c2bfc9cdd22bd7f4090451d5b1b3",
+        "properties": [
+          "AllReferencesAreTenantClosed",
+          "BindingGenerationsAreUnique",
+          "BindingTenantClosed",
+          "DeletedBlobHasExactlyOneCompletedDeletion",
+          "DeletionClaimHasOneFenceAndNoReferences",
+          "DerivationEndpointsAreDistinctAndTenantClosed",
+          "DomainClaimsAreUnique",
+          "HeldBlobCannotBePurgeEligible",
+          "OneActiveExactBinding",
+          "OpenHoldIsUniquePerTenantBlob",
+          "OutboundPinsExactPrimaryWithNoFallback",
+          "ProviderInstancesAreUnique",
+          "PurgePendingRejectsReferencesAndOpenHolds",
+          "ReferencedBlobCannotBePurgeEligible",
+          "WitnessActiveGrantReference",
+          "WitnessBindingGenerationSwitch",
+          "WitnessCompletedDeletion",
+          "WitnessHeldAvailableBlob"
+        ]
+      },
+      "status": "passed",
+      "tool": "alloy",
+      "version": "6.2.0",
+      "witnesses": 4
+    }
+  ],
+  "schemaVersion": "w9-formal-execution-v1",
+  "sourceSha": "126b5749d46fb75d41b7c747cc4f1bc5ce6d4989"
+}

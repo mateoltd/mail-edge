@@ -1,0 +1,92 @@
+{
+  "contractVersion": "v1",
+  "digest": "abf4d938410ed8cefd9b932c4c9669b9bad487f8b9ab2b211a8dea965c3a0ce6",
+  "observations": [
+    {
+      "assertions": [
+        "dispatching_quarantined_before_replay",
+        "encrypted_raw_decrypts_after_restore",
+        "fresh_postgres_and_minio_volumes",
+        "inventory_reconciled_without_gaps",
+        "outbound_dispatch_remains_disabled"
+      ],
+      "details": {
+        "migrations": 7,
+        "providerInstancesDisabled": 2,
+        "restoreAuditEvents": 2,
+        "restoredObjects": 2
+      },
+      "drillId": "backup_fresh_volume_restore",
+      "status": "passed"
+    },
+    {
+      "assertions": [
+        "activation_is_atomic_per_direction",
+        "new_work_uses_new_generation",
+        "pinned_work_blocks_retirement",
+        "pinned_work_never_moves",
+        "retirement_requires_terminal_work"
+      ],
+      "details": { "oldOptimisticVersion": 2, "pinnedAtSwitch": 1 },
+      "drillId": "binding_switch_drain",
+      "status": "passed"
+    },
+    {
+      "assertions": [
+        "failed_rewrap_preserves_old_wrapper",
+        "old_and_new_readers_overlap",
+        "rewrap_is_fenced_and_audited",
+        "s3_object_version_is_unchanged",
+        "writers_switch_to_new_key"
+      ],
+      "details": { "optimisticVersion": 1, "rotationAuditEvents": 1 },
+      "drillId": "key_rotation",
+      "status": "passed"
+    },
+    {
+      "assertions": [
+        "advisory_locked_forward_migrations",
+        "failed_migration_transaction_rolls_back",
+        "migration_checksums_remain_immutable",
+        "n_minus_one_starts_after_expand",
+        "schema_is_never_reverse_migrated"
+      ],
+      "details": { "immutableMigrations": 7, "migrationsAppliedAfterExpand": 6 },
+      "drillId": "migration_application_rollback",
+      "status": "passed"
+    },
+    {
+      "assertions": [
+        "final_reference_check_is_transactional",
+        "first_scan_never_deletes",
+        "s3_delete_targets_exact_version",
+        "second_separated_scan_is_required"
+      ],
+      "details": { "scansRequired": 2 },
+      "drillId": "orphan_repair",
+      "status": "passed"
+    },
+    {
+      "assertions": [
+        "database_state_is_workflow_truth",
+        "lost_job_is_republished",
+        "queue_payload_is_one_opaque_identifier",
+        "worker_observes_repaired_hint"
+      ],
+      "details": { "opaquePayloadFields": 1, "repairedWakeups": 1 },
+      "drillId": "pg_boss_wakeup_repair",
+      "status": "passed"
+    },
+    {
+      "assertions": [
+        "hold_blocks_logical_and_physical_deletion",
+        "late_hold_fails_loudly_after_purge_claim",
+        "release_allows_fenced_exact_version_purge"
+      ],
+      "details": { "completedPurges": 2, "openHoldsAfterDrill": 0 },
+      "drillId": "retention_legal_hold",
+      "status": "passed"
+    }
+  ],
+  "sourceRevision": "126b5749d46fb75d41b7c747cc4f1bc5ce6d4989"
+}

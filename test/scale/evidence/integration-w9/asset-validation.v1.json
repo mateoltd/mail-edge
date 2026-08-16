@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "artifactDigestSha256": "3d50760d39e9bb15ad1268049c6a639584ccbc641e2f0f9e3a1d075efe8763c1",
+      "id": "formal-execution",
+      "issues": [],
+      "status": "pass"
+    },
+    {
+      "artifactDigestSha256": "36473764535d1b41e9271e90aabc2bfa5a747d566cbccc764a12ac0c12cc27ed",
+      "id": "observability-assets",
+      "issues": [],
+      "status": "pass"
+    }
+  ],
+  "schemaVersion": "w9-asset-validation-v1"
+}

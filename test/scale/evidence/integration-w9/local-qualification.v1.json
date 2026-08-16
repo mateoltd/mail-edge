@@ -1,0 +1,991 @@
+{
+  "aliasCardinality": {
+    "aliasCount": 1000000,
+    "aliasDigestSha256": "4798238eb2ae402da2115c6726f4f05997582129e0a74688c8fd21b4eeea6d3e",
+    "bindingLookupEntries": 30,
+    "durationMilliseconds": 442.433916,
+    "exactDomainLookupEntries": 10,
+    "lookupMisses": 0,
+    "retainedAliasCount": 0,
+    "rssAfterBytes": 299008000,
+    "rssBeforeBytes": 248053760,
+    "rssDeltaBytes": 50954240,
+    "rssObservation": "before_after_only",
+    "tenantLookupEntries": 10,
+    "throughputAliasesPerSecond": 2260224.552947699
+  },
+  "baseSha": "762948e1f9ccb57a025151ab824e4a040a30d272",
+  "bottleneckPolicy": "Measured constraints are observations; causal bottleneck remains not_isolated.",
+  "environment": {
+    "architecture": "arm64",
+    "cpuCount": 11,
+    "nodeVersion": "v24.19.0",
+    "platform": "darwin",
+    "totalMemoryBytes": 19327352832
+  },
+  "fleetCardinality": {
+    "bindingLookupEntries": 300000,
+    "digestSha256": "9f4677567f1a3f441bab0bdd5f60e59bceedf85dbef5589ac571343660672def",
+    "durationMilliseconds": 85.40425,
+    "exactDomainLookupEntries": 100000,
+    "retainedAliasCount": 0,
+    "rssAfterBytes": 324976640,
+    "rssBeforeBytes": 299008000,
+    "rssDeltaBytes": 25968640,
+    "rssObservation": "before_after_only",
+    "tenantLookupEntries": 10000,
+    "totalLookupEntries": 410000
+  },
+  "refinement": [
+    {
+      "caseId": "binding-switch-preserves-pinned-intent",
+      "checks": [
+        "pass:atomic switch succeeds",
+        "pass:new version is active",
+        "pass:old version drains",
+        "pass:pinned intent remains immutable"
+      ],
+      "digestSha256": "acb50b3c5e139b788500e84ef44dc6c183c82cbb89d61735880fa3ae58d2bed0",
+      "kind": "binding_switch",
+      "passed": true
+    },
+    {
+      "caseId": "authenticated-not-sent-schedules-retry",
+      "checks": [
+        "pass:authenticated rejection is not-sent",
+        "pass:not-sent permits retry",
+        "pass:not-sent reducer transition succeeds",
+        "pass:workflow waits for retry",
+        "pass:retry is post-commit"
+      ],
+      "digestSha256": "e0526d81271b58acf09626d11675317c56171f35a26e35627cde1c9ff4cf40ea",
+      "kind": "conclusive_not_sent",
+      "passed": true
+    },
+    {
+      "caseId": "crash-after-dispatch-claim-is-unknown",
+      "checks": [
+        "pass:expired claimed lease is reducible",
+        "pass:crash leaves unknown quarantine",
+        "pass:crash emits no provider action"
+      ],
+      "digestSha256": "8fd6c4c444165b197bd06a02a4d84f78d775407c7cccb0825fd6ae3484bffdf7",
+      "kind": "crash_after_claim",
+      "passed": true
+    },
+    {
+      "caseId": "fallback-is-model-only-at-current-base",
+      "checks": [
+        "pass:production fixture has no fallback binding",
+        "pass:fallback exploration is model-only",
+        "pass:fallback is marked non-reachable at this base"
+      ],
+      "digestSha256": "91e4e395434f722bf13aed5b83138ae386630b2b8fbebddf78afda3d700b4656",
+      "kind": "fallback_boundary",
+      "passed": true
+    },
+    {
+      "caseId": "queue-loss-duplication-and-repair",
+      "checks": [
+        "pass:durable work completes after repair",
+        "pass:completion clears durable due state",
+        "pass:duplicate wakeup is harmlessly consumed"
+      ],
+      "digestSha256": "a3b828f5d83df67209a7d9d30e50bc492250dd9cb798708ea98330d1a93bfc8f",
+      "kind": "queue_repair",
+      "passed": true
+    },
+    {
+      "caseId": "stale-fence-cannot-complete-new-attempt",
+      "checks": [
+        "pass:stale fence is rejected by stable code",
+        "pass:stale completion cannot mutate workflow"
+      ],
+      "digestSha256": "c844058201dbca913a1745edfc08aa09510e5a84f0f85ed4017a1d9f4a0231c1",
+      "kind": "stale_fence",
+      "passed": true
+    },
+    {
+      "caseId": "unknown-outcome-quarantines-without-retry",
+      "checks": [
+        "pass:classification is unknown",
+        "pass:automatic retry is denied",
+        "pass:unknown reducer transition succeeds",
+        "pass:workflow quarantines",
+        "pass:no post-commit retry is emitted"
+      ],
+      "digestSha256": "c7ae538da26017cf929c4383e7e8bf9f70f44f6bd88f64c08fe9253cc0c1fd37",
+      "kind": "unknown_quarantine",
+      "passed": true
+    }
+  ],
+  "scale": {
+    "envelopes": [
+      {
+        "basis": "highest_observed_error_free_throughput",
+        "measurement": {
+          "attemptedMessages": 64,
+          "bottleneckConclusion": "not_isolated",
+          "clientDrainWaits": 64,
+          "completedMessages": 64,
+          "exactByteMessages": 64,
+          "latencyP50Milliseconds": 4.418666999999999,
+          "latencyP95Milliseconds": 22.160708999999997,
+          "latencyP99Milliseconds": 22.198041999999987,
+          "measuredConstraints": [
+            { "observation": "client_write_backpressure", "unit": "waits", "value": 64 },
+            { "observation": "event_loop_delay", "unit": "milliseconds", "value": 9.912319 },
+            { "observation": "resident_memory_growth", "unit": "bytes", "value": 15073280 }
+          ],
+          "protocolErrors": 0,
+          "runnerPeakConcurrency": 32,
+          "runtime": {
+            "eventLoopDelayMaxMilliseconds": 9.912319,
+            "eventLoopDelayP99Milliseconds": 9.912319,
+            "rssEndBytes": 113901568,
+            "rssPeakBytes": 113901568,
+            "rssStartBytes": 98828288
+          },
+          "targetPeakConcurrency": 1,
+          "throughputMebibytesPerSecond": 237.23103930918336,
+          "throughputMessagesPerSecond": 2429.2458425260374,
+          "totalBytesReceived": 6553600,
+          "wallDurationMilliseconds": 26.345624999999984,
+          "workload": {
+            "chunkBytes": 65536,
+            "concurrency": 32,
+            "messageBytes": 102400,
+            "messageCount": 64,
+            "purpose": "throughput",
+            "targetReadDelayMilliseconds": 0
+          }
+        },
+        "messageBytes": 102400
+      },
+      {
+        "basis": "highest_observed_error_free_throughput",
+        "measurement": {
+          "attemptedMessages": 64,
+          "bottleneckConclusion": "not_isolated",
+          "clientDrainWaits": 1024,
+          "completedMessages": 64,
+          "exactByteMessages": 64,
+          "latencyP50Milliseconds": 41.31008300000002,
+          "latencyP95Milliseconds": 168.12883300000004,
+          "latencyP99Milliseconds": 170.50941699999998,
+          "measuredConstraints": [
+            { "observation": "client_write_backpressure", "unit": "waits", "value": 1024 },
+            { "observation": "event_loop_delay", "unit": "milliseconds", "value": 20.660223 },
+            { "observation": "resident_memory_growth", "unit": "bytes", "value": 999424 }
+          ],
+          "protocolErrors": 0,
+          "runnerPeakConcurrency": 32,
+          "runtime": {
+            "eventLoopDelayMaxMilliseconds": 20.660223,
+            "eventLoopDelayP99Milliseconds": 20.660223,
+            "rssEndBytes": 143261696,
+            "rssPeakBytes": 143261696,
+            "rssStartBytes": 142262272
+          },
+          "targetPeakConcurrency": 8,
+          "throughputMebibytesPerSecond": 366.1366504932475,
+          "throughputMessagesPerSecond": 366.1366504932475,
+          "totalBytesReceived": 67108864,
+          "wallDurationMilliseconds": 174.79812500000003,
+          "workload": {
+            "chunkBytes": 65536,
+            "concurrency": 32,
+            "messageBytes": 1048576,
+            "messageCount": 64,
+            "purpose": "throughput",
+            "targetReadDelayMilliseconds": 0
+          }
+        },
+        "messageBytes": 1048576
+      },
+      {
+        "basis": "highest_observed_error_free_throughput",
+        "measurement": {
+          "attemptedMessages": 64,
+          "bottleneckConclusion": "not_isolated",
+          "clientDrainWaits": 5120,
+          "completedMessages": 64,
+          "exactByteMessages": 64,
+          "latencyP50Milliseconds": 298.948584,
+          "latencyP95Milliseconds": 790.898375,
+          "latencyP99Milliseconds": 792.569958,
+          "measuredConstraints": [
+            { "observation": "client_write_backpressure", "unit": "waits", "value": 5120 },
+            { "observation": "event_loop_delay", "unit": "milliseconds", "value": 41.484287 },
+            { "observation": "resident_memory_growth", "unit": "bytes", "value": 31490048 }
+          ],
+          "protocolErrors": 0,
+          "runnerPeakConcurrency": 32,
+          "runtime": {
+            "eventLoopDelayMaxMilliseconds": 41.484287,
+            "eventLoopDelayP99Milliseconds": 41.484287,
+            "rssEndBytes": 219381760,
+            "rssPeakBytes": 219381760,
+            "rssStartBytes": 187891712
+          },
+          "targetPeakConcurrency": 27,
+          "throughputMebibytesPerSecond": 401.84078693556233,
+          "throughputMessagesPerSecond": 80.36815738711248,
+          "totalBytesReceived": 335544320,
+          "wallDurationMilliseconds": 796.3352909999999,
+          "workload": {
+            "chunkBytes": 65536,
+            "concurrency": 32,
+            "messageBytes": 5242880,
+            "messageCount": 64,
+            "purpose": "throughput",
+            "targetReadDelayMilliseconds": 0
+          }
+        },
+        "messageBytes": 5242880
+      },
+      {
+        "basis": "highest_observed_error_free_throughput",
+        "measurement": {
+          "attemptedMessages": 8,
+          "bottleneckConclusion": "not_isolated",
+          "clientDrainWaits": 3200,
+          "completedMessages": 8,
+          "exactByteMessages": 8,
+          "latencyP50Milliseconds": 119.45708400000012,
+          "latencyP95Milliseconds": 156.14274999999998,
+          "latencyP99Milliseconds": 156.14274999999998,
+          "measuredConstraints": [
+            { "observation": "client_write_backpressure", "unit": "waits", "value": 3200 },
+            { "observation": "event_loop_delay", "unit": "milliseconds", "value": 17.039359 }
+          ],
+          "protocolErrors": 0,
+          "runnerPeakConcurrency": 2,
+          "runtime": {
+            "eventLoopDelayMaxMilliseconds": 17.039359,
+            "eventLoopDelayP99Milliseconds": 17.039359,
+            "rssEndBytes": 247250944,
+            "rssPeakBytes": 247250944,
+            "rssStartBytes": 247250944
+          },
+          "targetPeakConcurrency": 2,
+          "throughputMebibytesPerSecond": 414.5954170622596,
+          "throughputMessagesPerSecond": 16.583816682490387,
+          "totalBytesReceived": 209715200,
+          "wallDurationMilliseconds": 482.39800000000014,
+          "workload": {
+            "chunkBytes": 65536,
+            "concurrency": 2,
+            "messageBytes": 26214400,
+            "messageCount": 8,
+            "purpose": "throughput",
+            "targetReadDelayMilliseconds": 0
+          }
+        },
+        "messageBytes": 26214400
+      }
+    ],
+    "measurements": [
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 8,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 0.7214170000000024,
+        "latencyP95Milliseconds": 6.74033399999999,
+        "latencyP99Milliseconds": 6.74033399999999,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 8 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 3948544 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 1,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 0,
+          "eventLoopDelayP99Milliseconds": 0.000511,
+          "rssEndBytes": 87932928,
+          "rssPeakBytes": 87932928,
+          "rssStartBytes": 83984384
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 54.88426007235931,
+        "throughputMessagesPerSecond": 562.0148231409594,
+        "totalBytesReceived": 819200,
+        "wallDurationMilliseconds": 14.234500000000025,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 1,
+          "messageBytes": 102400,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 8,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 1.5971250000000055,
+        "latencyP95Milliseconds": 3.696041000000008,
+        "latencyP99Milliseconds": 3.696041000000008,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 8 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 2048000 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 4,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 0,
+          "eventLoopDelayP99Milliseconds": 0.000511,
+          "rssEndBytes": 90603520,
+          "rssPeakBytes": 90603520,
+          "rssStartBytes": 88555520
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 158.52483132957883,
+        "throughputMessagesPerSecond": 1623.2942728148873,
+        "totalBytesReceived": 819200,
+        "wallDurationMilliseconds": 4.92825000000002,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 4,
+          "messageBytes": 102400,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 32,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 32,
+        "completedMessages": 32,
+        "exactByteMessages": 32,
+        "latencyP50Milliseconds": 3.1622079999999926,
+        "latencyP95Milliseconds": 11.959167000000008,
+        "latencyP99Milliseconds": 11.960458999999986,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 32 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 7831552 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 16,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 0,
+          "eventLoopDelayP99Milliseconds": 0.000511,
+          "rssEndBytes": 98451456,
+          "rssPeakBytes": 98451456,
+          "rssStartBytes": 90619904
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 220.2280872348473,
+        "throughputMessagesPerSecond": 2255.1356132848364,
+        "totalBytesReceived": 3276800,
+        "wallDurationMilliseconds": 14.18983399999999,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 16,
+          "messageBytes": 102400,
+          "messageCount": 32,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 64,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 64,
+        "completedMessages": 64,
+        "exactByteMessages": 64,
+        "latencyP50Milliseconds": 4.418666999999999,
+        "latencyP95Milliseconds": 22.160708999999997,
+        "latencyP99Milliseconds": 22.198041999999987,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 64 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 9.912319 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 15073280 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 32,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 9.912319,
+          "eventLoopDelayP99Milliseconds": 9.912319,
+          "rssEndBytes": 113901568,
+          "rssPeakBytes": 113901568,
+          "rssStartBytes": 98828288
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 237.23103930918336,
+        "throughputMessagesPerSecond": 2429.2458425260374,
+        "totalBytesReceived": 6553600,
+        "wallDurationMilliseconds": 26.345624999999984,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 32,
+          "messageBytes": 102400,
+          "messageCount": 64,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 128,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 2.6941659999999956,
+        "latencyP95Milliseconds": 3.3780829999999753,
+        "latencyP99Milliseconds": 3.3780829999999753,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 128 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 10.747903 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 4079616 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 1,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 10.747903,
+          "eventLoopDelayP99Milliseconds": 10.747903,
+          "rssEndBytes": 118341632,
+          "rssPeakBytes": 118341632,
+          "rssStartBytes": 114262016
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 361.65752162881466,
+        "throughputMessagesPerSecond": 361.65752162881466,
+        "totalBytesReceived": 8388608,
+        "wallDurationMilliseconds": 22.120375000000024,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 1,
+          "messageBytes": 1048576,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 128,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 7.911291000000006,
+        "latencyP95Milliseconds": 21.15224999999998,
+        "latencyP99Milliseconds": 21.15224999999998,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 128 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 10.035199 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 11714560 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 4,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 10.035199,
+          "eventLoopDelayP99Milliseconds": 10.035199,
+          "rssEndBytes": 130056192,
+          "rssPeakBytes": 130056192,
+          "rssStartBytes": 118341632
+        },
+        "targetPeakConcurrency": 3,
+        "throughputMebibytesPerSecond": 364.4466942953709,
+        "throughputMessagesPerSecond": 364.4466942953709,
+        "totalBytesReceived": 8388608,
+        "wallDurationMilliseconds": 21.95108399999998,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 4,
+          "messageBytes": 1048576,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 32,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 512,
+        "completedMessages": 32,
+        "exactByteMessages": 32,
+        "latencyP50Milliseconds": 27.219124999999963,
+        "latencyP95Milliseconds": 86.169625,
+        "latencyP99Milliseconds": 86.39041700000001,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 512 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 16.719871 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 11845632 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 16,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 16.719871,
+          "eventLoopDelayP99Milliseconds": 16.719871,
+          "rssEndBytes": 141918208,
+          "rssPeakBytes": 141918208,
+          "rssStartBytes": 130072576
+        },
+        "targetPeakConcurrency": 6,
+        "throughputMebibytesPerSecond": 361.07311788183137,
+        "throughputMessagesPerSecond": 361.07311788183137,
+        "totalBytesReceived": 33554432,
+        "wallDurationMilliseconds": 88.624709,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 16,
+          "messageBytes": 1048576,
+          "messageCount": 32,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 64,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 1024,
+        "completedMessages": 64,
+        "exactByteMessages": 64,
+        "latencyP50Milliseconds": 41.31008300000002,
+        "latencyP95Milliseconds": 168.12883300000004,
+        "latencyP99Milliseconds": 170.50941699999998,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 1024 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 20.660223 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 999424 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 32,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 20.660223,
+          "eventLoopDelayP99Milliseconds": 20.660223,
+          "rssEndBytes": 143261696,
+          "rssPeakBytes": 143261696,
+          "rssStartBytes": 142262272
+        },
+        "targetPeakConcurrency": 8,
+        "throughputMebibytesPerSecond": 366.1366504932475,
+        "throughputMessagesPerSecond": 366.1366504932475,
+        "totalBytesReceived": 67108864,
+        "wallDurationMilliseconds": 174.79812500000003,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 32,
+          "messageBytes": 1048576,
+          "messageCount": 64,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 640,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 12.648333999999977,
+        "latencyP95Milliseconds": 13.297124999999937,
+        "latencyP99Milliseconds": 13.297124999999937,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 640 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 12.304383 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 6094848 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 1,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 12.304383,
+          "eventLoopDelayP99Milliseconds": 12.304383,
+          "rssEndBytes": 149405696,
+          "rssPeakBytes": 149405696,
+          "rssStartBytes": 143310848
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 392.4986944757483,
+        "throughputMessagesPerSecond": 78.49973889514966,
+        "totalBytesReceived": 41943040,
+        "wallDurationMilliseconds": 101.91116700000009,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 1,
+          "messageBytes": 5242880,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 640,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 47.79575,
+        "latencyP95Milliseconds": 63.051916000000006,
+        "latencyP99Milliseconds": 63.051916000000006,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 640 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 13.721599 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 6750208 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 4,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 13.721599,
+          "eventLoopDelayP99Milliseconds": 13.721599,
+          "rssEndBytes": 156155904,
+          "rssPeakBytes": 156155904,
+          "rssStartBytes": 149405696
+        },
+        "targetPeakConcurrency": 4,
+        "throughputMebibytesPerSecond": 400.9325008384249,
+        "throughputMessagesPerSecond": 80.18650016768498,
+        "totalBytesReceived": 41943040,
+        "wallDurationMilliseconds": 99.76741700000002,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 4,
+          "messageBytes": 5242880,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 32,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 2560,
+        "completedMessages": 32,
+        "exactByteMessages": 32,
+        "latencyP50Milliseconds": 167.1957920000001,
+        "latencyP95Milliseconds": 397.1870000000001,
+        "latencyP99Milliseconds": 399.6456669999999,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 2560 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 26.148863 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 31375360 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 16,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 26.148863,
+          "eventLoopDelayP99Milliseconds": 26.148863,
+          "rssEndBytes": 187875328,
+          "rssPeakBytes": 187875328,
+          "rssStartBytes": 156499968
+        },
+        "targetPeakConcurrency": 15,
+        "throughputMebibytesPerSecond": 396.6256251938461,
+        "throughputMessagesPerSecond": 79.32512503876922,
+        "totalBytesReceived": 167772160,
+        "wallDurationMilliseconds": 403.40308300000004,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 16,
+          "messageBytes": 5242880,
+          "messageCount": 32,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 64,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 5120,
+        "completedMessages": 64,
+        "exactByteMessages": 64,
+        "latencyP50Milliseconds": 298.948584,
+        "latencyP95Milliseconds": 790.898375,
+        "latencyP99Milliseconds": 792.569958,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 5120 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 41.484287 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 31490048 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 32,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 41.484287,
+          "eventLoopDelayP99Milliseconds": 41.484287,
+          "rssEndBytes": 219381760,
+          "rssPeakBytes": 219381760,
+          "rssStartBytes": 187891712
+        },
+        "targetPeakConcurrency": 27,
+        "throughputMebibytesPerSecond": 401.84078693556233,
+        "throughputMessagesPerSecond": 80.36815738711248,
+        "totalBytesReceived": 335544320,
+        "wallDurationMilliseconds": 796.3352909999999,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 32,
+          "messageBytes": 5242880,
+          "messageCount": 64,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 200,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 200,
+        "completedMessages": 200,
+        "exactByteMessages": 200,
+        "latencyP50Milliseconds": 39.32683399999996,
+        "latencyP95Milliseconds": 59.07337499999994,
+        "latencyP99Milliseconds": 62.918709000000035,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 200 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 20.103167 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 6914048 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 100,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 20.103167,
+          "eventLoopDelayP99Milliseconds": 20.103167,
+          "rssEndBytes": 226312192,
+          "rssPeakBytes": 226312192,
+          "rssStartBytes": 219398144
+        },
+        "targetPeakConcurrency": 100,
+        "throughputMebibytesPerSecond": 196.13824199881466,
+        "throughputMessagesPerSecond": 2008.455598067862,
+        "totalBytesReceived": 20480000,
+        "wallDurationMilliseconds": 99.57900000000018,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 100,
+          "messageBytes": 102400,
+          "messageCount": 200,
+          "purpose": "concurrency",
+          "targetReadDelayMilliseconds": 10
+        }
+      },
+      {
+        "attemptedMessages": 128,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 2048,
+        "completedMessages": 128,
+        "exactByteMessages": 128,
+        "latencyP50Milliseconds": 176.133875,
+        "latencyP95Milliseconds": 298.3464160000001,
+        "latencyP99Milliseconds": 308.77687500000025,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 2048 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 66.945023 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 5931008 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 64,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 66.945023,
+          "eventLoopDelayP99Milliseconds": 66.945023,
+          "rssEndBytes": 232243200,
+          "rssPeakBytes": 232243200,
+          "rssStartBytes": 226312192
+        },
+        "targetPeakConcurrency": 64,
+        "throughputMebibytesPerSecond": 305.961284653414,
+        "throughputMessagesPerSecond": 305.961284653414,
+        "totalBytesReceived": 134217728,
+        "wallDurationMilliseconds": 418.3535840000002,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 64,
+          "messageBytes": 1048576,
+          "messageCount": 128,
+          "purpose": "concurrency",
+          "targetReadDelayMilliseconds": 5
+        }
+      },
+      {
+        "attemptedMessages": 32,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 512,
+        "completedMessages": 32,
+        "exactByteMessages": 32,
+        "latencyP50Milliseconds": 61.76866700000028,
+        "latencyP95Milliseconds": 89.66166699999985,
+        "latencyP99Milliseconds": 91.51254199999994,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 512 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 16.482303 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 14991360 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 16,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 16.482303,
+          "eventLoopDelayP99Milliseconds": 16.482303,
+          "rssEndBytes": 247250944,
+          "rssPeakBytes": 247250944,
+          "rssStartBytes": 232259584
+        },
+        "targetPeakConcurrency": 16,
+        "throughputMebibytesPerSecond": 234.06163684057034,
+        "throughputMessagesPerSecond": 234.06163684057034,
+        "totalBytesReceived": 33554432,
+        "wallDurationMilliseconds": 136.71612499999992,
+        "workload": {
+          "chunkBytes": 16384,
+          "concurrency": 16,
+          "messageBytes": 1048576,
+          "messageCount": 32,
+          "purpose": "backpressure",
+          "targetReadDelayMilliseconds": 2
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 3200,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 60.18995799999993,
+        "latencyP95Milliseconds": 64.02491700000019,
+        "latencyP99Milliseconds": 64.02491700000019,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 3200 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 12.886015 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 1,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 12.886015,
+          "eventLoopDelayP99Milliseconds": 12.886015,
+          "rssEndBytes": 247250944,
+          "rssPeakBytes": 247250944,
+          "rssStartBytes": 247250944
+        },
+        "targetPeakConcurrency": 1,
+        "throughputMebibytesPerSecond": 409.87302133798937,
+        "throughputMessagesPerSecond": 16.394920853519576,
+        "totalBytesReceived": 209715200,
+        "wallDurationMilliseconds": 487.95600000000013,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 1,
+          "messageBytes": 26214400,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 3200,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 119.45708400000012,
+        "latencyP95Milliseconds": 156.14274999999998,
+        "latencyP99Milliseconds": 156.14274999999998,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 3200 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 17.039359 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 2,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 17.039359,
+          "eventLoopDelayP99Milliseconds": 17.039359,
+          "rssEndBytes": 247250944,
+          "rssPeakBytes": 247250944,
+          "rssStartBytes": 247250944
+        },
+        "targetPeakConcurrency": 2,
+        "throughputMebibytesPerSecond": 414.5954170622596,
+        "throughputMessagesPerSecond": 16.583816682490387,
+        "totalBytesReceived": 209715200,
+        "wallDurationMilliseconds": 482.39800000000014,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 2,
+          "messageBytes": 26214400,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 8,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 3200,
+        "completedMessages": 8,
+        "exactByteMessages": 8,
+        "latencyP50Milliseconds": 232.42225000000008,
+        "latencyP95Milliseconds": 286.83550000000014,
+        "latencyP99Milliseconds": 286.83550000000014,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 3200 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 20.905983 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 65536 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 4,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 20.905983,
+          "eventLoopDelayP99Milliseconds": 20.905983,
+          "rssEndBytes": 247316480,
+          "rssPeakBytes": 247316480,
+          "rssStartBytes": 247250944
+        },
+        "targetPeakConcurrency": 4,
+        "throughputMebibytesPerSecond": 411.61544540528683,
+        "throughputMessagesPerSecond": 16.464617816211476,
+        "totalBytesReceived": 209715200,
+        "wallDurationMilliseconds": 485.89041599999973,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 4,
+          "messageBytes": 26214400,
+          "messageCount": 8,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      },
+      {
+        "attemptedMessages": 16,
+        "bottleneckConclusion": "not_isolated",
+        "clientDrainWaits": 6400,
+        "completedMessages": 16,
+        "exactByteMessages": 16,
+        "latencyP50Milliseconds": 423.4666669999997,
+        "latencyP95Milliseconds": 787.4727499999999,
+        "latencyP99Milliseconds": 787.4727499999999,
+        "measuredConstraints": [
+          { "observation": "client_write_backpressure", "unit": "waits", "value": 6400 },
+          { "observation": "event_loop_delay", "unit": "milliseconds", "value": 25.296895 },
+          { "observation": "resident_memory_growth", "unit": "bytes", "value": 737280 }
+        ],
+        "protocolErrors": 0,
+        "runnerPeakConcurrency": 8,
+        "runtime": {
+          "eventLoopDelayMaxMilliseconds": 25.296895,
+          "eventLoopDelayP99Milliseconds": 22.429695,
+          "rssEndBytes": 248053760,
+          "rssPeakBytes": 248053760,
+          "rssStartBytes": 247316480
+        },
+        "targetPeakConcurrency": 8,
+        "throughputMebibytesPerSecond": 413.11712260718326,
+        "throughputMessagesPerSecond": 16.52468490428733,
+        "totalBytesReceived": 419430400,
+        "wallDurationMilliseconds": 968.2484169999998,
+        "workload": {
+          "chunkBytes": 65536,
+          "concurrency": 8,
+          "messageBytes": 26214400,
+          "messageCount": 16,
+          "purpose": "throughput",
+          "targetReadDelayMilliseconds": 0
+        }
+      }
+    ]
+  },
+  "schemaVersion": "w9-local-qualification-report-v1",
+  "sourceSha": "126b5749d46fb75d41b7c747cc4f1bc5ce6d4989"
+}

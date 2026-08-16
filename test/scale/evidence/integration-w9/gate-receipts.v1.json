@@ -1,0 +1,189 @@
+{
+  "baseSha": "762948e1f9ccb57a025151ab824e4a040a30d272",
+  "branch": "integration/w9-production-qualification",
+  "externalReleaseBlockers": [
+    {
+      "id": "independent_external_review",
+      "reason": "No independent security and architecture review was authorized or supplied.",
+      "status": "blocked"
+    },
+    {
+      "id": "mailgun_live_qualification",
+      "reason": "No provider account, credentials, isolated domain, DNS mutation or live Mailgun operation was authorized.",
+      "status": "blocked"
+    }
+  ],
+  "receipts": [
+    {
+      "command": "git merge --no-ff with DCO-signed Conventional Commit merge messages",
+      "id": "merge_ancestry",
+      "status": "pass",
+      "summary": {
+        "faultBoundaryMergeCommit": "cdef746cfa3a739a8f29d47618eccfe6db20f717",
+        "faultBoundaryTopic": "c9142c95078e1d8765ae54d474ab39dca6db881c",
+        "productionDrillMergeCommit": "8ae0ce89fefde03853f95c69ad2bce9dc3217828",
+        "productionDrillTopic": "7589aaa9a821d1ed5b668d58af614df6d4e51854",
+        "scaleFormalMergeCommit": "0d676d7eebba557d2a950e2300231b347b611572",
+        "scaleFormalTopic": "8170208db730c888f9eee7744199a45da8154c0c"
+      }
+    },
+    {
+      "command": "corepack pnpm run verify",
+      "id": "repository_verify",
+      "logSha256": "207cc4fdcd7e80306849b35d7f3dd70e0f3afccf994a72df12315d2097fe2082",
+      "status": "pass",
+      "summary": {
+        "apiAndSchemaDrift": "pass",
+        "cleanRoomPackages": 16,
+        "cycloneDxComponents": 951,
+        "licenseExpressions": 17,
+        "migrationChecksums": 7,
+        "repositoryWorkspaceUnits": 20,
+        "supplyChainAndSecurity": "pass"
+      }
+    },
+    {
+      "command": "corepack pnpm run test:w9-fault-boundaries",
+      "id": "fault_sigkill_recovery",
+      "logSha256": "a21659f86f90dbfe3ddab2953a321bd79d0236c1164834ecdc4b5f8f605ab1f5",
+      "status": "pass",
+      "summary": {
+        "testFiles": 5,
+        "tests": 27,
+        "transports": ["cloudflare_frames", "http", "smtp", "storage_sql"]
+      }
+    },
+    {
+      "command": "corepack pnpm run test:w2-integration",
+      "id": "real_postgres_minio_pg_boss",
+      "logSha256": "968dcc8e5185571979103e9623fbcc4fc0e04e91163e8d07729d5b7ae6f541d7",
+      "status": "pass",
+      "summary": {
+        "blobPromotionRecovery": "pass",
+        "exactVersionRetentionPurge": "pass",
+        "orphanReclamation": "pass",
+        "scratchCleanup": "pass",
+        "transactionalWakeup": "pass"
+      }
+    },
+    {
+      "command": "corepack pnpm run reference-service:e2e",
+      "id": "reference_service_composition",
+      "logSha256": "b94014b07bcac12d6454fa3767bb85f2b3b8f1d6f8a53512bfc5329162398987",
+      "status": "pass",
+      "summary": {
+        "alertCollectorGaugesScraped": 6,
+        "blobCorruptionQuarantined": true,
+        "catalogFamiliesScrapedWithoutRedactionFailure": 19,
+        "rawBytesInMetrics": 0,
+        "rawDownloadIntegrityOutcome": "failure",
+        "realDependencies": ["minio", "pg_boss", "postgresql", "prometheus_exporter"]
+      }
+    },
+    {
+      "command": "promtool check rules and promtool test rules using the pinned Prometheus image digest",
+      "id": "prometheus_rules",
+      "logSha256": "5900fd55fc7b5bfaf42096362b07293162386350c524d10ddad8c3a9d4c0d920",
+      "secondaryLogSha256": "8289a4919870ab5b28f5e90a86b4af3cdbd8c244516c02fca90d6e3f289a6711",
+      "status": "pass",
+      "summary": {
+        "alertCoverageEntries": 15,
+        "metricCatalogEntries": 20,
+        "rules": 16,
+        "runtimeOrCollectorBackedMetrics": 20
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/production-drills/evidence.json",
+      "command": "test/e2e/drills/runbooks/run-all.sh with ephemeral-only confirmation",
+      "id": "production_drills",
+      "logSha256": "0ca9dc67e9371e10680690fc7a2b6e6cad947a8852f1fa8dd0fa20a5ede7a91b",
+      "status": "pass",
+      "summary": {
+        "drillEvidenceDigest": "abf4d938410ed8cefd9b932c4c9669b9bad487f8b9ab2b211a8dea965c3a0ce6",
+        "drillsPassed": 7
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/formal-execution.v1.json",
+      "command": "TLC model checking and Alloy exec --command '*' using pinned jars",
+      "id": "formal_models",
+      "logSha256": "6382a682b5af82913175e3a7bae9b6952214a3778e6fcc5352c0976c37b80c5e",
+      "secondaryLogSha256": "9cf5498add0ce759d8660a978d19103d6558b641881af3b04de32f56f41e787e",
+      "status": "pass",
+      "summary": {
+        "alloyCheckCounterexamples": 0,
+        "alloyChecks": 14,
+        "alloyReceiptSha256": "411cfae69afdf6a5d3b0a1dfe5421db02b45b153e8fca4dbcf3878c0f6016faa",
+        "alloySolver": "sat4j",
+        "alloyWitnesses": 4,
+        "tlcDistinctStates": 618041,
+        "tlcErrors": 0,
+        "tlcMaxDepth": 23,
+        "tlcStatesGenerated": 7880014
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/asset-validation.v1.json",
+      "command": "node test/scale/dist/cli.js validate-assets",
+      "id": "formal_observability_asset_validation",
+      "status": "pass",
+      "summary": {
+        "formal": "pass",
+        "observability": "pass"
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/local-qualification.v1.json",
+      "command": "corepack pnpm --filter @mail-edge/w9-scale-qualification qualify --full",
+      "id": "local_cardinality_refinement_streaming",
+      "logSha256": "06d2a864a7a0f3c701a6d3387f3c726066a60c20b38e430123d630e2461f0285",
+      "status": "pass",
+      "summary": {
+        "aliasesGenerated": 1000000,
+        "backpressureDrainWaitsAt100Streams": 200,
+        "exactDomains": 10,
+        "maximumSizeBytes": 26214400,
+        "maximumSizeConcurrencyMeasured": 8,
+        "refinementCases": 7,
+        "retainedAliases": 0,
+        "simultaneousStreamsMeasured": 100,
+        "simultaneousStreamsMessageBytes": 102400
+      }
+    },
+    {
+      "command": "corepack pnpm run reference-service:container",
+      "id": "reference_service_container_runtime",
+      "logSha256": "989bb3a563be54e79c037d1c4fbe865bab3d56f730237c49a6e3dcca106074ea",
+      "status": "unavailable",
+      "summary": {
+        "buildAndTypeScript": "pass",
+        "failure": "ENOSPC during production dependency deployment",
+        "runtimeCrashRestartProbe": "not_run",
+        "runtimeGracefulShutdownProbe": "not_run",
+        "supplyChainLockEntries": 951
+      }
+    },
+    {
+      "command": "section 16.7 sustained qualification",
+      "id": "sustained_8vcpu_16gib_qualification",
+      "status": "unavailable",
+      "summary": {
+        "dockerCpuCount": 11,
+        "dockerMemoryBytes": 9435414528,
+        "filesystemAvailableApproxGiB": 1.4,
+        "hostCpuCount": 11,
+        "hostMemoryBytes": 19327352832,
+        "minimumRawIngressBytesForThirtyMinutes": 46080000000,
+        "reason": "No reachable environment could be constrained to 8 vCPU and 16 GiB, and local durable storage was insufficient for the mandatory workload.",
+        "requiredDurationSeconds": 1800,
+        "requiredInboundMessageBytes": 102400,
+        "requiredInboundMessagesPerSecond": 250,
+        "requiredMaximumSizeStreams": 100
+      }
+    }
+  ],
+  "recordedAt": "2026-08-16T07:42:49.000Z",
+  "schemaVersion": "w9-integration-gate-receipts-v1",
+  "sourceSha": "126b5749d46fb75d41b7c747cc4f1bc5ce6d4989"
+}

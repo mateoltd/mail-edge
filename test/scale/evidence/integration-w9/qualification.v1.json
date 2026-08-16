@@ -1,0 +1,158 @@
+{
+  "baseSha": "762948e1f9ccb57a025151ab824e4a040a30d272",
+  "environment": {
+    "architecture": "arm64",
+    "cpuCount": 11,
+    "nodeVersion": "v24.19.0",
+    "platform": "darwin",
+    "totalMemoryBytes": 19327352832
+  },
+  "generatedAt": "2026-08-16T07:42:49.000Z",
+  "limitations": [
+    "External release blocker: independent security and architecture review was not authorized or supplied.",
+    "External release blocker: live Mailgun qualification was not authorized and no provider account, credentials, DNS or isolated domain was touched.",
+    "Internal qualification blocker: reference-service OCI runtime crash and shutdown probes did not run because the production dependency layer exhausted available storage.",
+    "Internal qualification blocker: section 16.7 did not run because no reachable 8-vCPU and 16-GiB constrained environment had the durable storage required for 46.08 billion inbound bytes."
+  ],
+  "qualificationStatus": "limited",
+  "reports": [
+    {
+      "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+      "id": "alias-cardinality",
+      "kind": "cardinality_alias",
+      "status": "pass",
+      "summary": {
+        "aliasCount": 1000000,
+        "exactDomains": 10,
+        "retainedAliases": 0
+      }
+    },
+    {
+      "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+      "id": "fleet-cardinality",
+      "kind": "cardinality_fleet",
+      "status": "pass",
+      "summary": {
+        "bindingLookupEntries": 300000,
+        "exactDomainLookupEntries": 100000,
+        "tenantLookupEntries": 10000
+      }
+    },
+    {
+      "artifactDigestSha256": "e826ee5300ebf5ee3deb777c63bc0f042c7e910a33a2e007f23b5786c926ee2e",
+      "id": "formal-models",
+      "kind": "formal",
+      "status": "pass",
+      "summary": {
+        "alloyCheckCounterexamples": 0,
+        "alloyChecks": 14,
+        "alloyWitnesses": 4,
+        "tlcDistinctStates": 618041,
+        "tlcErrors": 0,
+        "tlcStatesGenerated": 7880014
+      }
+    },
+    {
+      "artifactDigestSha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "id": "license-policy",
+      "kind": "license",
+      "status": "pass",
+      "summary": {
+        "allowedDependencyExpressions": 17,
+        "projectLicense": "Apache-2.0"
+      }
+    },
+    {
+      "artifactDigestSha256": "4ce284a0cbd831d55ecaee4717c79faba321f1f384c08ccb587fb2f5888eaee3",
+      "id": "observability-assets",
+      "kind": "observability",
+      "status": "pass",
+      "summary": {
+        "alertCoverageEntries": 15,
+        "metricCatalogEntries": 20,
+        "metricProducerStatuses": "verified_runtime_or_collector",
+        "prometheusRules": 16
+      }
+    },
+    {
+      "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+      "id": "pii-redaction",
+      "kind": "pii_redaction",
+      "status": "pass",
+      "summary": {
+        "opaqueQueuePayloadFields": 1,
+        "rawBytesInRealMetricsScrape": 0,
+        "telemetryRedactionFailures": 0
+      }
+    },
+    {
+      "artifactDigestSha256": "a45203b1a6f5ff09bd5ddf4f7432964fc7b2a54e453a840cf999f7511ba4cade",
+      "id": "real-driver",
+      "kind": "real_driver",
+      "status": "pass",
+      "summary": {
+        "productionDrillsPassed": 7,
+        "referenceServiceComposition": "pass",
+        "storageQueueIntegration": "pass"
+      }
+    },
+    {
+      "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+      "id": "refinement-traces",
+      "kind": "refinement",
+      "status": "pass",
+      "summary": {
+        "casesPassed": 7,
+        "casesRun": 7
+      }
+    },
+    {
+      "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+      "id": "reproducibility-container",
+      "kind": "reproducibility",
+      "status": "unavailable",
+      "summary": {
+        "cleanRoomPackagesPassed": 16,
+        "containerBlocker": "ENOSPC",
+        "containerCompilation": "pass"
+      }
+    },
+    {
+      "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+      "id": "sbom",
+      "kind": "sbom",
+      "status": "pass",
+      "summary": {
+        "components": 951,
+        "format": "CycloneDX",
+        "specVersion": "1.6"
+      }
+    },
+    {
+      "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+      "id": "scale-sustained",
+      "kind": "scale",
+      "status": "unavailable",
+      "summary": {
+        "localMaximumSizeConcurrency": 8,
+        "localMaximumSizeStreamBytes": 26214400,
+        "localSimultaneousStreams": 100,
+        "requiredDurationSeconds": 1800,
+        "requiredInboundMessagesPerSecond": 250
+      }
+    },
+    {
+      "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+      "id": "security",
+      "kind": "security",
+      "status": "pass",
+      "summary": {
+        "faultBoundaryTests": 27,
+        "internalSecurityGate": "pass",
+        "referenceServiceFailClosedGate": "pass"
+      }
+    }
+  ],
+  "schemaVersion": "w9-qualification-v1",
+  "sourceSha": "126b5749d46fb75d41b7c747cc4f1bc5ce6d4989"
+}
