@@ -1,0 +1,36 @@
+{
+  "name": "@mail-edge/production-drills",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Executable production recovery drills for Mail Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": "24.19.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "drill": "vitest run --maxWorkers=1",
+    "lint": "eslint src test --max-warnings 0",
+    "reproducibility:check": "vitest run test/evidence.test.ts --maxWorkers=1",
+    "security:check": "vitest run test/safety.test.ts --maxWorkers=1",
+    "runbook": "corepack pnpm run build && node ./dist/run-drills.js",
+    "test": "vitest run --maxWorkers=1",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1109.0",
+    "@mail-edge/blob-s3": "workspace:^",
+    "@mail-edge/contracts": "workspace:^",
+    "@mail-edge/core": "workspace:^",
+    "@mail-edge/postgres": "workspace:^",
+    "@mail-edge/queue-pg-boss": "workspace:^",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@testcontainers/minio": "12.1.0",
+    "@testcontainers/postgresql": "12.1.0",
+    "@types/pg": "8.21.0",
+    "vitest": "4.1.10"
+  }
+}

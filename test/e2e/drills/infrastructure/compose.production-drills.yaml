@@ -1,0 +1,49 @@
+name: mail-edge-production-drills
+
+services:
+  postgres:
+    image: postgres:17.6-alpine3.22
+    environment:
+      POSTGRES_DB: mail_edge_drill
+      POSTGRES_PASSWORD: drill-owner-password
+      POSTGRES_USER: mail_edge_owner
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mail_edge_owner -d mail_edge_drill"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    labels:
+      mail-edge-production-drill: "true"
+    ports:
+      - "127.0.0.1:${MAIL_EDGE_DRILL_POSTGRES_PORT:-55432}:5432"
+    restart: "no"
+    volumes:
+      - postgres-drill:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_PASSWORD: mail-edge-drill-password
+      MINIO_ROOT_USER: mail-edge-drill
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    labels:
+      mail-edge-production-drill: "true"
+    ports:
+      - "127.0.0.1:${MAIL_EDGE_DRILL_MINIO_PORT:-59000}:9000"
+      - "127.0.0.1:${MAIL_EDGE_DRILL_MINIO_CONSOLE_PORT:-59001}:9001"
+    restart: "no"
+    volumes:
+      - minio-drill:/data
+
+volumes:
+  minio-drill:
+    labels:
+      mail-edge-production-drill: "true"
+  postgres-drill:
+    labels:
+      mail-edge-production-drill: "true"
