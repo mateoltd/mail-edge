@@ -39,7 +39,13 @@ import {
   type RawAccessAudienceResolver,
 } from "@mail-edge/postgres";
 import { StructuredLogSink, type StructuredLogField } from "@mail-edge/observability";
-import { ProviderAdapterRegistry, type ProviderAdapterRegistration } from "@mail-edge/provider";
+import type { OpenTelemetryMetricProducer } from "@mail-edge/observability";
+import {
+  ProviderAdapterRegistry,
+  type ProviderAdapterRegistration,
+  type ProviderDispatchInstrumentationEvent,
+  type ProviderDispatchInstrumentationSink,
+} from "@mail-edge/provider";
 import {
   CloudflareFetchTransport,
   CloudflareRestClient,
@@ -100,6 +106,7 @@ import {
 } from "./production-workflow.service.js";
 import { resolveSecretText } from "./secrets.js";
 import { UuidV7Generator } from "./uuid-v7.service.js";
+import { PostgresOperationalMetricsCollector } from "./postgres-operational-metrics.collector.js";
 import { ProductionInboundWorker } from "./production-inbound.worker.js";
 import {
   ConfiguredCloudflareBindingResolver,
@@ -236,9 +243,11 @@ class KmsReadinessProbe implements ProductionReadinessProbe {
 }
 
 class JsonRuntimeObservability implements RuntimeObservabilityPort {
+  readonly #metrics: OpenTelemetryMetricProducer;
   readonly #sink: StructuredLogSink;
 
-  constructor(write: (line: string) => void) {
+  constructor(write: (line: string) => void, metrics: OpenTelemetryMetricProducer) {
+    this.#metrics = metrics;
     this.#sink = new StructuredLogSink(
       {
         allowedFields: [
@@ -253,6 +262,9 @@ class JsonRuntimeObservability implements RuntimeObservabilityPort {
           "workflow",
         ],
         maximumEventBytes: 4096,
+        onDrop: () => {
+          metrics.recordTelemetryRedactionFailure("logs");
+        },
       },
       write,
     );
@@ -272,6 +284,88 @@ class JsonRuntimeObservability implements RuntimeObservabilityPort {
     if (observation.attemptOrdinal !== undefined)
       fields.push({ key: "attempt_ordinal", value: observation.attemptOrdinal });
     this.#sink.write("runtime.operation", fields);
+    const claimResult =
+      observation.outcome === "succeeded"
+        ? "claimed"
+        : observation.outcome === "backpressured"
+          ? "backpressured"
+          : observation.outcome === "skipped"
+            ? "skipped"
+            : "failed";
+    if (
+      observation.operation === "inbound.route" ||
+      observation.operation === "application_delivery.deliver" ||
+      observation.operation === "outbound.dispatch" ||
+      observation.operation === "feedback.apply" ||
+      observation.operation === "reconciliation.apply"
+    ) {
+      this.#metrics.recordWorkerClaim(observation.workflow, claimResult);
+    }
+    const terminal =
+      observation.outcome === "succeeded"
+        ? "delivered"
+        : observation.outcome === "quarantined"
+          ? "quarantined"
+          : "retry_wait";
+    switch (observation.operation) {
+      case "inbound.finalize":
+        this.#metrics.recordWorkflowTransition(
+          "inbound",
+          "received",
+          observation.outcome === "succeeded" ? "stored" : "retry_wait",
+        );
+        break;
+      case "inbound.route":
+        this.#metrics.recordWorkflowTransition(
+          "inbound",
+          "routing",
+          observation.outcome === "succeeded" ? "delivering" : terminal,
+        );
+        break;
+      case "application_delivery.deliver":
+        this.#metrics.recordWorkflowTransition("application_delivery", "delivering", terminal);
+        break;
+      case "outbound.create":
+        this.#metrics.recordWorkflowTransition(
+          "outbound",
+          "accepted",
+          observation.outcome === "succeeded" ? "ready" : "failed_not_sent",
+        );
+        break;
+      case "outbound.dispatch":
+        this.#metrics.recordWorkflowTransition(
+          "outbound",
+          "dispatching",
+          observation.certainty === "accepted"
+            ? "provider_accepted"
+            : observation.certainty === "unknown"
+              ? "quarantined_unknown"
+              : observation.outcome === "succeeded"
+                ? "provider_accepted"
+                : "retry_wait",
+        );
+        break;
+      case "feedback.apply":
+        this.#metrics.recordWorkflowTransition("feedback", "delivering", terminal);
+        break;
+      case "reconciliation.apply":
+        this.#metrics.recordWorkflowTransition(
+          "reconciliation",
+          "running",
+          observation.outcome === "succeeded" ? "resolved" : "failed",
+        );
+        break;
+      case "feedback.commit":
+      case "lease.recover":
+      case "maintenance.run":
+      case "outbound.prepare":
+      case "outbound.revalidate":
+      case "outbound.settle":
+      case "reconciliation.claim":
+      case "reconciliation.query":
+      case "wakeup.repair":
+        break;
+    }
   }
 
   recordBacklog(input: Parameters<RuntimeObservabilityPort["recordBacklog"]>[0]): void {
@@ -281,12 +375,49 @@ class JsonRuntimeObservability implements RuntimeObservabilityPort {
       { key: "workflow", value: input.workflow },
     ]);
   }
+
+  recordLeaseRecovery(
+    input: Parameters<NonNullable<RuntimeObservabilityPort["recordLeaseRecovery"]>>[0],
+  ): void {
+    this.#metrics.recordLeaseExpired("inbound", input.inboundReceipts);
+    this.#metrics.recordLeaseExpired("application_delivery", input.applicationDeliveries);
+    this.#metrics.recordLeaseExpired("outbound", input.outboundDispatchesQuarantined);
+    this.#metrics.recordLeaseExpired("feedback", input.feedbackApplications);
+    this.#metrics.recordLeaseExpired("reconciliation", input.reconciliationClaims);
+  }
+}
+
+class OpenTelemetryDispatchSink implements ProviderDispatchInstrumentationSink {
+  readonly #metrics: OpenTelemetryMetricProducer;
+
+  constructor(metrics: OpenTelemetryMetricProducer) {
+    this.#metrics = metrics;
+  }
+
+  record(event: ProviderDispatchInstrumentationEvent): void {
+    if (event.event === "phase_completed" && event.durationMilliseconds !== undefined) {
+      this.#metrics.recordDispatchPhase({
+        durationMilliseconds: event.durationMilliseconds,
+        phase: event.phase,
+        provider: event.providerId,
+        transport: event.transport,
+      });
+    }
+    if (event.event === "execution_completed" && event.certainty !== undefined) {
+      this.#metrics.recordDispatch({
+        certainty: event.certainty,
+        ...(event.evidenceCode === undefined ? {} : { evidenceCode: event.evidenceCode }),
+        provider: event.providerId,
+        transport: event.transport,
+      });
+    }
+  }
 }
 
 class SdkTelemetry implements Telemetry {
   readonly #sink: StructuredLogSink;
 
-  constructor(write: (line: string) => void) {
+  constructor(write: (line: string) => void, metrics: OpenTelemetryMetricProducer) {
     this.#sink = new StructuredLogSink(
       {
         allowedFields: [
@@ -299,6 +430,9 @@ class SdkTelemetry implements Telemetry {
           "workflow",
         ],
         maximumEventBytes: 4096,
+        onDrop: () => {
+          metrics.recordTelemetryRedactionFailure("logs");
+        },
       },
       write,
     );
@@ -627,6 +761,16 @@ class ProductionComposition implements ReferenceServiceComposition {
         digester,
         unitOfWork: infrastructure.unitOfWork,
       });
+      infrastructure.metrics.registerCollector(
+        new PostgresOperationalMetricsCollector({
+          activeTenants: store,
+          config: {
+            maximumTenants: 10_000,
+            tenantPageSize: this.#config.maintenance.tenantBatchSize,
+          },
+          unitOfWork: infrastructure.unitOfWork,
+        }),
+      );
       const registrations: ProviderAdapterRegistration[] = [];
       for (const configured of this.#config.mailgun) {
         const config = mailgunConfig(configured);
@@ -716,10 +860,12 @@ class ProductionComposition implements ReferenceServiceComposition {
       const writeTelemetry = (line: string): void => {
         process.stdout.write(line);
       };
-      const observability = new JsonRuntimeObservability(writeTelemetry);
+      const observability = new JsonRuntimeObservability(writeTelemetry, infrastructure.metrics);
+      const dispatchInstrumentation = new OpenTelemetryDispatchSink(infrastructure.metrics);
       const hostIntegration = new SignedHostIntegrationAdapter({
         clock: infrastructure.clock,
         configs: this.#config.hostIntegration,
+        metrics: infrastructure.metrics,
         secrets: infrastructure.secrets,
       });
       const reverseRoutes = new HostReverseRoutePreparationService({
@@ -785,6 +931,7 @@ class ProductionComposition implements ReferenceServiceComposition {
         blobStore: infrastructure.blobStore,
         clock: infrastructure.clock,
         config: runtimeConfig,
+        dispatchInstrumentation,
         ids,
         limiter,
         locator: store,
@@ -942,6 +1089,7 @@ class ProductionComposition implements ReferenceServiceComposition {
           stages: infrastructure.blobStore.stages,
         }),
         maintenance,
+        metrics: infrastructure.metrics,
         probes: Object.freeze([
           new KmsReadinessProbe(this.envelopeKeys, firstTenant.value),
           new SensitiveKeyReadinessProbe(
@@ -964,7 +1112,7 @@ class ProductionComposition implements ReferenceServiceComposition {
         repositories: infrastructure.repositories,
         reverseRouteResolver: hostIntegration,
         stageCleanupTimeoutMilliseconds: this.#context.config.s3.cleanupTimeoutMilliseconds,
-        telemetry: new SdkTelemetry(writeTelemetry),
+        telemetry: new SdkTelemetry(writeTelemetry, infrastructure.metrics),
         tenantUnitOfWorkFactory: infrastructure.unitOfWork,
         wakeupScheduler: infrastructure.queue,
       });

@@ -737,7 +737,9 @@ export interface ProviderDispatchInstrumentationEvent {
     // (undocumented)
     readonly certainty?: DeliveryCertainty;
     // (undocumented)
-    readonly event: "phase_entered" | "boundary_crossed" | "classified";
+    readonly durationMilliseconds?: number;
+    // (undocumented)
+    readonly event: "phase_entered" | "phase_completed" | "boundary_crossed" | "classified" | "execution_completed";
     // (undocumented)
     readonly evidenceCode?: string;
     // (undocumented)

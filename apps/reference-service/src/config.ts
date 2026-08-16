@@ -442,6 +442,16 @@ export const ReferenceServiceConfigSchema = Type.Object(
         serviceName: Type.String({ maxLength: 128, minLength: 1 }),
         exporterEndpoint: Type.Optional(Type.String({ maxLength: 2048, minLength: 1 })),
         exportTimeoutMilliseconds: PositiveMilliseconds,
+        metrics: Type.Object(
+          {
+            enabled: Type.Boolean(),
+            host: Type.String({ maxLength: 255, minLength: 1 }),
+            port: Type.Integer({ maximum: 65_535, minimum: 1 }),
+            path: Type.String({ maxLength: 128, pattern: "^/[A-Za-z0-9/_-]+$" }),
+            collectionTimeoutMilliseconds: PositiveMilliseconds,
+          },
+          { additionalProperties: false },
+        ),
       },
       { additionalProperties: false },
     ),
@@ -521,8 +531,15 @@ const assertSemanticConfig = (config: ReferenceServiceConfig): readonly string[]
   ) {
     issues.push("/s3/serverSideEncryptionKmsKeyId:required");
   }
-  if (config.telemetry.enabled && config.telemetry.exporterEndpoint === undefined) {
-    issues.push("/telemetry/exporterEndpoint:required");
+  if (
+    config.telemetry.enabled &&
+    config.telemetry.exporterEndpoint === undefined &&
+    !config.telemetry.metrics.enabled
+  ) {
+    issues.push("/telemetry:exporter_or_metrics_required");
+  }
+  if (!config.telemetry.enabled && config.telemetry.metrics.enabled) {
+    issues.push("/telemetry/metrics/enabled:requires_telemetry");
   }
   const tenantIds = new Set<string>();
   for (const tenant of config.authentication.tenants) {
@@ -568,6 +585,9 @@ const assertSemanticConfig = (config: ReferenceServiceConfig): readonly string[]
   if (config.environment === "production") {
     if (config.postgres.tls !== "require") issues.push("/postgres/tls:required_in_production");
     if (!config.telemetry.enabled) issues.push("/telemetry/enabled:required_in_production");
+    if (!config.telemetry.metrics.enabled) {
+      issues.push("/telemetry/metrics/enabled:required_in_production");
+    }
     try {
       if (new URL(config.s3.endpoint).protocol !== "https:") {
         issues.push("/s3/endpoint:https_required_in_production");

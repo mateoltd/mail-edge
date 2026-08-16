@@ -1,9 +1,9 @@
 # Mail Edge alert runbooks
 
 These runbooks describe safe diagnosis for the repository alert contract. They do not imply that
-Prometheus, Grafana or Alertmanager is deployed. Every implemented rule is dormant at the reviewed
-base because its producer is missing; confirm the catalog status before using an empty result as
-evidence of health.
+Prometheus, Grafana or Alertmanager is deployed. Repository producer and rule tests do not replace
+environment-owned scrape, routing or paging verification; never use an absent series as evidence of
+health.
 
 ## Blob integrity failure
 
@@ -71,12 +71,42 @@ Owner: storage lifecycle operations.
 
 Abort deletion if a reference, legal hold or uncertain object version appears.
 
-## Unimplemented normative alerts
+## Stale dispatching attempt
 
-The exact coverage inventory is `observability/alerts/coverage.v1.json`. Stale dispatch rows,
-legal-hold deletion attempts, active-binding evidence expiry, route-gap drift, scratch age, nonce
-cleanup lag, retention lag and evidence-near-expiry need bounded runtime signals before Prometheus
-rules can be honest. Do not create placeholder series or treat absent data as zero.
+Freeze automated retry, preserve the claim and dispatch evidence, and let fenced recovery move the
+attempt to quarantine before reconciliation. Never infer not-sent from lease expiry.
+
+## Legal-hold deletion attempt
+
+Confirm the open hold in the tenant-scoped ledger, preserve the rejection evidence, and stop the
+purge workflow. Do not bypass or release a hold as an incident workaround.
+
+## Active binding evidence
+
+Renew the exact binding's capability, control-plane, DNS, live-conformance and drift evidence before
+expiry. Do not extend expiry timestamps without rerunning the check.
+
+## Routing drift gap
+
+Treat absent, failed or expired drift proof as unsafe. Verify exact-domain catch-all and feedback
+routing through provider-neutral discovery before restoring readiness.
+
+## Scratch cleanup lag
+
+Inspect bounded state and purpose aggregates, then run fenced cleanup or promotion repair. Never
+delete a scratch object whose promotion identity or exact version is uncertain.
+
+## Nonce cleanup lag
+
+Run bounded expired-nonce cleanup and verify replay rejection remains effective. Never log nonce
+values or weaken the replay window to clear the alert.
+
+## Retention lag
+
+Confirm the candidate is unreferenced and has no open legal hold, then use the fenced exact-version
+purge lifecycle. Recheck both predicates immediately before deletion.
+
+## Signed-evidence alerts
 
 Cross-tenant authorization, backup/restore verification and telemetry leakage canaries are signed
 qualification evidence. Their runners must fail closed, record the exact commit and input digests,

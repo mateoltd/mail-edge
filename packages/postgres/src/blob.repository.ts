@@ -191,12 +191,19 @@ const stageConflict = (expectedVersion: number): MailEdgeError =>
     safeDetails: { expectedVersion },
   });
 
+/** Identity-free rejection sink for protected blob operations. @public */
+export interface BlobSecurityRejectionSink {
+  record(surface: "blob_purge", reasonCode: "legal_hold_active"): void;
+}
+
 /** PostgreSQL side of the explicit S3/SQL stage and promotion protocol. @public */
 export class PostgresBlobRepository {
+  readonly #security: BlobSecurityRejectionSink | undefined;
   readonly #unitOfWork: PostgresUnitOfWork;
 
-  constructor(unitOfWork: PostgresUnitOfWork) {
+  constructor(unitOfWork: PostgresUnitOfWork, security?: BlobSecurityRejectionSink) {
     this.#unitOfWork = unitOfWork;
+    this.#security = security;
   }
 
   async reserveStage(
@@ -1168,6 +1175,25 @@ export class PostgresBlobRepository {
               ok: false,
             };
           }
+          const hold = await transaction
+            .selectFrom("legalHolds")
+            .select("legalHoldId")
+            .where("tenantId", "=", tenantId)
+            .where("blobId", "=", blobId)
+            .where("releasedAt", "is", null)
+            .executeTakeFirst();
+          if (hold !== undefined) {
+            this.#recordLegalHoldRejection();
+            return {
+              error: new MailEdgeError({
+                code: "WORKFLOW_CONFLICT",
+                deliveryCertainty: "not_sent",
+                message: "Referenced or held blobs cannot be purged.",
+                retryable: true,
+              }),
+              ok: false,
+            };
+          }
           const reference = await transaction
             .selectFrom("rawBlobReferenceSummary")
             .select("blobId")
@@ -1522,6 +1548,14 @@ export class PostgresBlobRepository {
             .where("tenantId", "=", claim.tenantId)
             .where("blobId", "=", claim.blobId)
             .executeTakeFirst();
+          const hold = await transaction
+            .selectFrom("legalHolds")
+            .select("legalHoldId")
+            .where("tenantId", "=", claim.tenantId)
+            .where("blobId", "=", claim.blobId)
+            .where("releasedAt", "is", null)
+            .executeTakeFirst();
+          if (hold !== undefined) this.#recordLegalHoldRejection();
           if (
             deletion?.deletionState !== "claimed" ||
             deletion.claimedUntil === null ||
@@ -1531,7 +1565,8 @@ export class PostgresBlobRepository {
             safeInteger(deletion.optimisticVersion) !== claim.fence ||
             deletion.objectKey !== claim.objectKey ||
             (deletion.objectVersion ?? undefined) !== claim.objectVersion ||
-            reference !== undefined
+            reference !== undefined ||
+            hold !== undefined
           ) {
             return { error: staleFenceError(claim.fence), ok: false };
           }
@@ -1542,6 +1577,14 @@ export class PostgresBlobRepository {
       },
       signal,
     );
+  }
+
+  #recordLegalHoldRejection(): void {
+    try {
+      this.#security?.record("blob_purge", "legal_hold_active");
+    } catch {
+      // Telemetry cannot change legal-hold enforcement.
+    }
   }
 
   async completePurge(

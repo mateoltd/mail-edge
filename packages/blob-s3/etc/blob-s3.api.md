@@ -157,6 +157,18 @@ export interface BlobMetadataStore {
 }
 
 // @public
+export interface BlobOperationTelemetrySink {
+    // (undocumented)
+    recordIntegrityFailure(operation: "open" | "restore" | "repair"): void;
+    // (undocumented)
+    recordOperation(input: {
+        readonly operation: "reserve" | "get_reference" | "open" | "purge" | "restore" | "repair";
+        readonly outcome: "succeeded" | "failed" | "aborted" | "not_found" | "conflict";
+        readonly durationMilliseconds: number;
+    }): void;
+}
+
+// @public
 export class BlobOrphanReaper {
     constructor(input: {
         readonly blobStore: PurgingBlobStore;
@@ -378,6 +390,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
         readonly clock: BlobClock;
         readonly errors: BlobErrorFactory;
         readonly config: EncryptedS3BlobStoreConfig;
+        readonly telemetry?: BlobOperationTelemetrySink;
     });
     // (undocumented)
     reserve(reservation: BlobReservation, signal: AbortSignal): Promise<DriverResult<BlobStageWriter>>;
@@ -392,6 +405,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
         readonly clock: BlobClock;
         readonly errors: BlobErrorFactory;
         readonly config: EncryptedS3BlobStoreConfig;
+        readonly telemetry?: BlobOperationTelemetrySink;
     });
     // (undocumented)
     getAvailableReference(tenantId: BlobTenantId, blobId: BlobId, signal: AbortSignal): ReturnType<BlobStorePort["getAvailableReference"]>;

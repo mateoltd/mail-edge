@@ -286,6 +286,23 @@ export class DurableOutboundWorker {
       },
       signal,
     );
+    try {
+      this.#dispatchInstrumentation?.record(
+        Object.freeze({
+          certainty: execution.result.ok
+            ? ("accepted" as const)
+            : execution.result.error.deliveryCertainty,
+          event: "execution_completed" as const,
+          ...(execution.result.ok ? {} : { evidenceCode: execution.result.error.evidenceCode }),
+          mode: dispatchClaim.adapterMode,
+          phase: execution.boundary.phase,
+          providerId: dispatchClaim.attempt.routeBinding.providerId,
+          transport: dispatchClaim.dispatchTransport,
+        }),
+      );
+    } catch {
+      // Telemetry cannot change delivery truth or durable settlement.
+    }
 
     const settlement = this.#settlement(dispatchClaim, execution);
     const persisted = await this.#transactions

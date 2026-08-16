@@ -13,6 +13,7 @@ import {
   type IdGenerator,
 } from "@mail-edge/core";
 import type { PostgresUnitOfWork } from "@mail-edge/postgres";
+import type { OpenTelemetryMetricProducer } from "@mail-edge/observability";
 import type {
   AppliedBindingResourcesV1,
   BindingPlanV1,
@@ -82,6 +83,7 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
   readonly #inbound: DurableInboundFinalizer;
   readonly #inboundBase: Omit<InboundIngestionServices, "replay">;
   readonly #maintenance: DurableMaintenanceCoordinator;
+  readonly #metrics: OpenTelemetryMetricProducer;
   readonly #probes: readonly ProductionReadinessProbe[];
   readonly #registry: ProviderAdapterRegistry;
   readonly #runtime: DurableRuntimeHost;
@@ -95,6 +97,7 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     readonly inbound: DurableInboundFinalizer;
     readonly inboundBase: Omit<InboundIngestionServices, "replay">;
     readonly maintenance: DurableMaintenanceCoordinator;
+    readonly metrics: OpenTelemetryMetricProducer;
     readonly probes: readonly ProductionReadinessProbe[];
     readonly registry: ProviderAdapterRegistry;
     readonly runtime: DurableRuntimeHost;
@@ -107,6 +110,7 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     this.#inbound = input.inbound;
     this.#inboundBase = Object.freeze({ ...input.inboundBase });
     this.#maintenance = input.maintenance;
+    this.#metrics = input.metrics;
     this.#probes = Object.freeze([...input.probes]);
     this.#registry = input.registry;
     this.#runtime = input.runtime;
@@ -186,6 +190,16 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
       input.replay,
       signal,
     );
+    if (result.ok) {
+      const committed = new Set(result.value.committed);
+      for (const event of input.events) {
+        this.#metrics.recordFeedback(
+          input.instance.identity.providerId,
+          event.kind,
+          committed.has(event.feedbackEventId) ? "new" : "duplicate",
+        );
+      }
+    }
     return result.ok
       ? {
           ok: true,
@@ -197,7 +211,7 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
       : result;
   }
 
-  planBinding(
+  async planBinding(
     adapter: ProviderAdapterRegistration,
     desired: DesiredBindingV1,
     context: ControlPlaneHandoffContext,
@@ -206,7 +220,13 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     if (!exactAdapter(adapter, context.instance) || adapter.controlPlane === undefined) {
       return Promise.resolve({ error: workflowError("control_plane_identity"), ok: false });
     }
-    return adapter.controlPlane.planBinding(desired, signal);
+    const result = await adapter.controlPlane.planBinding(desired, signal);
+    this.#metrics.recordBindingCheck(
+      context.instance.identity.providerId,
+      "capability",
+      result.ok ? "pass" : "fail",
+    );
+    return result;
   }
 
   async applyBindingPlan(
@@ -229,6 +249,11 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     );
     if (!started.ok) return started;
     const result = await adapter.controlPlane.applyBindingPlan(plan, operation, signal);
+    this.#metrics.recordBindingCheck(
+      context.instance.identity.providerId,
+      "control_plane",
+      result.ok ? "pass" : "fail",
+    );
     if (!result.ok) return result;
     const completed = await this.#appendAudit(
       "provider.binding_apply_completed",
@@ -241,7 +266,7 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     return completed.ok ? result : completed;
   }
 
-  discoverBinding(
+  async discoverBinding(
     adapter: ProviderAdapterRegistration,
     binding: RouteBindingSnapshotV1,
     context: ControlPlaneHandoffContext,
@@ -250,7 +275,13 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     if (!exactAdapter(adapter, context.instance) || adapter.controlPlane === undefined) {
       return Promise.resolve({ error: workflowError("control_plane_identity"), ok: false });
     }
-    return adapter.controlPlane.discoverBinding(binding, signal);
+    const result = await adapter.controlPlane.discoverBinding(binding, signal);
+    this.#metrics.recordBindingCheck(
+      context.instance.identity.providerId,
+      "drift",
+      result.ok ? "pass" : "fail",
+    );
+    return result;
   }
 
   async deleteBindingResources(
@@ -273,6 +304,11 @@ export class ProductionReferenceServiceWorkflow implements ReferenceServiceWorkf
     );
     if (!started.ok) return started;
     const result = await adapter.controlPlane.deleteBindingResources(binding, operation, signal);
+    this.#metrics.recordBindingCheck(
+      context.instance.identity.providerId,
+      "control_plane",
+      result.ok ? "pass" : "fail",
+    );
     if (!result.ok) return result;
     const completed = await this.#appendAudit(
       "provider.binding_delete_completed",

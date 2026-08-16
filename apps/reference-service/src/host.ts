@@ -207,23 +207,31 @@ export class ReferenceServiceHost {
         : { ok: true as const, value: injectedComposition };
     if (!compositionResult.ok) return compositionResult;
     const composition = compositionResult.value;
+    const telemetry = new OpenTelemetryLifecycle(config.telemetry);
+    const telemetryComponent = new TelemetryComponent(telemetry);
     const infrastructure = await buildInfrastructure({
       clock,
       config,
       envelopeKeys: composition.envelopeKeys,
+      metrics: telemetry.metricProducer,
       secrets,
       sensitiveValueCipher: composition.sensitiveValueCipher,
       signal,
     });
     if (!infrastructure.ok) {
+      await telemetry.close();
       await closeConstructed([], composition);
       return infrastructure;
     }
+    const constructedComponents = Object.freeze([
+      telemetryComponent,
+      ...infrastructure.value.components,
+    ]);
     let runtimeResult: unknown;
     try {
       runtimeResult = await composition.createRuntime(infrastructure.value.infrastructure, signal);
     } catch (cause) {
-      await closeConstructed(infrastructure.value.components, composition);
+      await closeConstructed(constructedComponents, composition);
       return { error: asHostError(cause, "runtime_composition_threw"), ok: false };
     }
     if (
@@ -234,7 +242,7 @@ export class ReferenceServiceHost {
       !("value" in runtimeResult) ||
       !runtimeIsComplete(runtimeResult.value)
     ) {
-      await closeConstructed(infrastructure.value.components, composition);
+      await closeConstructed(constructedComponents, composition);
       if (
         typeof runtimeResult === "object" &&
         runtimeResult !== null &&
@@ -255,11 +263,10 @@ export class ReferenceServiceHost {
       catalog = new ProviderInstanceCatalog(config.providerInstances);
       catalog.assertRegistrations(runtime.adapters);
     } catch (cause) {
-      await closeConstructed(infrastructure.value.components, composition);
+      await closeConstructed(constructedComponents, composition);
       return { error: asHostError(cause, "provider_composition_invalid"), ok: false };
     }
     const authenticator = new StaticTokenAuthenticator(config.authentication, secrets);
-    const telemetry = new OpenTelemetryLifecycle(config.telemetry);
     const tracer = new HostTracer(config.telemetry.serviceName);
     const gate = new BoundedConcurrencyGate(
       config.http.maximumConcurrentRequests,
@@ -276,6 +283,7 @@ export class ReferenceServiceHost {
       config,
       control: runtime.control,
       gate,
+      metrics: telemetry.metricProducer,
       readiness: async (readinessSignal) =>
         hostState === "ready" && lifecycleReference.current !== undefined
           ? lifecycleReference.current.readiness(readinessSignal)
@@ -289,7 +297,7 @@ export class ReferenceServiceHost {
     });
     const lifecycle = new LifecycleStack([
       new CompositionComponent(composition),
-      new TelemetryComponent(telemetry),
+      telemetryComponent,
       ...infrastructure.value.components,
       new AuthenticationComponent(authenticator),
       new RegistryComponent(registry),

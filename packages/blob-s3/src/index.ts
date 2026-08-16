@@ -32,6 +32,7 @@ export type {
   BlobId,
   BlobIdGenerator,
   BlobMetadataStore,
+  BlobOperationTelemetrySink,
   BlobPromotionCommit,
   BlobPromotionPreparation,
   BlobPurgeClaim,

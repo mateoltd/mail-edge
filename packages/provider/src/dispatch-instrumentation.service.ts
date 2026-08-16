@@ -21,13 +21,15 @@ import type { OutboundProviderAdapter, ProviderDispatchContext, ProviderRawSourc
 
 /** Bounded provider dispatch instrumentation event. @public */
 export interface ProviderDispatchInstrumentationEvent {
-  readonly event: "phase_entered" | "boundary_crossed" | "classified";
+  readonly event:
+    "phase_entered" | "phase_completed" | "boundary_crossed" | "classified" | "execution_completed";
   readonly providerId: ProviderId;
   readonly mode: string;
   readonly transport: DispatchTransport;
   readonly phase: ProviderDispatchPhase;
   readonly certainty?: DeliveryCertainty;
   readonly evidenceCode?: string;
+  readonly durationMilliseconds?: number;
 }
 
 /** Focused sink that cannot receive message, address, tenant, or attempt data. @public */
@@ -100,6 +102,8 @@ export class DispatchBoundaryRecorder implements ProviderDispatchBoundary {
   #authenticatedRejection = false;
   #rejectionProvesNotSent = false;
   #boundaryEventEmitted = false;
+  #phaseCompleted = false;
+  #phaseStartedAt = performance.now();
 
   constructor(input: {
     readonly providerId: ProviderId;
@@ -123,7 +127,12 @@ export class DispatchBoundaryRecorder implements ProviderDispatchBoundary {
     if (this.#authenticatedAcceptance || this.#authenticatedRejection) {
       throw new Error("Provider dispatch phase cannot change after conclusive evidence.");
     }
-    this.#phase = phase;
+    if (phaseRank(phase) > phaseRank(this.#phase)) {
+      this.#completePhase();
+      this.#phase = phase;
+      this.#phaseCompleted = false;
+      this.#phaseStartedAt = performance.now();
+    }
     this.#emit({ event: "phase_entered", phase });
   }
 
@@ -145,17 +154,19 @@ export class DispatchBoundaryRecorder implements ProviderDispatchBoundary {
     if (this.#authenticatedRejection) {
       throw new Error("Acceptance and rejection evidence are mutually exclusive.");
     }
+    this.#beginResponsePhase();
     this.#authenticatedAcceptance = true;
-    this.#phase = "response";
+    this.#completePhase();
   }
 
   markAuthenticatedRejection(provesNotSent: boolean): void {
     if (this.#authenticatedAcceptance) {
       throw new Error("Acceptance and rejection evidence are mutually exclusive.");
     }
+    this.#beginResponsePhase();
     this.#authenticatedRejection = true;
     this.#rejectionProvesNotSent = provesNotSent;
-    this.#phase = "response";
+    this.#completePhase();
   }
 
   snapshot(): ProviderDispatchBoundarySnapshot {
@@ -178,6 +189,7 @@ export class DispatchBoundaryRecorder implements ProviderDispatchBoundary {
     if (!stableToken.test(evidenceCode)) {
       throw new TypeError("Provider evidence code must be a bounded stable token.");
     }
+    this.#completePhase();
     const snapshot = this.snapshot();
     if (snapshot.classification.certainty === "accepted") {
       throw new Error("Authenticated acceptance cannot be converted into a provider failure.");
@@ -223,6 +235,25 @@ export class DispatchBoundaryRecorder implements ProviderDispatchBoundary {
       this.#boundaryEventEmitted = true;
       this.#emit({ event: "boundary_crossed", phase: this.#phase });
     }
+  }
+
+  #beginResponsePhase(): void {
+    if (this.#phase !== "response") {
+      this.#completePhase();
+      this.#phase = "response";
+      this.#phaseCompleted = false;
+      this.#phaseStartedAt = performance.now();
+    }
+  }
+
+  #completePhase(): void {
+    if (this.#phaseCompleted) return;
+    this.#phaseCompleted = true;
+    this.#emit({
+      durationMilliseconds: Math.max(0, performance.now() - this.#phaseStartedAt),
+      event: "phase_completed",
+      phase: this.#phase,
+    });
   }
 
   #emit(

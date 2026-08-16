@@ -176,6 +176,13 @@
   "telemetry": {
     "enabled": false,
     "serviceName": "mail-edge-reference",
-    "exportTimeoutMilliseconds": 5000
+    "exportTimeoutMilliseconds": 5000,
+    "metrics": {
+      "enabled": false,
+      "host": "127.0.0.1",
+      "port": 9464,
+      "path": "/metrics",
+      "collectionTimeoutMilliseconds": 5000
+    }
   }
 }

@@ -280,7 +280,18 @@ export const testConfig = (secretDirectory: string): ReferenceServiceConfig => (
   },
   schemaVersion: "v1",
   secretDirectory,
-  telemetry: { enabled: false, exportTimeoutMilliseconds: 1_000, serviceName: "reference-test" },
+  telemetry: {
+    enabled: false,
+    exportTimeoutMilliseconds: 1_000,
+    metrics: {
+      collectionTimeoutMilliseconds: 1_000,
+      enabled: false,
+      host: "127.0.0.1",
+      path: "/metrics",
+      port: 9_464,
+    },
+    serviceName: "reference-test",
+  },
 });
 
 const workflow = (
@@ -385,6 +396,10 @@ export const createHttpFixture = async (): Promise<{
     config,
     control,
     gate: new BoundedConcurrencyGate(4, 2),
+    metrics: {
+      recordSecurityRejection: () => undefined,
+      startIngress: () => undefined,
+    },
     readiness: () =>
       Promise.resolve(
         state.ready

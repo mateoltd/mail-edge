@@ -58,6 +58,7 @@ export type {
   BlobPurgeClaim,
   BlobStageCreation,
   BlobStageUpload,
+  BlobSecurityRejectionSink,
   LegalHoldInput,
   PendingBlobPromotion,
   RawBlobIntegrityClaim,

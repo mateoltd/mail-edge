@@ -27,8 +27,5 @@ export const isBoundedInteger = (
 ): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
 
-export const isFiniteNonNegative = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value) && value >= 0;
-
 export const isBoundedString = (value: unknown, maximumLength: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= maximumLength;

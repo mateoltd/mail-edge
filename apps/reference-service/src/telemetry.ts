@@ -1,55 +1,99 @@
-import { SpanStatusCode, trace, type Attributes, type Span, type Tracer } from "@opentelemetry/api";
+import {
+  metrics,
+  SpanStatusCode,
+  trace,
+  type Attributes,
+  type Span,
+  type Tracer,
+} from "@opentelemetry/api";
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
+import { MeterProvider } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import type { MailEdgeError, Result } from "@mail-edge/contracts";
+import { OpenTelemetryMetricProducer } from "@mail-edge/observability";
 
 import type { ReferenceServiceConfig } from "./config.js";
 import { asHostError } from "./errors.js";
 
 export class OpenTelemetryLifecycle {
+  readonly metricProducer: OpenTelemetryMetricProducer;
   readonly #config: ReferenceServiceConfig["telemetry"];
+  readonly #meterProvider: MeterProvider | undefined;
+  readonly #prometheus: PrometheusExporter | undefined;
   #sdk: NodeSDK | undefined;
 
   constructor(config: ReferenceServiceConfig["telemetry"]) {
     this.#config = config;
+    const resource = resourceFromAttributes({ [ATTR_SERVICE_NAME]: config.serviceName });
+    this.#prometheus = config.metrics.enabled
+      ? new PrometheusExporter({
+          endpoint: config.metrics.path,
+          host: config.metrics.host,
+          port: config.metrics.port,
+          preventServerStart: true,
+          withoutScopeInfo: true,
+          withoutTargetInfo: true,
+        })
+      : undefined;
+    this.#meterProvider =
+      this.#prometheus === undefined
+        ? undefined
+        : new MeterProvider({ readers: [this.#prometheus], resource });
+    this.metricProducer = new OpenTelemetryMetricProducer(
+      this.#meterProvider?.getMeter(config.serviceName, "0.1.0") ??
+        metrics.getMeter(config.serviceName, "0.1.0"),
+      { collectionTimeoutMilliseconds: config.metrics.collectionTimeoutMilliseconds },
+    );
   }
 
-  start(): Promise<Result<void, MailEdgeError>> {
-    if (!this.#config.enabled) return Promise.resolve({ ok: true, value: undefined });
+  async start(): Promise<Result<void, MailEdgeError>> {
+    if (!this.#config.enabled) return { ok: true, value: undefined };
     if (this.#sdk !== undefined) throw new Error("OpenTelemetry is already started.");
-    if (this.#config.exporterEndpoint === undefined) {
-      return Promise.resolve({
-        error: asHostError(new TypeError("Missing exporter endpoint."), "telemetry_config_invalid"),
+    if (this.#config.exporterEndpoint === undefined && !this.#config.metrics.enabled) {
+      return {
+        error: asHostError(
+          new TypeError("Telemetry requires a trace exporter or metrics reader."),
+          "telemetry_config_invalid",
+        ),
         ok: false,
-      });
+      };
     }
     try {
       const sdk = new NodeSDK({
         resource: resourceFromAttributes({ [ATTR_SERVICE_NAME]: this.#config.serviceName }),
-        traceExporter: new OTLPTraceExporter({
-          timeoutMillis: this.#config.exportTimeoutMilliseconds,
-          url: this.#config.exporterEndpoint,
-        }),
+        ...(this.#config.exporterEndpoint === undefined
+          ? { spanProcessors: [] }
+          : {
+              traceExporter: new OTLPTraceExporter({
+                timeoutMillis: this.#config.exportTimeoutMilliseconds,
+                url: this.#config.exporterEndpoint,
+              }),
+            }),
       });
       sdk.start();
       this.#sdk = sdk;
-      return Promise.resolve({ ok: true, value: undefined });
+      await this.#prometheus?.startServer();
+      return { ok: true, value: undefined };
     } catch (cause) {
-      return Promise.resolve({
+      await this.#sdk?.shutdown().catch(() => undefined);
+      await this.#meterProvider?.shutdown().catch(() => undefined);
+      this.#sdk = undefined;
+      return {
         error: asHostError(cause, "telemetry_start_failed"),
         ok: false,
-      });
+      };
     }
   }
 
   async close(): Promise<Result<void, MailEdgeError>> {
     const sdk = this.#sdk;
     this.#sdk = undefined;
-    if (sdk === undefined) return { ok: true, value: undefined };
+    this.metricProducer.close();
     try {
-      await sdk.shutdown();
+      await Promise.all([sdk?.shutdown(), this.#meterProvider?.shutdown()]);
       return { ok: true, value: undefined };
     } catch (cause) {
       return { error: asHostError(cause, "telemetry_shutdown_failed"), ok: false };

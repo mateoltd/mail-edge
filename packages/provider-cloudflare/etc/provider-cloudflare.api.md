@@ -249,21 +249,23 @@ export class CloudflareControlPlaneAdapter implements ProviderControlPlaneAdapte
     deleteBindingResources(binding: RouteBindingSnapshotV1, authorization: ControlPlaneOperationContext, signal: AbortSignal): Promise<Result<DeletionEvidenceV1, MailEdgeError>>;
     // (undocumented)
     readonly descriptor: {
+        readonly schemaVersion: "v1";
+        readonly providerId: ProviderId;
+        readonly adapterVersion: string;
         readonly inbound: {
             readonly maxBytes?: number;
-            readonly acquisition: readonly ("inline_stream" | "signed_reference_stream" | "worker_frame_stream")[];
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly exactDomainCatchAll: boolean;
             readonly supported: boolean;
-            readonly signatureCoverage: "none" | "worker_frames" | "whole_body" | "body_digest" | "token_timestamp_only";
-            readonly replayIdentity: "none" | "worker_nonce" | "provider_event" | "signed_token";
+            readonly signatureCoverage: "worker_frames" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly acquisition: readonly ("worker_frame_stream" | "inline_stream" | "signed_reference_stream")[];
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
+            readonly replayIdentity: "worker_nonce" | "none" | "provider_event" | "signed_token";
         };
         readonly outbound: {
             readonly maxBytes?: number;
             readonly rateLimit?: {
                 readonly [x: string]: number;
             };
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly envelope: {
                 readonly smtpUtf8: boolean;
                 readonly requireTls: boolean;
@@ -273,29 +275,27 @@ export class CloudflareControlPlaneAdapter implements ProviderControlPlaneAdapte
                 readonly nullReversePath: boolean;
                 readonly perRecipientDsn: boolean;
             };
-            readonly reconciliation: {
-                readonly keys: readonly string[];
-                readonly supported: boolean;
-                readonly canProve: readonly ("accepted" | "unknown" | "not_sent")[];
-            };
             readonly supported: boolean;
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly idempotency: {
                 readonly scope?: "account" | "domain";
                 readonly ttlSeconds?: number;
-                readonly mode: "none" | "header" | "request_key";
+                readonly mode: "header" | "none" | "request_key";
             };
-            readonly mimeMutation: readonly ("none" | "transport_headers" | "dkim_signature" | "content_reencoding" | "unknown")[];
+            readonly mimeMutation: readonly ("unknown" | "none" | "transport_headers" | "dkim_signature" | "content_reencoding")[];
+            readonly reconciliation: {
+                readonly supported: boolean;
+                readonly canProve: readonly ("not_sent" | "accepted" | "unknown")[];
+                readonly keys: readonly string[];
+            };
             readonly transports: readonly ("http_utf8_json" | "http_binary" | "smtp_raw")[];
         };
-        readonly schemaVersion: "v1";
-        readonly providerId: ProviderId;
-        readonly adapterVersion: string;
         readonly maturity: "stable" | "experimental";
         readonly feedback: {
             readonly supported: boolean;
             readonly kinds: readonly ("accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed")[];
             readonly perRecipient: boolean;
-            readonly signatureCoverage: "none" | "worker_event" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly signatureCoverage: "worker_event" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
         };
         readonly controlPlane: {
             readonly dnsDiscovery: boolean;
@@ -353,21 +353,23 @@ export class CloudflareFeedbackAdapter implements FeedbackProviderAdapter {
     constructor(config: CloudflareFeedbackAdapterConfigV1, authentication: CloudflareSmallRequestAuthenticationService, lifecycle: CloudflareAdapterLifecycle);
     // (undocumented)
     readonly descriptor: {
+        readonly schemaVersion: "v1";
+        readonly providerId: ProviderId;
+        readonly adapterVersion: string;
         readonly inbound: {
             readonly maxBytes?: number;
-            readonly acquisition: readonly ("inline_stream" | "signed_reference_stream" | "worker_frame_stream")[];
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly exactDomainCatchAll: boolean;
             readonly supported: boolean;
-            readonly signatureCoverage: "none" | "worker_frames" | "whole_body" | "body_digest" | "token_timestamp_only";
-            readonly replayIdentity: "none" | "worker_nonce" | "provider_event" | "signed_token";
+            readonly signatureCoverage: "worker_frames" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly acquisition: readonly ("worker_frame_stream" | "inline_stream" | "signed_reference_stream")[];
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
+            readonly replayIdentity: "worker_nonce" | "none" | "provider_event" | "signed_token";
         };
         readonly outbound: {
             readonly maxBytes?: number;
             readonly rateLimit?: {
                 readonly [x: string]: number;
             };
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly envelope: {
                 readonly smtpUtf8: boolean;
                 readonly requireTls: boolean;
@@ -377,29 +379,27 @@ export class CloudflareFeedbackAdapter implements FeedbackProviderAdapter {
                 readonly nullReversePath: boolean;
                 readonly perRecipientDsn: boolean;
             };
-            readonly reconciliation: {
-                readonly keys: readonly string[];
-                readonly supported: boolean;
-                readonly canProve: readonly ("accepted" | "unknown" | "not_sent")[];
-            };
             readonly supported: boolean;
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly idempotency: {
                 readonly scope?: "account" | "domain";
                 readonly ttlSeconds?: number;
-                readonly mode: "none" | "header" | "request_key";
+                readonly mode: "header" | "none" | "request_key";
             };
-            readonly mimeMutation: readonly ("none" | "transport_headers" | "dkim_signature" | "content_reencoding" | "unknown")[];
+            readonly mimeMutation: readonly ("unknown" | "none" | "transport_headers" | "dkim_signature" | "content_reencoding")[];
+            readonly reconciliation: {
+                readonly supported: boolean;
+                readonly canProve: readonly ("not_sent" | "accepted" | "unknown")[];
+                readonly keys: readonly string[];
+            };
             readonly transports: readonly ("http_utf8_json" | "http_binary" | "smtp_raw")[];
         };
-        readonly schemaVersion: "v1";
-        readonly providerId: ProviderId;
-        readonly adapterVersion: string;
         readonly maturity: "stable" | "experimental";
         readonly feedback: {
             readonly supported: boolean;
             readonly kinds: readonly ("accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed")[];
             readonly perRecipient: boolean;
-            readonly signatureCoverage: "none" | "worker_event" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly signatureCoverage: "worker_event" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
         };
         readonly controlPlane: {
             readonly dnsDiscovery: boolean;
@@ -580,21 +580,23 @@ export class CloudflareInboundAdapter implements InboundProviderAdapter {
     constructor(config: CloudflareInboundAdapterConfigV1, bindings: CloudflareInboundBindingResolver, lifecycle: CloudflareAdapterLifecycle);
     // (undocumented)
     readonly descriptor: {
+        readonly schemaVersion: "v1";
+        readonly providerId: ProviderId;
+        readonly adapterVersion: string;
         readonly inbound: {
             readonly maxBytes?: number;
-            readonly acquisition: readonly ("inline_stream" | "signed_reference_stream" | "worker_frame_stream")[];
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly exactDomainCatchAll: boolean;
             readonly supported: boolean;
-            readonly signatureCoverage: "none" | "worker_frames" | "whole_body" | "body_digest" | "token_timestamp_only";
-            readonly replayIdentity: "none" | "worker_nonce" | "provider_event" | "signed_token";
+            readonly signatureCoverage: "worker_frames" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly acquisition: readonly ("worker_frame_stream" | "inline_stream" | "signed_reference_stream")[];
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
+            readonly replayIdentity: "worker_nonce" | "none" | "provider_event" | "signed_token";
         };
         readonly outbound: {
             readonly maxBytes?: number;
             readonly rateLimit?: {
                 readonly [x: string]: number;
             };
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly envelope: {
                 readonly smtpUtf8: boolean;
                 readonly requireTls: boolean;
@@ -604,29 +606,27 @@ export class CloudflareInboundAdapter implements InboundProviderAdapter {
                 readonly nullReversePath: boolean;
                 readonly perRecipientDsn: boolean;
             };
-            readonly reconciliation: {
-                readonly keys: readonly string[];
-                readonly supported: boolean;
-                readonly canProve: readonly ("accepted" | "unknown" | "not_sent")[];
-            };
             readonly supported: boolean;
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly idempotency: {
                 readonly scope?: "account" | "domain";
                 readonly ttlSeconds?: number;
-                readonly mode: "none" | "header" | "request_key";
+                readonly mode: "header" | "none" | "request_key";
             };
-            readonly mimeMutation: readonly ("none" | "transport_headers" | "dkim_signature" | "content_reencoding" | "unknown")[];
+            readonly mimeMutation: readonly ("unknown" | "none" | "transport_headers" | "dkim_signature" | "content_reencoding")[];
+            readonly reconciliation: {
+                readonly supported: boolean;
+                readonly canProve: readonly ("not_sent" | "accepted" | "unknown")[];
+                readonly keys: readonly string[];
+            };
             readonly transports: readonly ("http_utf8_json" | "http_binary" | "smtp_raw")[];
         };
-        readonly schemaVersion: "v1";
-        readonly providerId: ProviderId;
-        readonly adapterVersion: string;
         readonly maturity: "stable" | "experimental";
         readonly feedback: {
             readonly supported: boolean;
             readonly kinds: readonly ("accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed")[];
             readonly perRecipient: boolean;
-            readonly signatureCoverage: "none" | "worker_event" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly signatureCoverage: "worker_event" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
         };
         readonly controlPlane: {
             readonly dnsDiscovery: boolean;
@@ -688,21 +688,23 @@ export class CloudflareOutboundAdapter implements OutboundProviderAdapter {
     constructor(config: CloudflareOutboundAdapterConfigV1, client: CloudflareRestClient, lifecycle: CloudflareAdapterLifecycle);
     // (undocumented)
     readonly descriptor: {
+        readonly schemaVersion: "v1";
+        readonly providerId: ProviderId;
+        readonly adapterVersion: string;
         readonly inbound: {
             readonly maxBytes?: number;
-            readonly acquisition: readonly ("inline_stream" | "signed_reference_stream" | "worker_frame_stream")[];
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly exactDomainCatchAll: boolean;
             readonly supported: boolean;
-            readonly signatureCoverage: "none" | "worker_frames" | "whole_body" | "body_digest" | "token_timestamp_only";
-            readonly replayIdentity: "none" | "worker_nonce" | "provider_event" | "signed_token";
+            readonly signatureCoverage: "worker_frames" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly acquisition: readonly ("worker_frame_stream" | "inline_stream" | "signed_reference_stream")[];
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
+            readonly replayIdentity: "worker_nonce" | "none" | "provider_event" | "signed_token";
         };
         readonly outbound: {
             readonly maxBytes?: number;
             readonly rateLimit?: {
                 readonly [x: string]: number;
             };
-            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly envelope: {
                 readonly smtpUtf8: boolean;
                 readonly requireTls: boolean;
@@ -712,29 +714,27 @@ export class CloudflareOutboundAdapter implements OutboundProviderAdapter {
                 readonly nullReversePath: boolean;
                 readonly perRecipientDsn: boolean;
             };
-            readonly reconciliation: {
-                readonly keys: readonly string[];
-                readonly supported: boolean;
-                readonly canProve: readonly ("accepted" | "unknown" | "not_sent")[];
-            };
             readonly supported: boolean;
+            readonly bytePreservation: "unknown" | "verified_exact" | "provider_mutated";
             readonly idempotency: {
                 readonly scope?: "account" | "domain";
                 readonly ttlSeconds?: number;
-                readonly mode: "none" | "header" | "request_key";
+                readonly mode: "header" | "none" | "request_key";
             };
-            readonly mimeMutation: readonly ("none" | "transport_headers" | "dkim_signature" | "content_reencoding" | "unknown")[];
+            readonly mimeMutation: readonly ("unknown" | "none" | "transport_headers" | "dkim_signature" | "content_reencoding")[];
+            readonly reconciliation: {
+                readonly supported: boolean;
+                readonly canProve: readonly ("not_sent" | "accepted" | "unknown")[];
+                readonly keys: readonly string[];
+            };
             readonly transports: readonly ("http_utf8_json" | "http_binary" | "smtp_raw")[];
         };
-        readonly schemaVersion: "v1";
-        readonly providerId: ProviderId;
-        readonly adapterVersion: string;
         readonly maturity: "stable" | "experimental";
         readonly feedback: {
             readonly supported: boolean;
             readonly kinds: readonly ("accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed")[];
             readonly perRecipient: boolean;
-            readonly signatureCoverage: "none" | "worker_event" | "whole_body" | "body_digest" | "token_timestamp_only";
+            readonly signatureCoverage: "worker_event" | "none" | "whole_body" | "body_digest" | "token_timestamp_only";
         };
         readonly controlPlane: {
             readonly dnsDiscovery: boolean;

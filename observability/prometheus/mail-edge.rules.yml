@@ -21,7 +21,7 @@ groups:
         labels:
           severity: page
           signal_contract: normative
-          producer_status: runtime_missing
+          producer_status: verified_runtime
         annotations:
           summary: Mail Edge observed a blob integrity failure
           description:
@@ -37,7 +37,7 @@ groups:
         labels:
           severity: page
           signal_contract: normative
-          producer_status: runtime_missing
+          producer_status: verified_runtime
         annotations:
           summary: Mail Edge unknown dispatch rate exceeded its safety threshold
           description:
@@ -51,7 +51,7 @@ groups:
         labels:
           severity: page
           signal_contract: normative
-          producer_status: runtime_missing
+          producer_status: verified_collector
         annotations:
           summary: Mail Edge due work is more than five minutes old
           description:
@@ -64,10 +64,105 @@ groups:
         labels:
           severity: page
           signal_contract: normative
-          producer_status: runtime_missing
+          producer_status: verified_collector
         annotations:
           summary: Mail Edge raw orphan count has increased over 30 minutes
           description:
             The aggregate orphan gauge has a positive 30-minute slope. Diagnose reference and
             cleanup behavior before reclaiming objects.
           runbook: observability/runbooks/alerts.md#raw-orphans-increasing
+
+      - alert: MailEdgeStaleDispatchingAttempt
+        expr: mail_edge_stale_dispatching_attempts > 0
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge has a stale dispatching attempt
+          description: At least one dispatch claim expired before durable settlement.
+          runbook: observability/runbooks/alerts.md#stale-dispatching-attempt
+
+      - alert: MailEdgeLegalHoldDeletionAttempt
+        expr: >-
+          sum(increase(mail_edge_security_rejection_total{surface="blob_purge",reason_code="legal_hold_active"}[5m]))
+          > 0
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: verified_runtime
+        annotations:
+          summary: Mail Edge rejected a legal-hold deletion attempt
+          description: A purge path attempted to act on a blob protected by an open legal hold.
+          runbook: observability/runbooks/alerts.md#legal-hold-deletion-attempt
+
+      - alert: MailEdgeExpiredActiveBindingEvidence
+        expr: mail_edge_active_binding_evidence{status="expired"} > 0
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge has expired evidence on an active binding
+          description: At least one active binding has absent or expired qualification evidence.
+          runbook: observability/runbooks/alerts.md#active-binding-evidence
+
+      - alert: MailEdgeRoutingDriftGap
+        expr: sum(mail_edge_routing_drift_gaps) > 0
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge detected an active routing drift gap
+          description: An active binding lacks a current passing drift proof.
+          runbook: observability/runbooks/alerts.md#routing-drift-gap
+
+      - alert: MailEdgeScratchOlderThan24Hours
+        expr: max by (state, purpose) (mail_edge_scratch_oldest_age_seconds) > 86400
+        labels:
+          severity: ticket
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge scratch data is older than 24 hours
+          description:
+            Scratch state {{ $labels.state }} for purpose {{ $labels.purpose }} exceeded the cleanup
+            age objective.
+          runbook: observability/runbooks/alerts.md#scratch-cleanup-lag
+
+      - alert: MailEdgeNonceCleanupLag
+        expr: mail_edge_nonce_cleanup_lag_seconds > 0
+        labels:
+          severity: ticket
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge webhook nonce cleanup is lagging
+          description: At least one expired replay nonce remains in the durable ledger.
+          runbook: observability/runbooks/alerts.md#nonce-cleanup-lag
+
+      - alert: MailEdgeRetentionLag
+        expr: mail_edge_retention_lag_seconds > 86400
+        labels:
+          severity: ticket
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge retention is more than 24 hours overdue
+          description:
+            An unreferenced and unheld available blob exceeded its retention deadline by more than
+            24 hours.
+          runbook: observability/runbooks/alerts.md#retention-lag
+
+      - alert: MailEdgeConformanceEvidenceNearExpiry
+        expr: mail_edge_active_binding_evidence{status="expiring_72h"} > 0
+        labels:
+          severity: ticket
+          signal_contract: normative
+          producer_status: verified_collector
+        annotations:
+          summary: Mail Edge active-binding evidence expires within 72 hours
+          description:
+            At least one active binding needs renewed qualification evidence within 72 hours.
+          runbook: observability/runbooks/alerts.md#active-binding-evidence

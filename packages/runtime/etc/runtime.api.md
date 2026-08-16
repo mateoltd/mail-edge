@@ -728,6 +728,8 @@ export interface RuntimeObservabilityPort {
         readonly ready: number;
         readonly oldestAgeMilliseconds: number;
     }): void;
+    // (undocumented)
+    recordLeaseRecovery?(input: Omit<LeaseRecoveryResult, "wakeups">): void;
 }
 
 // @public

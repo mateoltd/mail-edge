@@ -18,6 +18,7 @@ import {
   validateContract,
 } from "@mail-edge/contracts";
 import { createHostSignature, hostSignatureToHttpHeaders } from "@mail-edge/core";
+import type { OpenTelemetryMetricProducer } from "@mail-edge/observability";
 import type {
   ApplicationAckV1,
   ApplicationDeliverySink,
@@ -159,12 +160,14 @@ export class SignedHostIntegrationAdapter
   readonly #clock: Clock;
   readonly #configs: ReadonlyMap<string, HostIntegrationConfig>;
   readonly #fetch: typeof fetch;
+  readonly #metrics: Pick<OpenTelemetryMetricProducer, "recordCallback">;
   readonly #secrets: SecretResolver;
 
   constructor(input: {
     readonly clock: Clock;
     readonly configs: readonly HostIntegrationConfig[];
     readonly fetchImplementation?: typeof fetch;
+    readonly metrics: Pick<OpenTelemetryMetricProducer, "recordCallback">;
     readonly secrets: SecretResolver;
   }) {
     this.#clock = input.clock;
@@ -172,6 +175,7 @@ export class SignedHostIntegrationAdapter
       input.configs.map((config) => [config.tenantId, Object.freeze({ ...config })]),
     );
     this.#fetch = input.fetchImplementation ?? fetch;
+    this.#metrics = input.metrics;
     this.#secrets = input.secrets;
   }
 
@@ -268,6 +272,35 @@ export class SignedHostIntegrationAdapter
   }
 
   async #post(
+    tenantId: TenantId,
+    urlField: "recipientRouterUrl" | "reverseRouteUrl" | "deliveryUrl" | "feedbackUrl",
+    value: unknown,
+    operation: HostSignedOperation,
+    subjectId: string,
+    callerSignal: AbortSignal,
+  ): Promise<Result<Readonly<Record<string, unknown>>, MailEdgeError>> {
+    const result = await this.#postOnce(
+      tenantId,
+      urlField,
+      value,
+      operation,
+      subjectId,
+      callerSignal,
+    );
+    this.#metrics.recordCallback(
+      operation,
+      result.ok
+        ? "succeeded"
+        : result.error.deliveryCertainty === "unknown"
+          ? "unknown"
+          : result.error.code === "VALIDATION_FAILED"
+            ? "invalid_response"
+            : "not_sent",
+    );
+    return result;
+  }
+
+  async #postOnce(
     tenantId: TenantId,
     urlField: "recipientRouterUrl" | "reverseRouteUrl" | "deliveryUrl" | "feedbackUrl",
     value: unknown,

@@ -1,8 +1,13 @@
 import { GetBucketVersioningCommand, HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
-import { EncryptedS3BlobStore, type EnvelopeKeyService } from "@mail-edge/blob-s3";
+import {
+  EncryptedS3BlobStore,
+  type BlobOperationTelemetrySink,
+  type EnvelopeKeyService,
+} from "@mail-edge/blob-s3";
 import { MailEdgeError, type Result } from "@mail-edge/contracts";
 import type { Clock, SecretResolver } from "@mail-edge/core";
 import { StreamingHeaderPatchApplier } from "@mail-edge/mime";
+import type { OpenTelemetryMetricProducer } from "@mail-edge/observability";
 import {
   createPostgresRepositories,
   loadVerifiedMigrations,
@@ -10,6 +15,7 @@ import {
   PostgresDatabase,
   PostgresMigrationRunner,
   PostgresAuditRepository,
+  type BlobSecurityRejectionSink,
   PostgresUnitOfWork,
   type SensitiveValueCipher,
 } from "@mail-edge/postgres";
@@ -290,6 +296,7 @@ export const buildInfrastructure = async (input: {
   readonly config: ReferenceServiceConfig;
   readonly clock: Clock;
   readonly envelopeKeys: EnvelopeKeyService;
+  readonly metrics: OpenTelemetryMetricProducer;
   readonly sensitiveValueCipher: SensitiveValueCipher;
   readonly secrets: SecretResolver;
   readonly signal: AbortSignal;
@@ -321,7 +328,12 @@ export const buildInfrastructure = async (input: {
       input.config.postgres.statementTimeoutMilliseconds,
       database.canceler,
     );
-    const blobMetadata = new PostgresBlobRepository(unitOfWork);
+    const securityTelemetry: BlobSecurityRejectionSink = {
+      record: (surface, reasonCode) => {
+        input.metrics.recordSecurityRejection(surface, reasonCode);
+      },
+    };
+    const blobMetadata = new PostgresBlobRepository(unitOfWork, securityTelemetry);
     const repositories = createPostgresRepositories(unitOfWork, input.sensitiveValueCipher);
     const s3 = new S3Client({
       credentials: {
@@ -335,6 +347,18 @@ export const buildInfrastructure = async (input: {
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
     });
+    const blobTelemetry: BlobOperationTelemetrySink = {
+      recordIntegrityFailure: (operation) => {
+        input.metrics.recordBlobIntegrityFailure(operation);
+      },
+      recordOperation: (operation) => {
+        input.metrics.recordBlobOperation(
+          operation.operation,
+          operation.outcome,
+          operation.durationMilliseconds,
+        );
+      },
+    };
     const blobStore = new EncryptedS3BlobStore({
       clock: input.clock,
       config: {
@@ -360,6 +384,7 @@ export const buildInfrastructure = async (input: {
       keyService: input.envelopeKeys,
       metadata: blobMetadata,
       s3,
+      telemetry: blobTelemetry,
     });
     const queue = new PgBossWakeupScheduler(
       {
@@ -396,6 +421,7 @@ export const buildInfrastructure = async (input: {
           clock: input.clock,
           database,
           headerPatchApplier: new StreamingHeaderPatchApplier(),
+          metrics: input.metrics,
           queue,
           repositories,
           s3,

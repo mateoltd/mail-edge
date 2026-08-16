@@ -356,10 +356,12 @@ describe("real S3 and PostgreSQL fault boundaries", { concurrent: false }, () =>
     );
     expect(gap.rows[0]).toEqual({ raw_count: "0", state: "promoting" });
 
-    const repaired = await new BlobPromotionRepairWorker(faultMetadata, faultBlobs, 10).runTenant(
-      tenantId,
-      AbortSignal.timeout(10_000),
-    );
+    const repaired = await new BlobPromotionRepairWorker({
+      blobs: faultBlobs,
+      clock: { now: () => new Date(Date.parse(occurredAt) + 1_000).toISOString() },
+      config: { batchSize: 10, staleAfterMilliseconds: 1 },
+      metadata: faultMetadata,
+    }).runTenant(tenantId, AbortSignal.timeout(10_000));
     expect(repaired).toMatchObject({ ok: true, value: [{ raw: { blobId: stageId } }] });
     const durable = await owner.query<{ count: string }>(
       "SELECT count(*)::text AS count FROM raw_blobs WHERE tenant_id = $1 AND blob_id = $2",

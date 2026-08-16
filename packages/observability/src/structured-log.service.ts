@@ -11,6 +11,7 @@ export interface StructuredLogField {
 export interface StructuredLogSinkConfig {
   readonly allowedFields: readonly string[];
   readonly maximumEventBytes: number;
+  readonly onDrop?: () => void;
 }
 
 const keyExpression = /^[a-z][a-z0-9_.]{0,63}$/u;
@@ -27,6 +28,7 @@ export const containsPotentialPii = (key: string, value: StructuredLogValue): bo
 export class StructuredLogSink {
   readonly #allowedFields: ReadonlySet<string>;
   readonly #maximumEventBytes: number;
+  readonly #onDrop: (() => void) | undefined;
   readonly #write: (line: string) => void;
   #dropped = 0;
 
@@ -43,6 +45,7 @@ export class StructuredLogSink {
     }
     this.#allowedFields = new Set(config.allowedFields);
     this.#maximumEventBytes = config.maximumEventBytes;
+    this.#onDrop = config.onDrop;
     this.#write = write;
   }
 
@@ -62,22 +65,31 @@ export class StructuredLogSink {
           (typeof field.value === "string" && Buffer.byteLength(field.value, "utf8") > 256),
       )
     ) {
-      this.#dropped += 1;
+      this.#drop();
       return false;
     }
     const output: Record<string, StructuredLogValue> = { event };
     for (const field of fields) output[field.key] = field.value;
     const line = `${JSON.stringify(output)}\n`;
     if (Buffer.byteLength(line, "utf8") > this.#maximumEventBytes) {
-      this.#dropped += 1;
+      this.#drop();
       return false;
     }
     try {
       this.#write(line);
       return true;
     } catch {
-      this.#dropped += 1;
+      this.#drop();
       return false;
+    }
+  }
+
+  #drop(): void {
+    this.#dropped += 1;
+    try {
+      this.#onDrop?.();
+    } catch {
+      // Drop reporting is telemetry too and cannot affect application behavior.
     }
   }
 }

@@ -44,6 +44,7 @@ import type {
 } from "@mail-edge/provider";
 import type { PgBossWakeupScheduler } from "@mail-edge/queue-pg-boss";
 import type { MailEdgeSdk } from "@mail-edge/sdk";
+import type { OpenTelemetryMetricProducer } from "@mail-edge/observability";
 
 import type { ReferenceServiceConfig } from "./config.js";
 
@@ -135,6 +136,7 @@ export interface ReferenceServiceInfrastructure {
   readonly clock: Clock;
   readonly database: PostgresDatabase;
   readonly headerPatchApplier: HeaderPatchApplierPort;
+  readonly metrics: OpenTelemetryMetricProducer;
   readonly queue: PgBossWakeupScheduler;
   readonly repositories: MailEdgeRepositories;
   readonly s3: S3Client;

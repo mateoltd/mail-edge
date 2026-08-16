@@ -125,5 +125,5 @@ results; it does not turn unavailable or failed gates into passes.
   sample peak RSS and event-loop delay.
 - The synthetic fleet exercises bounded lookup cardinality and allocation shape, not database query
   planning.
-- No dashboard or alert is considered operational when its catalog producer status is
-  `runtime_missing` or `collector_possible`.
+- Dashboard and alert qualification requires every catalog producer to be `verified_runtime` or
+  `verified_collector`; missing or prospective producers fail asset validation.

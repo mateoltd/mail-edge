@@ -1,7 +1,7 @@
 {
   "schemaVersion": "mail-edge-metric-catalog-v1",
   "normativeSource": "IMPLEMENTATION_PLAN.md section 14.1",
-  "currentProducerSummary": "No Prometheus or OpenTelemetry metric producer is wired at base 51f7b6e3f031960f4ba812d356f89a308b759bfe.",
+  "currentProducerSummary": "The shipped reference service owns a bounded OpenTelemetry producer, Prometheus reader, RLS-preserving PostgreSQL aggregate collector, and end-to-end scrape tests.",
   "forbiddenLabels": [
     "tenant",
     "tenant_id",
@@ -26,13 +26,26 @@
       "labels": [
         { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
         { "name": "mode", "maximumValues": 2, "registry": ["smtp_raw", "worker-frames-send-raw"] },
-        { "name": "outcome", "maximumValues": 8, "registry": [] }
+        {
+          "name": "outcome",
+          "maximumValues": 8,
+          "registry": [
+            "accepted",
+            "duplicate",
+            "rejected",
+            "failed",
+            "aborted",
+            "limit_exceeded",
+            "invalid",
+            "unavailable"
+          ]
+        }
       ],
       "maximumLabelSets": 48,
       "source": "ingress boundary event instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "The outcome registry must be frozen before activation; HTTP completion logs do not preserve provider and mode together."
+      "status": "verified_runtime",
+      "currentProducer": "OpenTelemetryMetricProducer through ReferenceHttpServer ingress leases",
+      "notes": "The outcome registry is frozen and the lease retains byte counts only."
     },
     {
       "name": "mail_edge_ingress_stream_bytes_total",
@@ -40,12 +53,25 @@
       "labels": [
         { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
         { "name": "mode", "maximumValues": 2, "registry": ["smtp_raw", "worker-frames-send-raw"] },
-        { "name": "outcome", "maximumValues": 8, "registry": [] }
+        {
+          "name": "outcome",
+          "maximumValues": 8,
+          "registry": [
+            "accepted",
+            "duplicate",
+            "rejected",
+            "failed",
+            "aborted",
+            "limit_exceeded",
+            "invalid",
+            "unavailable"
+          ]
+        }
       ],
       "maximumLabelSets": 48,
       "source": "stream byte accounting instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "OpenTelemetryMetricProducer through the consumed HTTP byte source",
       "notes": "Only confirmed streamed bytes may increment this counter."
     },
     {
@@ -57,9 +83,9 @@
       ],
       "maximumLabelSets": 6,
       "source": "ingress stream lifecycle instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "The existing request concurrency gate is not an ingress-stream producer."
+      "status": "verified_runtime",
+      "currentProducer": "OpenTelemetryMetricProducer ingress lifecycle lease",
+      "notes": "Every acquired ingress metric lease decrements exactly once on all terminal paths."
     },
     {
       "name": "mail_edge_scratch_objects",
@@ -86,9 +112,9 @@
       ],
       "maximumLabelSets": 21,
       "source": "blob_ingest_stages current-state aggregate",
-      "status": "collector_possible",
-      "currentProducer": "none",
-      "notes": "Requires a reviewed read-only collector that preserves tenant isolation and emits no identifiers."
+      "status": "verified_collector",
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer",
+      "notes": "The collector enumerates bounded active-tenant pages and aggregates inside RLS tenant transactions."
     },
     {
       "name": "mail_edge_workflow_state",
@@ -106,12 +132,39 @@
             "maintenance"
           ]
         },
-        { "name": "state", "maximumValues": 32, "registry": [] }
+        {
+          "name": "state",
+          "maximumValues": 32,
+          "registry": [
+            "received",
+            "accepted",
+            "acquiring",
+            "stored",
+            "routing",
+            "ready",
+            "delivering",
+            "dispatching",
+            "retry_wait",
+            "provider_accepted",
+            "failed_not_sent",
+            "quarantined_unknown",
+            "canceled",
+            "delivered",
+            "quarantined",
+            "dead_letter",
+            "purged",
+            "claimed",
+            "resolved",
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        }
       ],
       "maximumLabelSets": 192,
       "source": "workflow tables current-state aggregate",
-      "status": "collector_possible",
-      "currentProducer": "none",
+      "status": "verified_collector",
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer",
       "notes": "The state registry must be the frozen union of legal states for each workflow."
     },
     {
@@ -130,13 +183,67 @@
             "maintenance"
           ]
         },
-        { "name": "from", "maximumValues": 32, "registry": [] },
-        { "name": "to", "maximumValues": 32, "registry": [] }
+        {
+          "name": "from",
+          "maximumValues": 32,
+          "registry": [
+            "received",
+            "accepted",
+            "acquiring",
+            "stored",
+            "routing",
+            "ready",
+            "delivering",
+            "dispatching",
+            "retry_wait",
+            "provider_accepted",
+            "failed_not_sent",
+            "quarantined_unknown",
+            "canceled",
+            "delivered",
+            "quarantined",
+            "dead_letter",
+            "purged",
+            "claimed",
+            "resolved",
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        },
+        {
+          "name": "to",
+          "maximumValues": 32,
+          "registry": [
+            "received",
+            "accepted",
+            "acquiring",
+            "stored",
+            "routing",
+            "ready",
+            "delivering",
+            "dispatching",
+            "retry_wait",
+            "provider_accepted",
+            "failed_not_sent",
+            "quarantined_unknown",
+            "canceled",
+            "delivered",
+            "quarantined",
+            "dead_letter",
+            "purged",
+            "claimed",
+            "resolved",
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        }
       ],
       "maximumLabelSets": 6144,
       "source": "durable transition event instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "JsonRuntimeObservability through OpenTelemetryMetricProducer",
       "notes": "Current-state SQL counts cannot truthfully reconstruct a monotonic transition counter."
     },
     {
@@ -158,9 +265,9 @@
       ],
       "maximumLabelSets": 6,
       "source": "eligible workflow due timestamps current-state aggregate",
-      "status": "collector_possible",
-      "currentProducer": "none",
-      "notes": "runtime.backlog is implemented but has no production call site."
+      "status": "verified_collector",
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer",
+      "notes": "Due ages are computed from eligible timestamps inside tenant-scoped aggregate transactions."
     },
     {
       "name": "mail_edge_worker_claim_total",
@@ -178,12 +285,16 @@
             "maintenance"
           ]
         },
-        { "name": "result", "maximumValues": 8, "registry": [] }
+        {
+          "name": "result",
+          "maximumValues": 8,
+          "registry": ["claimed", "empty", "failed", "stale", "backpressured", "skipped"]
+        }
       ],
       "maximumLabelSets": 48,
       "source": "worker claim boundary instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "JsonRuntimeObservability through OpenTelemetryMetricProducer",
       "notes": "Post-operation runtime logs cannot distinguish every claim result."
     },
     {
@@ -205,8 +316,8 @@
       ],
       "maximumLabelSets": 6,
       "source": "lease recovery instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "DurableLeaseRecoveryWorker through OpenTelemetryMetricProducer",
       "notes": "A current stale-lease query is useful for diagnosis but is not a historical counter."
     },
     {
@@ -219,9 +330,9 @@
       ],
       "maximumLabelSets": 18,
       "source": "provider dispatch completion instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "The existing optional provider sink is unwired and does not classify every accepted or failed execution."
+      "status": "verified_runtime",
+      "currentProducer": "DurableOutboundWorker execution completion through OpenTelemetryMetricProducer",
+      "notes": "Exactly one completion event covers accepted, proved-not-sent and unknown executions."
     },
     {
       "name": "mail_edge_dispatch_phase_seconds",
@@ -237,9 +348,9 @@
       ],
       "maximumLabelSets": 48,
       "source": "correlated provider phase timing instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "Current phase events have neither durations nor an attempt-safe correlation key."
+      "status": "verified_runtime",
+      "currentProducer": "DispatchBoundaryRecorder phase completion through OpenTelemetryMetricProducer",
+      "notes": "Monotonic phase durations use process-local monotonic time and carry no attempt identity."
     },
     {
       "name": "mail_edge_quarantine_unknown_total",
@@ -247,13 +358,26 @@
       "labels": [
         { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
         { "name": "transport", "maximumValues": 2, "registry": ["http", "smtp"] },
-        { "name": "evidence_code", "maximumValues": 64, "registry": [] }
+        {
+          "name": "evidence_code",
+          "maximumValues": 8,
+          "registry": [
+            "boundary_unknown",
+            "transport_closed",
+            "timeout",
+            "canceled",
+            "integrity_failure",
+            "provider_rejection",
+            "instrumentation_mismatch",
+            "other"
+          ]
+        }
       ],
-      "maximumLabelSets": 384,
+      "maximumLabelSets": 48,
       "source": "outbound quarantine commit instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "Evidence codes must come from a frozen bounded registry before activation."
+      "status": "verified_runtime",
+      "currentProducer": "DurableOutboundWorker execution completion through OpenTelemetryMetricProducer",
+      "notes": "Detailed evidence is reduced to a frozen identity-free category registry."
     },
     {
       "name": "mail_edge_feedback_total",
@@ -279,8 +403,8 @@
       ],
       "maximumLabelSets": 54,
       "source": "feedback commit and deduplication instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "ProductionReferenceServiceWorkflow feedback commit through OpenTelemetryMetricProducer",
       "notes": "The feedback ledger is durable, but mutable or retained row counts are not a monotonic process counter."
     },
     {
@@ -297,70 +421,162 @@
       ],
       "maximumLabelSets": 45,
       "source": "binding check append instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "ProductionReferenceServiceWorkflow control-plane checks through OpenTelemetryMetricProducer",
       "notes": "Counting retained route_binding_checks rows cannot satisfy Prometheus counter reset semantics."
     },
     {
       "name": "mail_edge_blob_operation_seconds",
       "type": "histogram",
       "labels": [
-        { "name": "operation", "maximumValues": 16, "registry": [] },
-        { "name": "outcome", "maximumValues": 8, "registry": [] }
+        {
+          "name": "operation",
+          "maximumValues": 16,
+          "registry": [
+            "reserve",
+            "write",
+            "complete",
+            "abort",
+            "get_reference",
+            "open",
+            "purge",
+            "restore",
+            "repair",
+            "cleanup",
+            "retention",
+            "orphan_reap",
+            "promotion",
+            "delete",
+            "verify"
+          ]
+        },
+        {
+          "name": "outcome",
+          "maximumValues": 8,
+          "registry": ["succeeded", "failed", "aborted", "not_found", "conflict"]
+        }
       ],
       "maximumLabelSets": 128,
       "source": "blob adapter operation timing instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "Operation and outcome registries must be frozen before activation."
+      "status": "verified_runtime",
+      "currentProducer": "EncryptedS3BlobStore telemetry boundary through OpenTelemetryMetricProducer",
+      "notes": "Operation and outcome registries are frozen and contain no storage identity."
     },
     {
       "name": "mail_edge_blob_orphans",
       "type": "gauge",
       "labels": [
-        { "name": "kind", "maximumValues": 8, "registry": [] },
-        { "name": "age_bucket", "maximumValues": 8, "registry": [] }
+        {
+          "name": "kind",
+          "maximumValues": 8,
+          "registry": ["available_unreferenced", "final_without_blob_row"]
+        },
+        {
+          "name": "age_bucket",
+          "maximumValues": 8,
+          "registry": ["under_1h", "one_to_24h", "one_to_7d", "over_7d"]
+        }
       ],
       "maximumLabelSets": 64,
       "source": "raw blob reference summary and orphan observations current-state aggregate",
-      "status": "collector_possible",
-      "currentProducer": "none",
-      "notes": "Kind and age bucket registries must be frozen before the read-only collector is activated."
+      "status": "verified_collector",
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer",
+      "notes": "The PostgreSQL collector emits available-unreferenced candidates; S3 inventory qualification covers final objects without rows."
     },
     {
       "name": "mail_edge_blob_integrity_failure_total",
       "type": "counter",
-      "labels": [{ "name": "operation", "maximumValues": 16, "registry": [] }],
+      "labels": [
+        {
+          "name": "operation",
+          "maximumValues": 16,
+          "registry": [
+            "reserve",
+            "write",
+            "complete",
+            "abort",
+            "get_reference",
+            "open",
+            "purge",
+            "restore",
+            "repair",
+            "cleanup",
+            "retention",
+            "orphan_reap",
+            "promotion",
+            "delete",
+            "verify"
+          ]
+        }
+      ],
       "maximumLabelSets": 16,
       "source": "blob integrity failure instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "EncryptedS3BlobStore integrity boundary through OpenTelemetryMetricProducer",
       "notes": "Current corrupt rows are a useful gauge but cannot reconstruct failures after repair."
     },
     {
       "name": "mail_edge_callback_total",
       "type": "counter",
       "labels": [
-        { "name": "kind", "maximumValues": 8, "registry": [] },
-        { "name": "outcome", "maximumValues": 8, "registry": [] }
+        {
+          "name": "kind",
+          "maximumValues": 8,
+          "registry": [
+            "recipient_route",
+            "reverse_route",
+            "application_delivery",
+            "application_feedback"
+          ]
+        },
+        {
+          "name": "outcome",
+          "maximumValues": 8,
+          "registry": ["succeeded", "not_sent", "unknown", "invalid_response", "failed"]
+        }
       ],
       "maximumLabelSets": 64,
       "source": "host callback boundary instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "Kind and outcome registries must be frozen before activation."
+      "status": "verified_runtime",
+      "currentProducer": "SignedHostIntegrationAdapter through OpenTelemetryMetricProducer",
+      "notes": "Kind and outcome registries are frozen and identity-free."
     },
     {
       "name": "mail_edge_security_rejection_total",
       "type": "counter",
       "labels": [
-        { "name": "surface", "maximumValues": 16, "registry": [] },
-        { "name": "reason_code", "maximumValues": 64, "registry": [] }
+        {
+          "name": "surface",
+          "maximumValues": 16,
+          "registry": [
+            "host_api",
+            "raw_access",
+            "provider_ingress",
+            "control_plane",
+            "blob_purge",
+            "webhook",
+            "worker_ingress"
+          ]
+        },
+        {
+          "name": "reason_code",
+          "maximumValues": 64,
+          "registry": [
+            "authentication_failed",
+            "authorization_failed",
+            "legal_hold_active",
+            "replay_rejected",
+            "signature_rejected",
+            "tenant_isolation",
+            "request_invalid",
+            "other"
+          ]
+        }
       ],
       "maximumLabelSets": 1024,
       "source": "authentication and authorization decision instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
+      "status": "verified_runtime",
+      "currentProducer": "ReferenceHttpServer and PostgresBlobRepository through OpenTelemetryMetricProducer",
       "notes": "Only bounded safe reason codes are allowed; request, tenant and credential identities are forbidden."
     },
     {
@@ -375,9 +591,72 @@
       ],
       "maximumLabelSets": 6,
       "source": "telemetry sink rejection instrumentation required",
-      "status": "runtime_missing",
-      "currentProducer": "none",
-      "notes": "StructuredLogSink currently retains only an unexported process-local dropped count."
+      "status": "verified_runtime",
+      "currentProducer": "StructuredLogSink onDrop through OpenTelemetryMetricProducer",
+      "notes": "Every rejected production structured-log event increments the exported counter without recursive logging."
+    }
+  ],
+  "alertMetrics": [
+    {
+      "name": "mail_edge_stale_dispatching_attempts",
+      "type": "gauge",
+      "labels": [],
+      "maximumLabelSets": 1,
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer"
+    },
+    {
+      "name": "mail_edge_active_binding_evidence",
+      "type": "gauge",
+      "labels": [{ "name": "status", "maximumValues": 2, "registry": ["expired", "expiring_72h"] }],
+      "maximumLabelSets": 2,
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer"
+    },
+    {
+      "name": "mail_edge_routing_drift_gaps",
+      "type": "gauge",
+      "labels": [{ "name": "kind", "maximumValues": 1, "registry": ["drift_check_failed"] }],
+      "maximumLabelSets": 1,
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer"
+    },
+    {
+      "name": "mail_edge_scratch_oldest_age_seconds",
+      "type": "gauge",
+      "labels": [
+        {
+          "name": "state",
+          "maximumValues": 7,
+          "registry": [
+            "reserved",
+            "uploading",
+            "uploaded",
+            "verified",
+            "promoting",
+            "promoted",
+            "abandoned"
+          ]
+        },
+        {
+          "name": "purpose",
+          "maximumValues": 3,
+          "registry": ["inbound", "outbound_upload", "derived"]
+        }
+      ],
+      "maximumLabelSets": 21,
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer"
+    },
+    {
+      "name": "mail_edge_nonce_cleanup_lag_seconds",
+      "type": "gauge",
+      "labels": [],
+      "maximumLabelSets": 1,
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer"
+    },
+    {
+      "name": "mail_edge_retention_lag_seconds",
+      "type": "gauge",
+      "labels": [],
+      "maximumLabelSets": 1,
+      "currentProducer": "PostgresOperationalMetricsCollector through OpenTelemetryMetricProducer"
     }
   ],
   "recordingRules": [

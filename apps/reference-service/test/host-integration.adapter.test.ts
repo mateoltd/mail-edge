@@ -119,12 +119,14 @@ const secrets = Object.freeze({
       value: Uint8Array.from(Buffer.from("0123456789abcdef0123456789abcdef")),
     }),
 });
+const metrics = Object.freeze({ recordCallback: () => undefined });
 
 const deliverThroughHostAdapter = (fetchImplementation: typeof fetch) =>
   new SignedHostIntegrationAdapter({
     clock: Object.freeze({ now: () => now }),
     configs: [config],
     fetchImplementation,
+    metrics,
     secrets,
   }).deliver(callback, new AbortController().signal);
 
@@ -152,6 +154,7 @@ const resolveThroughHostAdapter = async (destinations: unknown) => {
         }),
       );
     },
+    metrics,
     secrets,
   });
 
@@ -248,6 +251,7 @@ describe("signed host integration problem outcomes", () => {
       const adapter = new SignedHostIntegrationAdapter({
         clock: Object.freeze({ now: () => now }),
         configs: [{ ...config, deliveryUrl: `http://127.0.0.1:${String(address.port)}` }],
+        metrics,
         secrets,
       });
 

@@ -44,7 +44,6 @@ type EvidenceResult<T> =
 const sourceRevisionExpression = /^[0-9a-f]{40}$/u;
 const assertionExpression = /^[a-z][a-z0-9_]{0,95}$/u;
 const detailKeyExpression = /^[a-z][a-zA-Z0-9]{0,63}$/u;
-const drillIds = new Set<string>(productionDrillIds);
 
 const validDetails = (details: ProductionDrillObservation["details"]): boolean => {
   const entries = Object.entries(details);
@@ -77,7 +76,7 @@ export const compileProductionDrillEvidence = (
   }
   const byId = new Map<ProductionDrillId, ProductionDrillObservation>();
   for (const observation of observations) {
-    if (!drillIds.has(observation.drillId)) {
+    if (!productionDrillIds.includes(observation.drillId)) {
       return { error: { code: "invalid_drill", drillId: observation.drillId }, ok: false };
     }
     if (byId.has(observation.drillId)) {

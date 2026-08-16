@@ -70,6 +70,7 @@ export interface RuntimeObservabilityPort {
     readonly ready: number;
     readonly oldestAgeMilliseconds: number;
   }): void;
+  recordLeaseRecovery?(input: Omit<LeaseRecoveryResult, "wakeups">): void;
 }
 
 /** Resolves an opaque queue identifier before any tenant-scoped transaction begins. @public */

@@ -77,6 +77,15 @@ export class DurableLeaseRecoveryWorker {
           workflow: "maintenance",
           ...(result.ok ? {} : { errorCode: result.error.code }),
         });
+        if (result.ok) {
+          this.#observability.recordLeaseRecovery?.({
+            applicationDeliveries: result.value.applicationDeliveries,
+            feedbackApplications: result.value.feedbackApplications,
+            inboundReceipts: result.value.inboundReceipts,
+            outboundDispatchesQuarantined: result.value.outboundDispatchesQuarantined,
+            reconciliationClaims: result.value.reconciliationClaims,
+          });
+        }
       });
       return result;
     });

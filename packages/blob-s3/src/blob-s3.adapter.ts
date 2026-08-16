@@ -36,6 +36,7 @@ import type {
   BlobFailure,
   BlobId,
   BlobMetadataStore,
+  BlobOperationTelemetrySink,
   BlobPurgeClaim,
   BlobReservation,
   BlobTenantId,
@@ -213,10 +214,12 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
   readonly #config: Readonly<EncryptedS3BlobStoreConfig>;
   readonly #keyService: EnvelopeKeyService;
   readonly #metadata: BlobMetadataStore;
+  readonly #operationStartedAt: number;
   readonly #record: StoredBlobRecord;
   readonly #s3: S3Client;
   readonly #signal: AbortSignal;
   readonly #tenantId: BlobTenantId;
+  readonly #telemetry: BlobOperationTelemetrySink | undefined;
   #claimed = false;
 
   constructor(input: {
@@ -224,18 +227,22 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
     readonly clock: BlobClock;
     readonly keyService: EnvelopeKeyService;
     readonly metadata: BlobMetadataStore;
+    readonly operationStartedAt: number;
     readonly record: StoredBlobRecord;
     readonly s3: S3Client;
     readonly signal: AbortSignal;
+    readonly telemetry?: BlobOperationTelemetrySink;
     readonly tenantId: BlobTenantId;
   }) {
     this.#config = input.config;
     this.#clock = input.clock;
     this.#keyService = input.keyService;
     this.#metadata = input.metadata;
+    this.#operationStartedAt = input.operationStartedAt;
     this.#record = input.record;
     this.#s3 = input.s3;
     this.#signal = input.signal;
+    this.#telemetry = input.telemetry;
     this.#tenantId = input.tenantId;
   }
 
@@ -250,6 +257,8 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
   async *#read(): AsyncGenerator<Uint8Array> {
     const operationSignal = boundedOperationSignal(this.#config, this.#signal);
     let key: Uint8Array | undefined;
+    let outcome: "aborted" | "failed" | "succeeded" = "aborted";
+    let operationRecorded = false;
     let responseBody: unknown;
     const cancel = (): void => {
       destroyResponseBody(responseBody, operationSignal.reason);
@@ -301,8 +310,17 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
         this.#record.raw.size,
         headerSha256,
       );
+      outcome = "succeeded";
     } catch (cause) {
+      outcome = "failed";
+      operationRecorded = true;
+      this.#recordOpenOperation(outcome);
       if (cause instanceof RawMessageIntegrityError) {
+        try {
+          this.#telemetry?.recordIntegrityFailure("open");
+        } catch {
+          // Telemetry cannot change blob integrity handling.
+        }
         try {
           const quarantined = await this.#metadata.markCorrupt(
             {
@@ -338,9 +356,22 @@ class LazyDecryptedRawBody implements AsyncIterable<Uint8Array> {
       }
       throw cause;
     } finally {
+      if (!operationRecorded) this.#recordOpenOperation(outcome);
       operationSignal.removeEventListener("abort", cancel);
       key?.fill(0);
       destroyResponseBody(responseBody);
+    }
+  }
+
+  #recordOpenOperation(outcome: "aborted" | "failed" | "succeeded"): void {
+    try {
+      this.#telemetry?.recordOperation({
+        durationMilliseconds: Math.max(0, performance.now() - this.#operationStartedAt),
+        operation: "open",
+        outcome,
+      });
+    } catch {
+      // Telemetry cannot change blob stream completion behavior.
     }
   }
 }
@@ -861,6 +892,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
   readonly #keyService: EnvelopeKeyService;
   readonly #metadata: BlobMetadataStore;
   readonly #s3: S3Client;
+  readonly #telemetry: BlobOperationTelemetrySink | undefined;
 
   constructor(input: {
     readonly s3: S3Client;
@@ -869,6 +901,7 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
     readonly clock: BlobClock;
     readonly errors: BlobErrorFactory;
     readonly config: EncryptedS3BlobStoreConfig;
+    readonly telemetry?: BlobOperationTelemetrySink;
   }) {
     validateConfig(input.config);
     this.#bucket = input.config.bucket;
@@ -878,9 +911,28 @@ export class EncryptedS3BlobStagePort implements BlobStagePort {
     this.#keyService = input.keyService;
     this.#metadata = input.metadata;
     this.#s3 = input.s3;
+    this.#telemetry = input.telemetry;
   }
 
   async reserve(
+    reservation: BlobReservation,
+    signal: AbortSignal,
+  ): Promise<DriverResult<BlobStageWriter>> {
+    const started = performance.now();
+    const result = await this.#reserve(reservation, signal);
+    try {
+      this.#telemetry?.recordOperation({
+        durationMilliseconds: Math.max(0, performance.now() - started),
+        operation: "reserve",
+        outcome: result.ok ? "succeeded" : "failed",
+      });
+    } catch {
+      // Telemetry cannot change blob reservation behavior.
+    }
+    return result;
+  }
+
+  async #reserve(
     reservation: BlobReservation,
     signal: AbortSignal,
   ): Promise<DriverResult<BlobStageWriter>> {
@@ -1017,6 +1069,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
   readonly #keyService: EnvelopeKeyService;
   readonly #metadata: BlobMetadataStore;
   readonly #s3: S3Client;
+  readonly #telemetry: BlobOperationTelemetrySink | undefined;
 
   constructor(input: {
     readonly s3: S3Client;
@@ -1025,6 +1078,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     readonly clock: BlobClock;
     readonly errors: BlobErrorFactory;
     readonly config: EncryptedS3BlobStoreConfig;
+    readonly telemetry?: BlobOperationTelemetrySink;
   }) {
     validateConfig(input.config);
     this.#bucket = input.config.bucket;
@@ -1034,10 +1088,22 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     this.#keyService = input.keyService;
     this.#metadata = input.metadata;
     this.#s3 = input.s3;
+    this.#telemetry = input.telemetry;
     this.stages = new EncryptedS3BlobStagePort(input);
   }
 
   async getAvailableReference(
+    tenantId: BlobTenantId,
+    blobId: BlobId,
+    signal: AbortSignal,
+  ): ReturnType<BlobStorePort["getAvailableReference"]> {
+    const started = performance.now();
+    const result = await this.#getAvailableReference(tenantId, blobId, signal);
+    this.#recordOperation("get_reference", result, started);
+    return result;
+  }
+
+  async #getAvailableReference(
     tenantId: BlobTenantId,
     blobId: BlobId,
     signal: AbortSignal,
@@ -1065,6 +1131,18 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     blobId: BlobId,
     signal: AbortSignal,
   ): ReturnType<BlobStorePort["openRaw"]> {
+    const started = performance.now();
+    const result = await this.#openRaw(tenantId, blobId, started, signal);
+    if (!result.ok) this.#recordOperation("open", result, started);
+    return result;
+  }
+
+  async #openRaw(
+    tenantId: BlobTenantId,
+    blobId: BlobId,
+    operationStartedAt: number,
+    signal: AbortSignal,
+  ): ReturnType<BlobStorePort["openRaw"]> {
     const operationSignal = boundedOperationSignal(this.#config, signal);
     const record = await this.#metadata.getBlob(tenantId, blobId, operationSignal);
     if (!record.ok) {
@@ -1089,9 +1167,11 @@ export class EncryptedS3BlobStore implements BlobStorePort {
           config: this.#config,
           keyService: this.#keyService,
           metadata: this.#metadata,
+          operationStartedAt,
           record: record.value,
           s3: this.#s3,
           signal,
+          ...(this.#telemetry === undefined ? {} : { telemetry: this.#telemetry }),
           tenantId,
         }),
         contentLength: record.value.raw.size,
@@ -1101,6 +1181,17 @@ export class EncryptedS3BlobStore implements BlobStorePort {
   }
 
   async purge(
+    claim: BlobPurgeClaim,
+    occurredAt: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<void>> {
+    const started = performance.now();
+    const result = await this.#purge(claim, occurredAt, signal);
+    this.#recordOperation("purge", result, started);
+    return result;
+  }
+
+  async #purge(
     claim: BlobPurgeClaim,
     occurredAt: string,
     signal: AbortSignal,
@@ -1143,7 +1234,56 @@ export class EncryptedS3BlobStore implements BlobStorePort {
     }
   }
 
+  #recordOperation(
+    operation: "get_reference" | "open" | "purge" | "restore" | "repair",
+    result: DriverResult<unknown>,
+    started: number,
+  ): void {
+    try {
+      this.#telemetry?.recordOperation({
+        durationMilliseconds: Math.max(0, performance.now() - started),
+        operation,
+        outcome: result.ok
+          ? "succeeded"
+          : result.error.code === "NOT_FOUND"
+            ? "not_found"
+            : result.error.code === "CONFLICT"
+              ? "conflict"
+              : "failed",
+      });
+    } catch {
+      // Telemetry cannot change blob behavior.
+    }
+  }
+
+  #recordIntegrityFailure(operation: "restore" | "repair"): void {
+    try {
+      this.#telemetry?.recordIntegrityFailure(operation);
+    } catch {
+      // Telemetry cannot change blob integrity behavior.
+    }
+  }
+
   async restoreCorrupt(
+    tenantId: BlobTenantId,
+    blobId: BlobId,
+    expectedVersion: number,
+    retainUntil: string,
+    signal: AbortSignal,
+  ): Promise<DriverResult<StoredBlobRecord>> {
+    const started = performance.now();
+    const result = await this.#restoreCorrupt(
+      tenantId,
+      blobId,
+      expectedVersion,
+      retainUntil,
+      signal,
+    );
+    this.#recordOperation("restore", result, started);
+    return result;
+  }
+
+  async #restoreCorrupt(
     tenantId: BlobTenantId,
     blobId: BlobId,
     expectedVersion: number,
@@ -1192,6 +1332,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
         operationSignal,
       );
     } catch (cause) {
+      if (cause instanceof RawMessageIntegrityError) this.#recordIntegrityFailure("restore");
       return {
         error: asFailure(
           this.#errors,
@@ -1206,6 +1347,16 @@ export class EncryptedS3BlobStore implements BlobStorePort {
   }
 
   async repairPromotion(
+    pending: PendingBlobPromotion,
+    signal: AbortSignal,
+  ): Promise<DriverResult<StoredBlobRecord>> {
+    const started = performance.now();
+    const result = await this.#repairPromotion(pending, signal);
+    this.#recordOperation("repair", result, started);
+    return result;
+  }
+
+  async #repairPromotion(
     pending: PendingBlobPromotion,
     signal: AbortSignal,
   ): Promise<DriverResult<StoredBlobRecord>> {
@@ -1273,6 +1424,7 @@ export class EncryptedS3BlobStore implements BlobStorePort {
       await this.#cleanupPromotedScratch(pending, expectedVersion + 1);
       return committed;
     } catch (cause) {
+      if (cause instanceof RawMessageIntegrityError) this.#recordIntegrityFailure("repair");
       return {
         error: asFailure(
           this.#errors,

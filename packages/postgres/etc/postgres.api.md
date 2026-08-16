@@ -307,6 +307,12 @@ export interface BlobPurgeClaim {
     readonly tenantId: TenantId;
 }
 
+// @public
+export interface BlobSecurityRejectionSink {
+    // (undocumented)
+    record(surface: "blob_purge", reasonCode: "legal_hold_active"): void;
+}
+
 // @public (undocumented)
 export interface BlobStageCreation {
     // (undocumented)
@@ -861,7 +867,7 @@ export class PostgresAuditRepository implements AuditPort {
 
 // @public
 export class PostgresBlobRepository {
-    constructor(unitOfWork: PostgresUnitOfWork);
+    constructor(unitOfWork: PostgresUnitOfWork, security?: BlobSecurityRejectionSink);
     // (undocumented)
     abandonStage(tenantId: TenantId, stageId: string, expectedVersion: number, occurredAt: string, signal: AbortSignal): Promise<Result<void, MailEdgeError>>;
     // (undocumented)

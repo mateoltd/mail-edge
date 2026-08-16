@@ -33,11 +33,15 @@ const headers = (request: IncomingMessage): readonly HeaderField[] => {
   return Object.freeze(fields);
 };
 
-export const readableByteSource = (source: Readable): AsyncIterable<Uint8Array> => ({
+export const readableByteSource = (
+  source: Readable,
+  observeBytes?: (bytes: number) => void,
+): AsyncIterable<Uint8Array> => ({
   async *[Symbol.asyncIterator]() {
     for await (const chunk of source) {
       if (!isUint8Array(chunk))
         throw new TypeError("HTTP request stream yielded a non-byte chunk.");
+      observeBytes?.(chunk.byteLength);
       yield Uint8Array.from(chunk);
     }
   },
@@ -48,9 +52,10 @@ export const providerHttpRequest = (input: {
   readonly body: Readable;
   readonly path: string;
   readonly receivedAt: string;
+  readonly observeBytes?: (bytes: number) => void;
 }): OneShotProviderHttpRequest =>
   Object.freeze({
-    body: new OwnedOneShotBody(readableByteSource(input.body), (reason) => {
+    body: new OwnedOneShotBody(readableByteSource(input.body, input.observeBytes), (reason) => {
       if (!input.body.destroyed) {
         if (reason instanceof Error) input.body.destroy(reason);
         else input.body.resume();

@@ -4,7 +4,13 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CreateBucketCommand, PutBucketVersioningCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  CreateBucketCommand,
+  GetObjectCommand,
+  PutBucketVersioningCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import {
   HostSignatureV1Schema,
   MailEdgeError,
@@ -385,6 +391,21 @@ const closeServer = (server: Server): Promise<void> =>
       else reject(cause);
     });
   });
+
+const reserveLocalPort = async (): Promise<number> => {
+  const server = createServer();
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolvePromise);
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    await closeServer(server);
+    throw new TypeError("Metrics fixture did not reserve a TCP port.");
+  }
+  await closeServer(server);
+  return address.port;
+};
 
 const readBody = async (request: AsyncIterable<Uint8Array>): Promise<Buffer> => {
   const chunks: Uint8Array[] = [];
@@ -889,6 +910,7 @@ const makeConfig = (
   minio: StartedMinioContainer,
   kmsPort: number,
   applicationPort: number,
+  metricsPort: number,
 ): ReferenceServiceConfig =>
   parseReferenceServiceConfig({
     authentication: {
@@ -1169,8 +1191,15 @@ const makeConfig = (
     schemaVersion: "v1",
     secretDirectory,
     telemetry: {
-      enabled: false,
+      enabled: true,
       exportTimeoutMilliseconds: 1_000,
+      metrics: {
+        collectionTimeoutMilliseconds: 1_000,
+        enabled: true,
+        host: "127.0.0.1",
+        path: "/metrics",
+        port: metricsPort,
+      },
       serviceName: "reference-production-e2e",
     },
   });
@@ -1263,6 +1292,7 @@ describe("shipped reference-service production composition", { concurrent: false
   let providerProtocols: Awaited<ReturnType<typeof startProviderProtocols>>;
   let secretDirectory: string;
   let config: ReferenceServiceConfig;
+  let metricsPort: number;
   let host: ReferenceServiceHost | undefined;
   const smtp = new SimulatedSmtpConnector();
   const resendSmtp = new LocalResendSmtpConnector();
@@ -1324,7 +1354,8 @@ describe("shipped reference-service production composition", { concurrent: false
         "tenant-two-token": otherTenantToken,
       }).map(([name, value]) => writeFile(join(secretDirectory, name), value, { mode: 0o600 })),
     );
-    config = makeConfig(secretDirectory, minio, kms.port, application.port);
+    metricsPort = await reserveLocalPort();
+    config = makeConfig(secretDirectory, minio, kms.port, application.port, metricsPort);
     if (config.production === undefined) {
       throw new TypeError("The E2E production configuration is missing.");
     }
@@ -1774,6 +1805,37 @@ describe("shipped reference-service production composition", { concurrent: false
     const providerInstances = instancesBody?.["providerInstances"];
     if (!Array.isArray(providerInstances)) throw new TypeError("Instance response was malformed.");
     expect(providerInstances).toHaveLength(3);
+
+    const bindingDiscovery = await fetch(
+      new URL(`/v1/operator/provider-instances/${providerInstanceId}/bindings/discover`, base),
+      {
+        body: JSON.stringify({
+          binding: {
+            adapterMode: "smtp_raw",
+            adapterVersion: "0.1.0",
+            bindingId: inboundBindingId,
+            bindingVersion: 1,
+            capabilityDigest,
+            configRevision: "e2e-v1",
+            createdAt: "2026-08-14T00:00:00.000Z",
+            direction: "inbound",
+            dispatchTransport: "smtp",
+            domainALabel: domain,
+            providerId: "mailgun",
+            providerInstanceId,
+            providerResourceIds: { routeId: "e2e-inbound" },
+            schemaVersion: "v1",
+            tenantId,
+          },
+        }),
+        headers: {
+          ...bearer("reference-e2e-operator-token-material"),
+          "content-type": "application/json",
+        },
+        method: "POST",
+      },
+    );
+    expect(bindingDiscovery.status).toBe(503);
 
     const unauthorized = await fetch(
       new URL(
@@ -2250,5 +2312,174 @@ describe("shipped reference-service production composition", { concurrent: false
     expect(pressureStatuses).toContain(201);
     expect(pressureStatuses).toContain(429);
     expect(pressureStatuses.every((status) => status === 201 || status === 429)).toBe(true);
+
+    const blobToCorrupt = (
+      await owner.query<{
+        blobId: string;
+        objectKey: string;
+        objectVersion: string;
+        sha256: string;
+        size: number;
+      }>(
+        `SELECT blob_id AS "blobId", object_key AS "objectKey",
+                object_version AS "objectVersion", encode(sha256, 'hex') AS sha256,
+                size_bytes::int AS size
+           FROM raw_blobs
+          WHERE tenant_id = $1 AND status = 'available' AND object_version IS NOT NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [tenantId],
+      )
+    ).rows[0];
+    if (blobToCorrupt === undefined) throw new TypeError("No exact blob version was available.");
+    const grantResponse = await fetch(new URL(`/v1/tenants/${tenantId}/raw-access-grants`, base), {
+      body: JSON.stringify({
+        purpose: "operator_review",
+        raw: {
+          blobId: blobToCorrupt.blobId,
+          mediaType: "message/rfc822",
+          schemaVersion: "v1",
+          sha256: blobToCorrupt.sha256,
+          size: blobToCorrupt.size,
+        },
+        singleUse: true,
+        subjectId: "w9-integrity-check",
+      }),
+      headers: { ...bearer(tenantToken), "content-type": "application/json" },
+      method: "POST",
+    });
+    expect(grantResponse.status).toBe(201);
+    const grant = record(await grantResponse.json());
+    if (
+      typeof grant?.["downloadPath"] !== "string" ||
+      typeof grant["opaqueToken"] !== "string" ||
+      typeof grant["audience"] !== "string" ||
+      typeof grant["subjectId"] !== "string"
+    ) {
+      throw new TypeError("Integrity-check raw access grant was malformed.");
+    }
+    const s3 = new S3Client({
+      credentials: { accessKeyId: minio.getUsername(), secretAccessKey: minio.getPassword() },
+      endpoint: minio.getConnectionUrl(),
+      forcePathStyle: true,
+      maxAttempts: 1,
+      region: "us-east-1",
+    });
+    try {
+      const storedObject = await s3.send(
+        new GetObjectCommand({
+          Bucket: "mail-edge-reference-e2e",
+          Key: blobToCorrupt.objectKey,
+          VersionId: blobToCorrupt.objectVersion,
+        }),
+      );
+      if (storedObject.Body === undefined) throw new TypeError("Stored blob body was missing.");
+      const corrupted = Buffer.from(await storedObject.Body.transformToByteArray());
+      if (corrupted.byteLength < 1) throw new TypeError("Stored blob body was empty.");
+      const firstByte = corrupted[0];
+      if (firstByte === undefined) throw new TypeError("Stored blob first byte was missing.");
+      corrupted[0] = firstByte ^ 0xff;
+      const replacement = await s3.send(
+        new PutObjectCommand({
+          Body: corrupted,
+          Bucket: "mail-edge-reference-e2e",
+          ContentType: "application/octet-stream",
+          Key: blobToCorrupt.objectKey,
+        }),
+      );
+      if (replacement.VersionId === undefined) {
+        throw new TypeError("Corrupt fault version was not versioned.");
+      }
+      const faultDatabase = await owner.connect();
+      try {
+        await faultDatabase.query("BEGIN");
+        const staged = await faultDatabase.query(
+          `UPDATE blob_ingest_stages AS stage
+              SET final_object_version = $3
+             FROM raw_blobs AS blob
+            WHERE blob.tenant_id = $1 AND blob.blob_id = $2
+              AND blob.object_version = $4
+              AND stage.tenant_id = blob.tenant_id AND stage.stage_id = blob.source_stage_id
+              AND stage.final_object_version = $4`,
+          [tenantId, blobToCorrupt.blobId, replacement.VersionId, blobToCorrupt.objectVersion],
+        );
+        const updated = await faultDatabase.query(
+          `UPDATE raw_blobs SET object_version = $3
+            WHERE tenant_id = $1 AND blob_id = $2 AND object_version = $4`,
+          [tenantId, blobToCorrupt.blobId, replacement.VersionId, blobToCorrupt.objectVersion],
+        );
+        if (staged.rowCount !== 1 || updated.rowCount !== 1) {
+          throw new TypeError("Exact blob-version fault lost its fence.");
+        }
+        await faultDatabase.query("COMMIT");
+      } catch (cause) {
+        await faultDatabase.query("ROLLBACK");
+        throw cause;
+      } finally {
+        faultDatabase.release();
+      }
+    } finally {
+      s3.destroy();
+    }
+    try {
+      const corruptedDownload = await fetch(new URL(grant["downloadPath"], base), {
+        headers: {
+          "accept-encoding": "identity",
+          authorization: `MailEdgeRaw ${grant["opaqueToken"]}`,
+          "x-mail-edge-operation": "raw_download",
+          "x-mail-edge-signature-audience": grant["audience"],
+          "x-mail-edge-subject-id": grant["subjectId"],
+        },
+      });
+      await corruptedDownload.arrayBuffer();
+    } catch {
+      // The authenticated stream must terminate when the exact ciphertext version is corrupted.
+    }
+    await waitFor(async () => {
+      const result = await owner.query<{ status: string }>(
+        "SELECT status FROM raw_blobs WHERE tenant_id = $1 AND blob_id = $2",
+        [tenantId, blobToCorrupt.blobId],
+      );
+      return result.rows[0]?.status === "corrupt";
+    }, "corrupted exact blob version quarantine");
+
+    const metricsResponse = await fetch(`http://127.0.0.1:${String(metricsPort)}/metrics`);
+    expect(metricsResponse.status).toBe(200);
+    const scraped = await metricsResponse.text();
+    for (const metric of [
+      "mail_edge_ingress_requests_total",
+      "mail_edge_ingress_stream_bytes_total",
+      "mail_edge_ingress_stream_active",
+      "mail_edge_workflow_transition_total",
+      "mail_edge_worker_claim_total",
+      "mail_edge_worker_lease_expired_total",
+      "mail_edge_dispatch_total",
+      "mail_edge_dispatch_phase_seconds",
+      "mail_edge_quarantine_unknown_total",
+      "mail_edge_feedback_total",
+      "mail_edge_binding_check_total",
+      "mail_edge_blob_operation_seconds",
+      "mail_edge_blob_integrity_failure_total",
+      "mail_edge_callback_total",
+      "mail_edge_security_rejection_total",
+      "mail_edge_scratch_objects",
+      "mail_edge_workflow_state",
+      "mail_edge_workflow_oldest_due_seconds",
+      "mail_edge_blob_orphans",
+      "mail_edge_stale_dispatching_attempts",
+      "mail_edge_active_binding_evidence",
+      "mail_edge_routing_drift_gaps",
+      "mail_edge_scratch_oldest_age_seconds",
+      "mail_edge_nonce_cleanup_lag_seconds",
+      "mail_edge_retention_lag_seconds",
+    ]) {
+      expect(scraped).toContain(metric);
+    }
+    expect(scraped).not.toContain(tenantId);
+    expect(scraped).not.toContain(domain);
+    expect(scraped).not.toContain(rawInbound);
+    expect(scraped).toContain('operation="open",outcome="failed"');
+    expect(scraped).toContain('mail_edge_blob_integrity_failure_total{operation="open"} 1');
+    expect(scraped).not.toContain("mail_edge_telemetry_redaction_failure_total");
   }, 180_000);
 });

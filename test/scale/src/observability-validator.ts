@@ -9,7 +9,7 @@ import { toCanonicalJsonValue } from "./json-value.js";
 import { isBoundedInteger, isRecord } from "./validation.js";
 
 type MetricType = "counter" | "gauge" | "histogram";
-type ProducerStatus = "collector_possible" | "runtime_missing";
+type ProducerStatus = "verified_collector" | "verified_runtime";
 
 interface MetricRequirement {
   readonly labels: readonly string[];
@@ -20,104 +20,113 @@ interface MetricRequirement {
 const requirements: Readonly<Record<string, MetricRequirement>> = Object.freeze({
   mail_edge_binding_check_total: Object.freeze({
     labels: ["provider", "check_kind", "outcome"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_blob_integrity_failure_total: Object.freeze({
     labels: ["operation"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_blob_operation_seconds: Object.freeze({
     labels: ["operation", "outcome"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "histogram",
   }),
   mail_edge_blob_orphans: Object.freeze({
     labels: ["kind", "age_bucket"],
-    status: "collector_possible",
+    status: "verified_collector",
     type: "gauge",
   }),
   mail_edge_callback_total: Object.freeze({
     labels: ["kind", "outcome"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_dispatch_phase_seconds: Object.freeze({
     labels: ["provider", "transport", "phase"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "histogram",
   }),
   mail_edge_dispatch_total: Object.freeze({
     labels: ["provider", "transport", "certainty"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_feedback_total: Object.freeze({
     labels: ["provider", "kind", "dedupe"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_ingress_requests_total: Object.freeze({
     labels: ["provider", "mode", "outcome"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_ingress_stream_active: Object.freeze({
     labels: ["provider", "mode"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "gauge",
   }),
   mail_edge_ingress_stream_bytes_total: Object.freeze({
     labels: ["provider", "mode", "outcome"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_quarantine_unknown_total: Object.freeze({
     labels: ["provider", "transport", "evidence_code"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_scratch_objects: Object.freeze({
     labels: ["state", "purpose"],
-    status: "collector_possible",
+    status: "verified_collector",
     type: "gauge",
   }),
   mail_edge_security_rejection_total: Object.freeze({
     labels: ["surface", "reason_code"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_telemetry_redaction_failure_total: Object.freeze({
     labels: ["signal"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_worker_claim_total: Object.freeze({
     labels: ["workflow", "result"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_worker_lease_expired_total: Object.freeze({
     labels: ["workflow"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
   mail_edge_workflow_oldest_due_seconds: Object.freeze({
     labels: ["workflow"],
-    status: "collector_possible",
+    status: "verified_collector",
     type: "gauge",
   }),
   mail_edge_workflow_state: Object.freeze({
     labels: ["workflow", "state"],
-    status: "collector_possible",
+    status: "verified_collector",
     type: "gauge",
   }),
   mail_edge_workflow_transition_total: Object.freeze({
     labels: ["workflow", "from", "to"],
-    status: "runtime_missing",
+    status: "verified_runtime",
     type: "counter",
   }),
+});
+
+const alertMetricRequirements: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  mail_edge_active_binding_evidence: Object.freeze(["status"]),
+  mail_edge_nonce_cleanup_lag_seconds: Object.freeze([]),
+  mail_edge_retention_lag_seconds: Object.freeze([]),
+  mail_edge_routing_drift_gaps: Object.freeze(["kind"]),
+  mail_edge_scratch_oldest_age_seconds: Object.freeze(["state", "purpose"]),
+  mail_edge_stale_dispatching_attempts: Object.freeze([]),
 });
 
 const coverageRequirements: Readonly<Record<string, "page" | "page_immediately" | "ticket">> =
@@ -239,7 +248,13 @@ const validateCatalog = (catalog: unknown, issues: Set<string>): ReadonlySet<str
     permitted.add(name);
     if (metric["type"] !== expected.type) issues.add(`catalog:type:${name}`);
     if (metric["status"] !== expected.status) issues.add(`catalog:status:${name}`);
-    if (metric["currentProducer"] !== "none") issues.add(`catalog:producer_claim:${name}`);
+    if (
+      typeof metric["currentProducer"] !== "string" ||
+      metric["currentProducer"].length < 3 ||
+      metric["currentProducer"] === "none"
+    ) {
+      issues.add(`catalog:producer_claim:${name}`);
+    }
     const labels = metric["labels"];
     if (!Array.isArray(labels)) {
       issues.add(`catalog:labels:${name}`);
@@ -269,6 +284,70 @@ const validateCatalog = (catalog: unknown, issues: Set<string>): ReadonlySet<str
   }
   for (const name of Object.keys(requirements))
     if (!permitted.has(name)) issues.add(`catalog:missing_metric:${name}`);
+  const alertMetrics = catalog["alertMetrics"];
+  if (
+    !Array.isArray(alertMetrics) ||
+    alertMetrics.length !== Object.keys(alertMetricRequirements).length
+  ) {
+    issues.add("catalog:alert_metric_count");
+  } else {
+    for (const metric of alertMetrics) {
+      if (!isRecord(metric) || typeof metric["name"] !== "string") {
+        issues.add("catalog:alert_metric_shape");
+        continue;
+      }
+      const name = metric["name"];
+      const expectedLabels = alertMetricRequirements[name];
+      if (expectedLabels === undefined) {
+        issues.add(`catalog:unexpected_alert_metric:${name}`);
+        continue;
+      }
+      if (permitted.has(name)) issues.add(`catalog:duplicate_metric:${name}`);
+      permitted.add(name);
+      if (metric["type"] !== "gauge") issues.add(`catalog:type:${name}`);
+      if (
+        typeof metric["currentProducer"] !== "string" ||
+        metric["currentProducer"].length < 3 ||
+        metric["currentProducer"] === "none"
+      ) {
+        issues.add(`catalog:producer_claim:${name}`);
+      }
+      const labels = metric["labels"];
+      if (!Array.isArray(labels)) {
+        issues.add(`catalog:labels:${name}`);
+        continue;
+      }
+      const labelNames = labels.flatMap((label) =>
+        isRecord(label) && typeof label["name"] === "string" ? [label["name"]] : [],
+      );
+      if (labelNames.join("\0") !== expectedLabels.join("\0")) {
+        issues.add(`catalog:labels:${name}`);
+      }
+      let cardinalityProduct = 1;
+      for (const label of labels) {
+        if (!isRecord(label) || typeof label["name"] !== "string") continue;
+        if (forbiddenIdentityLabels.includes(label["name"])) {
+          issues.add(`catalog:identity_label:${name}:${label["name"]}`);
+        }
+        const maximumValues = label["maximumValues"];
+        const registry = label["registry"];
+        if (!isBoundedInteger(maximumValues, 1, 1_000_000)) {
+          issues.add(`catalog:cardinality:${name}:${label["name"]}`);
+          continue;
+        }
+        cardinalityProduct *= maximumValues;
+        if (!Array.isArray(registry) || registry.length > maximumValues) {
+          issues.add(`catalog:registry:${name}:${label["name"]}`);
+        }
+      }
+      if (metric["maximumLabelSets"] !== cardinalityProduct) {
+        issues.add(`catalog:label_product:${name}`);
+      }
+    }
+    for (const name of Object.keys(alertMetricRequirements)) {
+      if (!permitted.has(name)) issues.add(`catalog:missing_alert_metric:${name}`);
+    }
+  }
   const recordingRules = catalog["recordingRules"];
   if (Array.isArray(recordingRules)) {
     for (const recordingRule of recordingRules) {

@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import {
@@ -33,6 +34,7 @@ import {
   type RouteBindingSnapshotV1,
 } from "@mail-edge/provider";
 import type { MailEdgeSdk } from "@mail-edge/sdk";
+import type { OpenTelemetryMetricProducer } from "@mail-edge/observability";
 import type { BlobStorePort, Clock } from "@mail-edge/core";
 import fastify, {
   type FastifyError,
@@ -115,6 +117,7 @@ interface HttpDependencies {
   readonly config: ReferenceServiceConfig;
   readonly control: ControlServicePort;
   readonly gate: BoundedConcurrencyGate;
+  readonly metrics: Pick<OpenTelemetryMetricProducer, "recordSecurityRejection" | "startIngress">;
   readonly readiness: (signal: AbortSignal) => Promise<Result<void, MailEdgeError>>;
   readonly registry: ProviderAdapterRegistry;
   readonly rawAccess: RawAccessServicePort;
@@ -187,6 +190,16 @@ const isMailEdgeResult = <T>(value: unknown): value is Result<T, MailEdgeError> 
 
 const errorCode = (error: FastifyError): string | undefined =>
   "code" in error && typeof error.code === "string" ? error.code : undefined;
+
+const ingressOutcome = (
+  result: Result<InboundIngressCommit, MailEdgeError>,
+): "accepted" | "duplicate" | "rejected" | "limit_exceeded" | "invalid" | "unavailable" => {
+  if (result.ok) return result.value.duplicate ? "duplicate" : "accepted";
+  if (result.error.code === "AUTHORIZATION_FAILED") return "rejected";
+  if (result.error.code === "INGRESS_LIMIT_EXCEEDED") return "limit_exceeded";
+  if (result.error.code === "VALIDATION_FAILED") return "invalid";
+  return "unavailable";
+};
 
 export class ReferenceHttpServer implements LifecycleComponent {
   readonly name = "http";
@@ -397,6 +410,7 @@ export class ReferenceHttpServer implements LifecycleComponent {
             ) {
               return { error: hostError("INTERNAL", "raw_stream_metadata_mismatch"), ok: false };
             }
+            const stream = Readable.from(opened.value.body, { objectMode: false });
             reply
               .code(200)
               .header("accept-ranges", "none")
@@ -405,8 +419,8 @@ export class ReferenceHttpServer implements LifecycleComponent {
               .header("content-length", String(authorized.value.raw.size))
               .header("content-type", "message/rfc822")
               .header("x-content-type-options", "nosniff")
-              .send(Readable.from(opened.value.body, { objectMode: false }));
-            await reply;
+              .send(stream);
+            await finished(stream, { signal });
             return { ok: true, value: undefined };
           },
         ),
@@ -443,6 +457,10 @@ export class ReferenceHttpServer implements LifecycleComponent {
               ? services
               : { error: hostError("INTERNAL", "inbound_services_result_invalid"), ok: false };
           }
+          const metricLease = this.#dependencies.metrics.startIngress(
+            resolved.value.identity.providerId,
+            resolved.value.identity.mode,
+          );
           const context = Object.freeze({
             deadline: deadline(
               this.#dependencies.clock,
@@ -454,22 +472,37 @@ export class ReferenceHttpServer implements LifecycleComponent {
               ? {}
               : { bindingHint: resolved.value.inboundBindingHint }),
           });
-          const result: unknown = await new ProviderInboundIngressService(
-            registration.value.inbound,
-            bindInboundServices(resolved.value, services.value),
-          ).execute(
-            providerHttpRequest({
-              body: body.value,
-              path: request.raw.url?.split("?", 1)[0] ?? "/",
-              raw: request.raw,
-              receivedAt: this.#dependencies.clock.now(),
-            }),
-            context,
-            signal,
-          );
+          let result: unknown;
+          try {
+            result = await new ProviderInboundIngressService(
+              registration.value.inbound,
+              bindInboundServices(resolved.value, services.value),
+            ).execute(
+              providerHttpRequest({
+                body: body.value,
+                ...(metricLease === undefined
+                  ? {}
+                  : {
+                      observeBytes: (bytes: number) => {
+                        metricLease.addBytes(bytes);
+                      },
+                    }),
+                path: request.raw.url?.split("?", 1)[0] ?? "/",
+                raw: request.raw,
+                receivedAt: this.#dependencies.clock.now(),
+              }),
+              context,
+              signal,
+            );
+          } catch (cause) {
+            metricLease?.close("failed");
+            throw cause;
+          }
           if (!isMailEdgeResult<InboundIngressCommit>(result)) {
+            metricLease?.close("failed");
             return { error: hostError("INTERNAL", "adapter_result_invalid"), ok: false };
           }
+          metricLease?.close(ingressOutcome(result));
           if (result.ok) reply.code(result.value.response.statusCode).send();
           return result;
         },
@@ -1360,7 +1393,9 @@ export class ReferenceHttpServer implements LifecycleComponent {
         outcome: result.ok ? "success" : "failure",
         ...(result.ok ? {} : { errorCode: result.error.code }),
       });
-      if (!result.ok) return await this.#sendProblem(reply, request, result.error);
+      if (!result.ok) {
+        return reply.sent ? await reply : await this.#sendProblem(reply, request, result.error);
+      }
       if (reply.sent) return await reply;
       return undefined;
     } finally {
@@ -1370,6 +1405,17 @@ export class ReferenceHttpServer implements LifecycleComponent {
   }
 
   #sendProblem(reply: FastifyReply, request: FastifyRequest, error: MailEdgeError): FastifyReply {
+    if (error.code === "AUTHENTICATION_FAILED" || error.code === "AUTHORIZATION_FAILED") {
+      const surface = request.url.startsWith("/v1/providers/")
+        ? "provider_ingress"
+        : request.url.startsWith("/v1/raw-access-grants/")
+          ? "raw_access"
+          : "host_api";
+      this.#dependencies.metrics.recordSecurityRejection(
+        surface,
+        error.code === "AUTHENTICATION_FAILED" ? "authentication_failed" : "authorization_failed",
+      );
+    }
     const traceId = this.#dependencies.tracer.activeSpan()?.spanContext().traceId;
     const problem = projectProblem(error, {
       instance: request.id,

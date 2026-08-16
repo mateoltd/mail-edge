@@ -111,11 +111,11 @@
       "type": "timeseries"
     },
     {
-      "description": "Implemented rules: blob integrity failure, unknown dispatch rate, oldest due work and raw orphans increasing. Runtime gaps: stale dispatching rows, legal-hold deletion attempts, binding evidence expiry, route-gap drift, scratch age, nonce cleanup lag, retention lag and evidence near expiry. Signed evidence: tenant isolation, backup and restore verification, telemetry leakage canary.",
+      "description": "Runtime-backed rules: blob integrity failure, unknown dispatch rate, oldest due work, raw orphans increasing, stale dispatching rows, legal-hold deletion attempts, binding evidence expiry, route-gap drift, scratch age, nonce cleanup lag, retention lag and evidence near expiry. Signed evidence gates: tenant isolation, backup and restore verification, telemetry leakage canary.",
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
       "id": 6,
       "options": {
-        "content": "## Coverage status\n\nAll implemented Prometheus alerts are dormant until their source producers are verified. See `observability/alerts/coverage.v1.json` for the complete rationale and `observability/runbooks/alerts.md` for safe diagnosis.",
+        "content": "## Coverage status\n\nAll metric-backed Prometheus alerts have verified runtime or collector producers. Tenant isolation, backup and restore verification, and telemetry leakage remain signed-evidence gates. See `observability/alerts/coverage.v1.json` for the complete rationale and `observability/runbooks/alerts.md` for safe diagnosis.",
         "mode": "markdown"
       },
       "title": "Section 14 alert coverage",

@@ -190,10 +190,16 @@ importers:
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
+      '@opentelemetry/exporter-prometheus':
+        specifier: 0.221.0
+        version: 0.221.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-trace-otlp-http':
         specifier: 0.221.0
         version: 0.221.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources':
+        specifier: 2.10.0
+        version: 2.10.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-metrics':
         specifier: 2.10.0
         version: 2.10.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-node':
@@ -328,7 +334,14 @@ importers:
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/observability:
+    dependencies:
+      '@opentelemetry/api':
+        specifier: 1.9.1
+        version: 1.9.1
     devDependencies:
+      '@opentelemetry/sdk-metrics':
+        specifier: 2.10.0
+        version: 2.10.0(@opentelemetry/api@1.9.1)
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))

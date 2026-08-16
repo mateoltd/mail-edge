@@ -47,10 +47,12 @@ for (const metric of catalog.metrics) {
   if (JSON.stringify(metric.labels.map(({ name }) => name)) !== JSON.stringify(labels)) {
     fail(`${metric.name} has incorrect or reordered labels.`);
   }
-  if (!["runtime_missing", "collector_possible"].includes(metric.status)) {
+  if (!["verified_runtime", "verified_collector"].includes(metric.status)) {
     fail(`${metric.name} has unsupported producer status.`);
   }
-  if (metric.currentProducer !== "none") fail(`${metric.name} fabricates a current producer.`);
+  if (typeof metric.currentProducer !== "string" || metric.currentProducer.length < 20) {
+    fail(`${metric.name} lacks its verified producer.`);
+  }
   let product = 1;
   for (const label of metric.labels) {
     if (forbidden.has(label.name)) fail(`${metric.name} uses forbidden label ${label.name}.`);
@@ -68,6 +70,32 @@ for (const metric of catalog.metrics) {
   }
 }
 for (const name of expectedMetrics.keys()) if (!names.has(name)) fail(`Missing ${name}.`);
+
+if (!Array.isArray(catalog.alertMetrics) || catalog.alertMetrics.length !== 6) {
+  fail("Catalog must declare exactly six bounded collector metrics used by normative alerts.");
+}
+const alertMetricNames = new Set();
+for (const metric of catalog.alertMetrics) {
+  if (alertMetricNames.has(metric.name) || expectedMetrics.has(metric.name)) {
+    fail(`Duplicate alert metric ${metric.name}.`);
+  }
+  alertMetricNames.add(metric.name);
+  if (typeof metric.currentProducer !== "string" || metric.currentProducer.length < 20) {
+    fail(`${metric.name} lacks its verified producer.`);
+  }
+  let product = 1;
+  for (const label of metric.labels) {
+    if (forbidden.has(label.name)) fail(`${metric.name} uses forbidden label ${label.name}.`);
+    if (!Number.isSafeInteger(label.maximumValues) || label.maximumValues < 1) {
+      fail(`${metric.name}.${label.name} lacks a positive cardinality bound.`);
+    }
+    if (!Array.isArray(label.registry) || label.registry.length > label.maximumValues) {
+      fail(`${metric.name}.${label.name} registry exceeds its cardinality bound.`);
+    }
+    product *= label.maximumValues;
+  }
+  if (metric.maximumLabelSets !== product) fail(`${metric.name} cardinality product is incorrect.`);
+}
 
 const coverage = await readJson("alerts/coverage.v1.json");
 if (coverage.schemaVersion !== "mail-edge-alert-coverage-v1" || coverage.alerts.length !== 15) {
@@ -90,6 +118,7 @@ const dashboardFiles = (await readdir(dashboards)).filter((name) => name.endsWit
 if (dashboardFiles.length !== 4) fail("Exactly four W9 dashboards are required.");
 const permittedMetrics = new Set([
   ...expectedMetrics.keys(),
+  ...alertMetricNames,
   ...catalog.recordingRules.map(({ name }) => name),
 ]);
 const forbiddenQueryLabel =

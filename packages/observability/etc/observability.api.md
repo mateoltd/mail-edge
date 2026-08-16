@@ -4,8 +4,157 @@
 
 ```ts
 
+import type { Meter } from '@opentelemetry/api';
+
 // @public
 export const containsPotentialPii: (key: string, value: StructuredLogValue) => boolean;
+
+// @public
+export class IngressMetricLease {
+    constructor(producer: OpenTelemetryMetricProducer, provider: MetricProvider, mode: MetricProviderMode);
+    // (undocumented)
+    addBytes(bytes: number): void;
+    // (undocumented)
+    close(outcome: string): void;
+}
+
+// @public (undocumented)
+export interface LabeledMetricValue<Labels extends object> {
+    // (undocumented)
+    readonly labels: Labels;
+    // (undocumented)
+    readonly value: number;
+}
+
+// @public (undocumented)
+export type MetricDispatchCertainty = "not_sent" | "accepted" | "unknown";
+
+// @public (undocumented)
+export type MetricDispatchPhase = "dns" | "connect" | "tls" | "auth" | "headers" | "body" | "data_final" | "response";
+
+// @public (undocumented)
+export type MetricDispatchTransport = "http" | "smtp";
+
+// @public (undocumented)
+export type MetricFeedbackKind = "accepted" | "delivered" | "deferred" | "bounced" | "complained" | "suppressed" | "opened" | "clicked" | "unsubscribed";
+
+// @public (undocumented)
+export type MetricProvider = "cloudflare" | "mailgun" | "resend";
+
+// @public (undocumented)
+export type MetricProviderMode = "smtp_raw" | "worker-frames-send-raw";
+
+// @public (undocumented)
+export type MetricScratchPurpose = "inbound" | "outbound_upload" | "derived";
+
+// @public (undocumented)
+export type MetricScratchState = "reserved" | "uploading" | "uploaded" | "verified" | "promoting" | "promoted" | "abandoned";
+
+// @public (undocumented)
+export type MetricWorkflow = "inbound" | "application_delivery" | "outbound" | "feedback" | "reconciliation" | "maintenance";
+
+// @public
+export class OpenTelemetryMetricProducer {
+    constructor(meter: Meter, config: OpenTelemetryMetricProducerConfig);
+    // (undocumented)
+    close(): void;
+    // (undocumented)
+    finishIngress(provider: string, mode: string, outcome: string, bytes: number): void;
+    // (undocumented)
+    recordBindingCheck(provider: string, checkKind: string, outcome: "pass" | "fail" | "expired"): void;
+    // (undocumented)
+    recordBlobIntegrityFailure(operation: string): void;
+    // (undocumented)
+    recordBlobOperation(operation: string, outcome: string, durationMilliseconds: number): void;
+    // (undocumented)
+    recordCallback(kind: string, outcome: string): void;
+    // (undocumented)
+    recordDispatch(input: {
+        readonly provider: string;
+        readonly transport: string;
+        readonly certainty: string;
+        readonly evidenceCode?: string;
+    }): void;
+    // (undocumented)
+    recordDispatchPhase(input: {
+        readonly provider: string;
+        readonly transport: string;
+        readonly phase: string;
+        readonly durationMilliseconds: number;
+    }): void;
+    // (undocumented)
+    recordFeedback(provider: string, kind: string, dedupe: "new" | "duplicate", count?: number): void;
+    // (undocumented)
+    recordIngressRequest(provider: string, mode: string, outcome: string): void;
+    // (undocumented)
+    recordLeaseExpired(workflow: string, count: number): void;
+    // (undocumented)
+    recordSecurityRejection(surface: string, reasonCode: string): void;
+    // (undocumented)
+    recordTelemetryRedactionFailure(signal: "logs" | "spans" | "metrics" | "exceptions" | "jobs" | "evidence"): void;
+    // (undocumented)
+    recordWorkerClaim(workflow: string, result: string): void;
+    // (undocumented)
+    recordWorkflowTransition(workflow: string, from: string, to: string, count?: number): void;
+    // (undocumented)
+    registerCollector(collector: OperationalMetricCollector): void;
+    // (undocumented)
+    startIngress(provider: string, mode: string): IngressMetricLease | undefined;
+}
+
+// @public (undocumented)
+export interface OpenTelemetryMetricProducerConfig {
+    // (undocumented)
+    readonly collectionTimeoutMilliseconds: number;
+}
+
+// @public
+export interface OperationalMetricCollector {
+    // (undocumented)
+    collect(signal: AbortSignal): Promise<OperationalMetricSnapshot>;
+}
+
+// @public
+export interface OperationalMetricSnapshot {
+    // (undocumented)
+    readonly activeBindingEvidence: readonly LabeledMetricValue<{
+        readonly status: "expired" | "expiring_72h";
+    }>[];
+    // (undocumented)
+    readonly blobOrphans: readonly LabeledMetricValue<{
+        readonly kind: string;
+        readonly age_bucket: string;
+    }>[];
+    // (undocumented)
+    readonly nonceCleanupLagSeconds: number;
+    // (undocumented)
+    readonly oldestDueSeconds: readonly LabeledMetricValue<{
+        readonly workflow: MetricWorkflow;
+    }>[];
+    // (undocumented)
+    readonly retentionLagSeconds: number;
+    // (undocumented)
+    readonly routingDriftGaps: readonly LabeledMetricValue<{
+        readonly kind: "drift_check_failed";
+    }>[];
+    // (undocumented)
+    readonly scratchObjects: readonly LabeledMetricValue<{
+        readonly state: MetricScratchState;
+        readonly purpose: MetricScratchPurpose;
+    }>[];
+    // (undocumented)
+    readonly scratchOldestAgeSeconds: readonly LabeledMetricValue<{
+        readonly state: MetricScratchState;
+        readonly purpose: MetricScratchPurpose;
+    }>[];
+    // (undocumented)
+    readonly staleDispatchingAttempts: number;
+    // (undocumented)
+    readonly workflowStates: readonly LabeledMetricValue<{
+        readonly workflow: MetricWorkflow;
+        readonly state: string;
+    }>[];
+}
 
 // @public (undocumented)
 export interface StructuredLogField {
@@ -30,6 +179,8 @@ export interface StructuredLogSinkConfig {
     readonly allowedFields: readonly string[];
     // (undocumented)
     readonly maximumEventBytes: number;
+    // (undocumented)
+    readonly onDrop?: () => void;
 }
 
 // @public (undocumented)

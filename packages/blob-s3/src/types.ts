@@ -39,6 +39,16 @@ export interface BlobErrorFactory {
   }): BlobFailure;
 }
 
+/** Identity-free blob operation telemetry boundary. @public */
+export interface BlobOperationTelemetrySink {
+  recordOperation(input: {
+    readonly operation: "reserve" | "get_reference" | "open" | "purge" | "restore" | "repair";
+    readonly outcome: "succeeded" | "failed" | "aborted" | "not_found" | "conflict";
+    readonly durationMilliseconds: number;
+  }): void;
+  recordIntegrityFailure(operation: "open" | "restore" | "repair"): void;
+}
+
 /** @public */
 export interface EnvelopeKey {
   readonly plaintextKey: Uint8Array;
