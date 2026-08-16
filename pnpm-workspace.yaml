@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - test/*
   - test/e2e/*
 
 injectWorkspacePackages: true

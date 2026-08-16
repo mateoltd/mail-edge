@@ -529,6 +529,28 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
 
+  test/scale:
+    dependencies:
+      '@mail-edge/contracts':
+        specifier: workspace:^
+        version: link:../../packages/contracts
+      '@mail-edge/core':
+        specifier: workspace:^
+        version: link:../../packages/core
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0))
+
 packages:
 
   '@appthreat/atom-common@1.1.0':

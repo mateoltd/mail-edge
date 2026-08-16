@@ -18,6 +18,8 @@
     { "path": "packages/http-client" },
     { "path": "packages/smtp-bridge" },
     { "path": "packages/observability" },
+    { "path": "test/scale" },
+    { "path": "test/e2e/drills" },
     { "path": "apps/reference-service" },
     { "path": "apps/cloudflare-ingress-worker" }
   ]

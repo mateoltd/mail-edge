@@ -1,0 +1,142 @@
+rule_files:
+  - mail-edge.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: unknown dispatch fires above ratio with five-event floor and recovers
+    interval: 1m
+    input_series:
+      - series: 'mail_edge_dispatch_total{provider="mailgun",transport="smtp",certainty="unknown"}'
+        values: "0+1x6 6+0x30"
+      - series: 'mail_edge_dispatch_total{provider="mailgun",transport="smtp",certainty="accepted"}'
+        values: "0+199x6 1194+0x30"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MailEdgeUnknownDispatchRate
+        exp_alerts:
+          - exp_labels:
+              producer_status: runtime_missing
+              severity: page
+              signal_contract: normative
+            exp_annotations:
+              summary: Mail Edge unknown dispatch rate exceeded its safety threshold
+              description:
+                Unknown dispatches exceeded 0.1 percent over 15 minutes with at least five unknown
+                events. Freeze automatic retries for affected quarantines.
+              runbook: observability/runbooks/alerts.md#unknown-dispatch-rate
+      - eval_time: 22m
+        alertname: MailEdgeUnknownDispatchRate
+        exp_alerts: []
+    promql_expr_test:
+      - expr: mail_edge:dispatch_unknown:increase15m
+        eval_time: 6m
+        exp_samples:
+          - labels: "mail_edge:dispatch_unknown:increase15m"
+            value: 6
+      - expr: mail_edge:dispatch_unknown:ratio15m
+        eval_time: 6m
+        exp_samples:
+          - labels: "mail_edge:dispatch_unknown:ratio15m"
+            value: 0.005
+
+  - name: unknown dispatch does not fire below five-event floor
+    interval: 1m
+    input_series:
+      - series: 'mail_edge_dispatch_total{provider="resend",transport="smtp",certainty="unknown"}'
+        values: "0+1x4 4+0x20"
+      - series: 'mail_edge_dispatch_total{provider="resend",transport="smtp",certainty="accepted"}'
+        values: "0+1x4 4+0x20"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MailEdgeUnknownDispatchRate
+        exp_alerts: []
+
+  - name: oldest due requires ten sustained minutes and recovers
+    interval: 1m
+    input_series:
+      - series: 'mail_edge_workflow_oldest_due_seconds{workflow="outbound"}'
+        values: "301x12 0x5"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: MailEdgeOldestDue
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: MailEdgeOldestDue
+        exp_alerts:
+          - exp_labels:
+              producer_status: runtime_missing
+              severity: page
+              signal_contract: normative
+              workflow: outbound
+            exp_annotations:
+              summary: Mail Edge due work is more than five minutes old
+              description:
+                Workflow outbound remained over the normative due-age threshold for ten minutes.
+              runbook: observability/runbooks/alerts.md#oldest-due-work
+      - eval_time: 13m
+        alertname: MailEdgeOldestDue
+        exp_alerts: []
+
+  - name: integrity failure fires and then recovers
+    interval: 1m
+    input_series:
+      - series: 'mail_edge_blob_integrity_failure_total{operation="read"}'
+        values: "0 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MailEdgeBlobIntegrityFailure
+        exp_alerts:
+          - exp_labels:
+              producer_status: runtime_missing
+              severity: page
+              signal_contract: normative
+            exp_annotations:
+              summary: Mail Edge observed a blob integrity failure
+              description:
+                Any integrity failure is unsafe. Preserve evidence and stop automated mutation of
+                the affected object path.
+              runbook: observability/runbooks/alerts.md#blob-integrity-failure
+      - eval_time: 7m
+        alertname: MailEdgeBlobIntegrityFailure
+        exp_alerts: []
+
+  - name: orphan growth uses a full 30 minute window and recovers
+    interval: 1m
+    input_series:
+      - series: 'mail_edge_blob_orphans{kind="final_without_row",age_bucket="one_hour"}'
+        values: "0+1x31 31+0x31"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: MailEdgeBlobOrphansIncreasing
+        exp_alerts:
+          - exp_labels:
+              producer_status: runtime_missing
+              severity: page
+              signal_contract: normative
+            exp_annotations:
+              summary: Mail Edge raw orphan count has increased over 30 minutes
+              description:
+                The aggregate orphan gauge has a positive 30-minute slope. Diagnose reference and
+                cleanup behavior before reclaiming objects.
+              runbook: observability/runbooks/alerts.md#raw-orphans-increasing
+      - eval_time: 61m
+        alertname: MailEdgeBlobOrphansIncreasing
+        exp_alerts: []
+
+  - name: absent runtime series are unknown rather than false pages
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: MailEdgeBlobIntegrityFailure
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: MailEdgeUnknownDispatchRate
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: MailEdgeOldestDue
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: MailEdgeBlobOrphansIncreasing
+        exp_alerts: []

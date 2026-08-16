@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "crash-after-dispatch-claim-is-unknown",
+  "kind": "crash_after_claim",
+  "expected": {
+    "workflowState": "quarantined_unknown",
+    "postCommitAction": "none"
+  }
+}

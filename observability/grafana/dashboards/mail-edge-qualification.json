@@ -1,0 +1,148 @@
+{
+  "annotations": { "list": [] },
+  "description": "Operational view of signals that complement signed W9 qualification evidence. This dashboard is not the evidence artifact.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "description": "Signed W9 evidence must cover real-driver scale envelopes, bounded memory, model traces, PII canaries, tenant isolation, licenses, SBOM and byte-for-byte reproducibility. Metric absence cannot satisfy any of those gates.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "## Qualification evidence boundary\n\nRecord the exact commit, workload dimensions, tool and driver versions, input digests, measured outputs, bottlenecks, model results and honest limitations in a closed canonical schema. Sign under a W9-specific signature domain. Keep private keys outside the repository and keep machine paths, hostnames, tenant data and message data out of evidence.",
+        "mode": "markdown"
+      },
+      "title": "Signed evidence requirements",
+      "type": "text"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Failed or expired binding checks are supporting operational evidence. This counter does not expose active-binding expiry time or route-gap drift impact.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 7 },
+      "id": 2,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, check_kind, outcome) (increase(mail_edge_binding_check_total[24h]))",
+          "legendFormat": "{{provider}} {{check_kind}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Binding checks in 24 hours",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Bounded authentication and authorization rejection aggregates. Cross-tenant isolation remains a signed real-driver test.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 7 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (surface, reason_code) (increase(mail_edge_security_rejection_total[24h]))",
+          "legendFormat": "{{surface}} {{reason_code}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Security rejections in 24 hours",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Rejected unsafe telemetry events. A zero value does not replace the seeded PII leakage scan.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 7 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (signal) (increase(mail_edge_telemetry_redaction_failure_total[24h]))",
+          "legendFormat": "{{signal}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Redaction failures in 24 hours",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Unknown dispatch safety gate. The alert fires only above 0.1 percent with at least five unknown events in 15 minutes.",
+      "fieldConfig": { "defaults": { "max": 1, "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "mail_edge:dispatch_unknown:ratio15m",
+          "legendFormat": "unknown ratio",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Unknown dispatch safety ratio",
+      "type": "timeseries"
+    },
+    {
+      "description": "Implemented rules: blob integrity failure, unknown dispatch rate, oldest due work and raw orphans increasing. Runtime gaps: stale dispatching rows, legal-hold deletion attempts, binding evidence expiry, route-gap drift, scratch age, nonce cleanup lag, retention lag and evidence near expiry. Signed evidence: tenant isolation, backup and restore verification, telemetry leakage canary.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "id": 6,
+      "options": {
+        "content": "## Coverage status\n\nAll implemented Prometheus alerts are dormant until their source producers are verified. See `observability/alerts/coverage.v1.json` for the complete rationale and `observability/runbooks/alerts.md` for safe diagnosis.",
+        "mode": "markdown"
+      },
+      "title": "Section 14 alert coverage",
+      "type": "text"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 41,
+  "tags": ["mail-edge", "w9", "qualification", "security"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "label": "Prometheus",
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Mail Edge qualification",
+  "uid": "mail-edge-w9-qualification",
+  "version": 1,
+  "weekStart": "monday"
+}

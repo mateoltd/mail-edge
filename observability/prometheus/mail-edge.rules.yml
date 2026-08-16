@@ -1,0 +1,73 @@
+groups:
+  - name: mail-edge-recording
+    interval: 1m
+    rules:
+      - record: mail_edge:dispatch_total:increase15m
+        expr: sum(increase(mail_edge_dispatch_total[15m]))
+      - record: mail_edge:dispatch_unknown:increase15m
+        expr: sum(increase(mail_edge_dispatch_total{certainty="unknown"}[15m]))
+      - record: mail_edge:dispatch_unknown:ratio15m
+        expr:
+          mail_edge:dispatch_unknown:increase15m / clamp_min(mail_edge:dispatch_total:increase15m,
+          1)
+      - record: mail_edge:workflow_oldest_due_seconds:max_by_workflow
+        expr: max by (workflow) (mail_edge_workflow_oldest_due_seconds)
+
+  - name: mail-edge-normative-alerts
+    interval: 1m
+    rules:
+      - alert: MailEdgeBlobIntegrityFailure
+        expr: sum(increase(mail_edge_blob_integrity_failure_total[5m])) > 0
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: runtime_missing
+        annotations:
+          summary: Mail Edge observed a blob integrity failure
+          description:
+            Any integrity failure is unsafe. Preserve evidence and stop automated mutation of the
+            affected object path.
+          runbook: observability/runbooks/alerts.md#blob-integrity-failure
+
+      - alert: MailEdgeUnknownDispatchRate
+        expr: >-
+          sum(increase(mail_edge_dispatch_total{certainty="unknown"}[15m])) >= 5 and
+          sum(increase(mail_edge_dispatch_total{certainty="unknown"}[15m])) /
+          clamp_min(sum(increase(mail_edge_dispatch_total[15m])), 1) > 0.001
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: runtime_missing
+        annotations:
+          summary: Mail Edge unknown dispatch rate exceeded its safety threshold
+          description:
+            Unknown dispatches exceeded 0.1 percent over 15 minutes with at least five unknown
+            events. Freeze automatic retries for affected quarantines.
+          runbook: observability/runbooks/alerts.md#unknown-dispatch-rate
+
+      - alert: MailEdgeOldestDue
+        expr: max by (workflow) (mail_edge_workflow_oldest_due_seconds) > 300
+        for: 10m
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: runtime_missing
+        annotations:
+          summary: Mail Edge due work is more than five minutes old
+          description:
+            Workflow {{ $labels.workflow }} remained over the normative due-age threshold for ten
+            minutes.
+          runbook: observability/runbooks/alerts.md#oldest-due-work
+
+      - alert: MailEdgeBlobOrphansIncreasing
+        expr: deriv(sum(mail_edge_blob_orphans)[30m:1m]) > 0
+        labels:
+          severity: page
+          signal_contract: normative
+          producer_status: runtime_missing
+        annotations:
+          summary: Mail Edge raw orphan count has increased over 30 minutes
+          description:
+            The aggregate orphan gauge has a positive 30-minute slope. Diagnose reference and
+            cleanup behavior before reclaiming objects.
+          runbook: observability/runbooks/alerts.md#raw-orphans-increasing

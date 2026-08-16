@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "fallback-is-model-only-at-current-base",
+  "kind": "fallback_boundary",
+  "expected": {
+    "fallbackBindings": 0,
+    "modelOnly": true,
+    "productionReachable": false
+  }
+}

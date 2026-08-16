@@ -1,0 +1,405 @@
+{
+  "schemaVersion": "mail-edge-metric-catalog-v1",
+  "normativeSource": "IMPLEMENTATION_PLAN.md section 14.1",
+  "currentProducerSummary": "No Prometheus or OpenTelemetry metric producer is wired at base 51f7b6e3f031960f4ba812d356f89a308b759bfe.",
+  "forbiddenLabels": [
+    "tenant",
+    "tenant_id",
+    "domain",
+    "domain_name",
+    "address",
+    "message_id",
+    "subject",
+    "header",
+    "idempotency_key",
+    "nonce",
+    "provider_instance_id",
+    "binding_id",
+    "attempt_id",
+    "workflow_id",
+    "trace_id"
+  ],
+  "metrics": [
+    {
+      "name": "mail_edge_ingress_requests_total",
+      "type": "counter",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        { "name": "mode", "maximumValues": 2, "registry": ["smtp_raw", "worker-frames-send-raw"] },
+        { "name": "outcome", "maximumValues": 8, "registry": [] }
+      ],
+      "maximumLabelSets": 48,
+      "source": "ingress boundary event instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "The outcome registry must be frozen before activation; HTTP completion logs do not preserve provider and mode together."
+    },
+    {
+      "name": "mail_edge_ingress_stream_bytes_total",
+      "type": "counter",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        { "name": "mode", "maximumValues": 2, "registry": ["smtp_raw", "worker-frames-send-raw"] },
+        { "name": "outcome", "maximumValues": 8, "registry": [] }
+      ],
+      "maximumLabelSets": 48,
+      "source": "stream byte accounting instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Only confirmed streamed bytes may increment this counter."
+    },
+    {
+      "name": "mail_edge_ingress_stream_active",
+      "type": "gauge",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        { "name": "mode", "maximumValues": 2, "registry": ["smtp_raw", "worker-frames-send-raw"] }
+      ],
+      "maximumLabelSets": 6,
+      "source": "ingress stream lifecycle instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "The existing request concurrency gate is not an ingress-stream producer."
+    },
+    {
+      "name": "mail_edge_scratch_objects",
+      "type": "gauge",
+      "labels": [
+        {
+          "name": "state",
+          "maximumValues": 7,
+          "registry": [
+            "reserved",
+            "uploading",
+            "uploaded",
+            "verified",
+            "promoting",
+            "promoted",
+            "abandoned"
+          ]
+        },
+        {
+          "name": "purpose",
+          "maximumValues": 3,
+          "registry": ["inbound", "outbound_upload", "derived"]
+        }
+      ],
+      "maximumLabelSets": 21,
+      "source": "blob_ingest_stages current-state aggregate",
+      "status": "collector_possible",
+      "currentProducer": "none",
+      "notes": "Requires a reviewed read-only collector that preserves tenant isolation and emits no identifiers."
+    },
+    {
+      "name": "mail_edge_workflow_state",
+      "type": "gauge",
+      "labels": [
+        {
+          "name": "workflow",
+          "maximumValues": 6,
+          "registry": [
+            "inbound",
+            "application_delivery",
+            "outbound",
+            "feedback",
+            "reconciliation",
+            "maintenance"
+          ]
+        },
+        { "name": "state", "maximumValues": 32, "registry": [] }
+      ],
+      "maximumLabelSets": 192,
+      "source": "workflow tables current-state aggregate",
+      "status": "collector_possible",
+      "currentProducer": "none",
+      "notes": "The state registry must be the frozen union of legal states for each workflow."
+    },
+    {
+      "name": "mail_edge_workflow_transition_total",
+      "type": "counter",
+      "labels": [
+        {
+          "name": "workflow",
+          "maximumValues": 6,
+          "registry": [
+            "inbound",
+            "application_delivery",
+            "outbound",
+            "feedback",
+            "reconciliation",
+            "maintenance"
+          ]
+        },
+        { "name": "from", "maximumValues": 32, "registry": [] },
+        { "name": "to", "maximumValues": 32, "registry": [] }
+      ],
+      "maximumLabelSets": 6144,
+      "source": "durable transition event instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Current-state SQL counts cannot truthfully reconstruct a monotonic transition counter."
+    },
+    {
+      "name": "mail_edge_workflow_oldest_due_seconds",
+      "type": "gauge",
+      "labels": [
+        {
+          "name": "workflow",
+          "maximumValues": 6,
+          "registry": [
+            "inbound",
+            "application_delivery",
+            "outbound",
+            "feedback",
+            "reconciliation",
+            "maintenance"
+          ]
+        }
+      ],
+      "maximumLabelSets": 6,
+      "source": "eligible workflow due timestamps current-state aggregate",
+      "status": "collector_possible",
+      "currentProducer": "none",
+      "notes": "runtime.backlog is implemented but has no production call site."
+    },
+    {
+      "name": "mail_edge_worker_claim_total",
+      "type": "counter",
+      "labels": [
+        {
+          "name": "workflow",
+          "maximumValues": 6,
+          "registry": [
+            "inbound",
+            "application_delivery",
+            "outbound",
+            "feedback",
+            "reconciliation",
+            "maintenance"
+          ]
+        },
+        { "name": "result", "maximumValues": 8, "registry": [] }
+      ],
+      "maximumLabelSets": 48,
+      "source": "worker claim boundary instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Post-operation runtime logs cannot distinguish every claim result."
+    },
+    {
+      "name": "mail_edge_worker_lease_expired_total",
+      "type": "counter",
+      "labels": [
+        {
+          "name": "workflow",
+          "maximumValues": 6,
+          "registry": [
+            "inbound",
+            "application_delivery",
+            "outbound",
+            "feedback",
+            "reconciliation",
+            "maintenance"
+          ]
+        }
+      ],
+      "maximumLabelSets": 6,
+      "source": "lease recovery instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "A current stale-lease query is useful for diagnosis but is not a historical counter."
+    },
+    {
+      "name": "mail_edge_dispatch_total",
+      "type": "counter",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        { "name": "transport", "maximumValues": 2, "registry": ["http", "smtp"] },
+        { "name": "certainty", "maximumValues": 3, "registry": ["not_sent", "accepted", "unknown"] }
+      ],
+      "maximumLabelSets": 18,
+      "source": "provider dispatch completion instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "The existing optional provider sink is unwired and does not classify every accepted or failed execution."
+    },
+    {
+      "name": "mail_edge_dispatch_phase_seconds",
+      "type": "histogram",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        { "name": "transport", "maximumValues": 2, "registry": ["http", "smtp"] },
+        {
+          "name": "phase",
+          "maximumValues": 8,
+          "registry": ["dns", "connect", "tls", "auth", "headers", "body", "data_final", "response"]
+        }
+      ],
+      "maximumLabelSets": 48,
+      "source": "correlated provider phase timing instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Current phase events have neither durations nor an attempt-safe correlation key."
+    },
+    {
+      "name": "mail_edge_quarantine_unknown_total",
+      "type": "counter",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        { "name": "transport", "maximumValues": 2, "registry": ["http", "smtp"] },
+        { "name": "evidence_code", "maximumValues": 64, "registry": [] }
+      ],
+      "maximumLabelSets": 384,
+      "source": "outbound quarantine commit instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Evidence codes must come from a frozen bounded registry before activation."
+    },
+    {
+      "name": "mail_edge_feedback_total",
+      "type": "counter",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        {
+          "name": "kind",
+          "maximumValues": 9,
+          "registry": [
+            "accepted",
+            "delivered",
+            "deferred",
+            "bounced",
+            "complained",
+            "suppressed",
+            "opened",
+            "clicked",
+            "unsubscribed"
+          ]
+        },
+        { "name": "dedupe", "maximumValues": 2, "registry": ["new", "duplicate"] }
+      ],
+      "maximumLabelSets": 54,
+      "source": "feedback commit and deduplication instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "The feedback ledger is durable, but mutable or retained row counts are not a monotonic process counter."
+    },
+    {
+      "name": "mail_edge_binding_check_total",
+      "type": "counter",
+      "labels": [
+        { "name": "provider", "maximumValues": 3, "registry": ["cloudflare", "mailgun", "resend"] },
+        {
+          "name": "check_kind",
+          "maximumValues": 5,
+          "registry": ["capability", "dns", "control_plane", "live_conformance", "drift"]
+        },
+        { "name": "outcome", "maximumValues": 3, "registry": ["pass", "fail", "expired"] }
+      ],
+      "maximumLabelSets": 45,
+      "source": "binding check append instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Counting retained route_binding_checks rows cannot satisfy Prometheus counter reset semantics."
+    },
+    {
+      "name": "mail_edge_blob_operation_seconds",
+      "type": "histogram",
+      "labels": [
+        { "name": "operation", "maximumValues": 16, "registry": [] },
+        { "name": "outcome", "maximumValues": 8, "registry": [] }
+      ],
+      "maximumLabelSets": 128,
+      "source": "blob adapter operation timing instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Operation and outcome registries must be frozen before activation."
+    },
+    {
+      "name": "mail_edge_blob_orphans",
+      "type": "gauge",
+      "labels": [
+        { "name": "kind", "maximumValues": 8, "registry": [] },
+        { "name": "age_bucket", "maximumValues": 8, "registry": [] }
+      ],
+      "maximumLabelSets": 64,
+      "source": "raw blob reference summary and orphan observations current-state aggregate",
+      "status": "collector_possible",
+      "currentProducer": "none",
+      "notes": "Kind and age bucket registries must be frozen before the read-only collector is activated."
+    },
+    {
+      "name": "mail_edge_blob_integrity_failure_total",
+      "type": "counter",
+      "labels": [{ "name": "operation", "maximumValues": 16, "registry": [] }],
+      "maximumLabelSets": 16,
+      "source": "blob integrity failure instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Current corrupt rows are a useful gauge but cannot reconstruct failures after repair."
+    },
+    {
+      "name": "mail_edge_callback_total",
+      "type": "counter",
+      "labels": [
+        { "name": "kind", "maximumValues": 8, "registry": [] },
+        { "name": "outcome", "maximumValues": 8, "registry": [] }
+      ],
+      "maximumLabelSets": 64,
+      "source": "host callback boundary instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Kind and outcome registries must be frozen before activation."
+    },
+    {
+      "name": "mail_edge_security_rejection_total",
+      "type": "counter",
+      "labels": [
+        { "name": "surface", "maximumValues": 16, "registry": [] },
+        { "name": "reason_code", "maximumValues": 64, "registry": [] }
+      ],
+      "maximumLabelSets": 1024,
+      "source": "authentication and authorization decision instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "Only bounded safe reason codes are allowed; request, tenant and credential identities are forbidden."
+    },
+    {
+      "name": "mail_edge_telemetry_redaction_failure_total",
+      "type": "counter",
+      "labels": [
+        {
+          "name": "signal",
+          "maximumValues": 6,
+          "registry": ["logs", "spans", "metrics", "exceptions", "jobs", "evidence"]
+        }
+      ],
+      "maximumLabelSets": 6,
+      "source": "telemetry sink rejection instrumentation required",
+      "status": "runtime_missing",
+      "currentProducer": "none",
+      "notes": "StructuredLogSink currently retains only an unexported process-local dropped count."
+    }
+  ],
+  "recordingRules": [
+    {
+      "name": "mail_edge:dispatch_total:increase15m",
+      "sourceMetric": "mail_edge_dispatch_total",
+      "maximumLabelSets": 1
+    },
+    {
+      "name": "mail_edge:dispatch_unknown:increase15m",
+      "sourceMetric": "mail_edge_dispatch_total",
+      "maximumLabelSets": 1
+    },
+    {
+      "name": "mail_edge:dispatch_unknown:ratio15m",
+      "sourceMetric": "mail_edge_dispatch_total",
+      "maximumLabelSets": 1
+    },
+    {
+      "name": "mail_edge:workflow_oldest_due_seconds:max_by_workflow",
+      "sourceMetric": "mail_edge_workflow_oldest_due_seconds",
+      "maximumLabelSets": 6
+    }
+  ]
+}
