@@ -296,7 +296,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
       receivedAt: "2026-08-14T01:00:00.000Z",
       replay: Object.freeze({
         bodyDigest: "51".repeat(32),
-        expiresAt: "2026-08-15T01:00:00.000Z",
+        expiresAt: "2099-08-15T01:00:00.000Z",
         nonceDigest: "52".repeat(32),
         providerInstanceId,
       }),
@@ -891,7 +891,7 @@ describe("PostgreSQL durable runtime transaction writer", { concurrent: false },
     const signal = new AbortController().signal;
     const replay = Object.freeze({
       bodyDigest: "42".repeat(32),
-      expiresAt: "2026-08-15T03:00:01.000Z",
+      expiresAt: "2099-08-15T03:00:01.000Z",
       nonceDigest: "41".repeat(32),
       providerInstanceId,
     });
