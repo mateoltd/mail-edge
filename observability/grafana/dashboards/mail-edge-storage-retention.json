@@ -1,0 +1,210 @@
+{
+  "annotations": { "list": [] },
+  "description": "Scratch, raw blob, integrity, callback and security signals for storage and retention operations.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Current scratch objects by bounded lifecycle state and purpose.",
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (state, purpose) (mail_edge_scratch_objects)",
+          "legendFormat": "{{state}} {{purpose}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scratch lifecycle",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Unreferenced raw objects by a frozen kind and age-bucket registry. Legally held and referenced objects must not be classified as retention lag.",
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (kind, age_bucket) (mail_edge_blob_orphans)",
+          "legendFormat": "{{kind}} {{age_bucket}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Raw blob orphans",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "p95 blob operation duration by bounded operation and outcome.",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, operation, outcome) (rate(mail_edge_blob_operation_seconds_bucket[5m])))",
+          "legendFormat": "{{operation}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Blob operation p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Any increase requires an immediate page and preserved evidence.",
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (operation) (increase(mail_edge_blob_integrity_failure_total[1h]))",
+          "legendFormat": "{{operation}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Blob integrity failures in one hour",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Host callback outcomes without tenant, message or destination identity.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (kind, outcome) (rate(mail_edge_callback_total[5m]))",
+          "legendFormat": "{{kind}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Callback rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Security decisions by bounded surface and reason code. No request or actor identity is allowed.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (surface, reason_code) (rate(mail_edge_security_rejection_total[5m]))",
+          "legendFormat": "{{surface}} {{reason_code}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Security rejection rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Telemetry events rejected by the privacy boundary, split only by signal class.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (signal) (increase(mail_edge_telemetry_redaction_failure_total[1h]))",
+          "legendFormat": "{{signal}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Telemetry redaction failures",
+      "type": "timeseries"
+    },
+    {
+      "description": "Section 14 has no runtime metric for scratch age, nonce cleanup lag, retention lag or legal-hold deletion attempts. They remain explicit gaps in the coverage inventory. Do not infer them from total scratch or orphan counts.",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 24 },
+      "id": 8,
+      "options": {
+        "content": "## Retention safety\n\nA deletion candidate must be unreferenced, past retention, not held and fenced for the exact object version. No dashboard aggregate authorizes deletion.",
+        "mode": "markdown"
+      },
+      "title": "Retention and legal-hold limitations",
+      "type": "text"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": ["mail-edge", "w9", "storage", "retention"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "label": "Prometheus",
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Mail Edge storage and retention",
+  "uid": "mail-edge-w9-storage",
+  "version": 1,
+  "weekStart": "monday"
+}

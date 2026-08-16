@@ -1,0 +1,233 @@
+{
+  "annotations": { "list": [] },
+  "description": "Normative Mail Edge throughput, concurrency and backpressure signals. Empty panels mean the producer is missing, not that the service is healthy.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Accepted, duplicate, rejected and failed ingress outcomes once the bounded outcome registry is implemented.",
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, mode, outcome) (rate(mail_edge_ingress_requests_total[5m]))",
+          "legendFormat": "{{provider}} {{mode}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingress request rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Confirmed streamed bytes by provider, mode and outcome.",
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, mode, outcome) (rate(mail_edge_ingress_stream_bytes_total[5m]))",
+          "legendFormat": "{{provider}} {{mode}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingress stream byte rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Active ingress streams. This is not the existing whole-request concurrency gate.",
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, mode) (mail_edge_ingress_stream_active)",
+          "legendFormat": "{{provider}} {{mode}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Active ingress streams",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Current workflow rows by bounded workflow and state.",
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (workflow, state) (mail_edge_workflow_state)",
+          "legendFormat": "{{workflow}} {{state}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Workflow state",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Oldest eligible due work. The normative page threshold is 300 seconds sustained for ten minutes.",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull", "max"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "mail_edge:workflow_oldest_due_seconds:max_by_workflow",
+          "legendFormat": "{{workflow}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest due work",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Claim results by workflow. Current runtime operation logs cannot reconstruct this counter.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 15 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (workflow, result) (rate(mail_edge_worker_claim_total[5m]))",
+          "legendFormat": "{{workflow}} {{result}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Worker claim rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Lease expirations by workflow.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 15 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (workflow) (rate(mail_edge_worker_lease_expired_total[5m]))",
+          "legendFormat": "{{workflow}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Worker lease expiration rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Durable workflow transitions. Only legal bounded state pairs may be emitted.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 15 },
+      "id": 8,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (workflow, from, to) (rate(mail_edge_workflow_transition_total[5m]))",
+          "legendFormat": "{{workflow}} {{from}} to {{to}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Workflow transition rate",
+      "type": "timeseries"
+    },
+    {
+      "description": "Producer status: no panel on this dashboard has a current metric producer at the reviewed base. The workflow-state and oldest-due gauges are collector-capable; the remaining panels need runtime event instrumentation. Capacity thresholds must come from measured W9 envelopes, not dashboard defaults.",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 22 },
+      "id": 9,
+      "options": {
+        "content": "## Qualification note\n\nEmpty panels are unknown coverage. Compare measured throughput, concurrency, queue age and resource saturation in signed W9 evidence before setting an operating envelope.",
+        "mode": "markdown"
+      },
+      "title": "Signal status",
+      "type": "text"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": ["mail-edge", "w9", "operations"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "label": "Prometheus",
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Mail Edge throughput and backpressure",
+  "uid": "mail-edge-w9-throughput",
+  "version": 1,
+  "weekStart": "monday"
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "authenticated-not-sent-schedules-retry",
+  "kind": "conclusive_not_sent",
+  "expected": {
+    "certainty": "not_sent",
+    "automaticRetryAllowed": true,
+    "workflowState": "retry_wait",
+    "postCommitAction": "schedule_retry"
+  }
+}

@@ -38,7 +38,7 @@ expectEqual(rootManifest.type, "module", "Root package module type");
 expectEqual(rootManifest.license, "Apache-2.0", "Root package license");
 expectEqual(
   JSON.stringify(rootManifest.workspaces),
-  JSON.stringify(["apps/*", "packages/*"]),
+  JSON.stringify(["apps/*", "packages/*", "test/*"]),
   "Root workspace globs",
 );
 
@@ -158,7 +158,7 @@ const visit = (unit) => {
 workspaceUnits.forEach(visit);
 
 const knownRoots = new Set(workspaceUnits.map((unit) => unit.root));
-for (const parent of ["apps", "packages"]) {
+for (const parent of ["apps", "packages", "test"]) {
   const parentPath = resolve(repositoryRoot, parent);
   if (!existsSync(parentPath)) {
     continue;

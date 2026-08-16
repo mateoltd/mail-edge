@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "mail-edge-alert-coverage-v1",
+  "normativeSource": "IMPLEMENTATION_PLAN.md section 14.4",
+  "alerts": [
+    {
+      "id": "blob_integrity_failure",
+      "urgency": "page_immediately",
+      "condition": "Any blob integrity failure",
+      "coverage": "implemented",
+      "rule": "MailEdgeBlobIntegrityFailure",
+      "producerStatus": "runtime_missing",
+      "rationale": "The counter expression is exact, but no runtime producer currently emits the normative counter. A current corrupt-row gauge would not preserve repaired failures."
+    },
+    {
+      "id": "cross_tenant_authorization_test_failure",
+      "urgency": "page_immediately",
+      "condition": "Cross-tenant authorization test failure",
+      "coverage": "signed_evidence",
+      "rule": null,
+      "producerStatus": "not_applicable",
+      "rationale": "This is a qualification-gate result, not a service time series. W9 signed evidence must record the real-driver isolation result and fail the release gate."
+    },
+    {
+      "id": "stale_dispatching_row",
+      "urgency": "page_immediately",
+      "condition": "Any stale dispatching row",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "The database can identify dispatching attempts whose claim has expired, but section 14 defines no metric for the count and no collector is wired. Inventing an undeclared metric would hide the gap."
+    },
+    {
+      "id": "unknown_dispatch_rate",
+      "urgency": "page_immediately",
+      "condition": "Unknown dispatch rate above 0.1 percent over 15 minutes with at least five events",
+      "coverage": "implemented",
+      "rule": "MailEdgeUnknownDispatchRate",
+      "producerStatus": "runtime_missing",
+      "rationale": "The rule enforces both the ratio and the five-event floor and has promtool firing and recovery tests. The dispatch counter producer remains missing."
+    },
+    {
+      "id": "legal_hold_deletion_attempt",
+      "urgency": "page_immediately",
+      "condition": "Any legal-hold deletion attempt",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "The current rejection is a generic workflow conflict and leaves no distinct safe event or normative metric. A targeted security decision signal is required."
+    },
+    {
+      "id": "telemetry_leakage_canary",
+      "urgency": "page_immediately",
+      "condition": "Telemetry leakage canary detection",
+      "coverage": "signed_evidence",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "A canary scan must inspect logs, spans, metrics, exceptions, jobs and evidence. The redaction failure counter records sink rejection, not proof that a canary escaped."
+    },
+    {
+      "id": "oldest_due_work",
+      "urgency": "page",
+      "condition": "Oldest due work above five minutes for ten minutes",
+      "coverage": "implemented",
+      "rule": "MailEdgeOldestDue",
+      "producerStatus": "collector_possible",
+      "rationale": "The threshold and duration are exact. Eligible due timestamps support a read-only aggregate, but no collector currently emits the gauge."
+    },
+    {
+      "id": "raw_orphan_count_increasing",
+      "urgency": "page",
+      "condition": "Raw orphan count increasing for 30 minutes",
+      "coverage": "implemented",
+      "rule": "MailEdgeBlobOrphansIncreasing",
+      "producerStatus": "collector_possible",
+      "rationale": "The expression measures a positive 30-minute gauge slope. The reference summary can support a collector, but none is wired."
+    },
+    {
+      "id": "backup_restore_verification_failure",
+      "urgency": "page",
+      "condition": "Failed backup and restore verification",
+      "coverage": "signed_evidence",
+      "rule": null,
+      "producerStatus": "not_applicable",
+      "rationale": "Restore verification is an isolated operational qualification result. It belongs in signed evidence and must not be inferred from ordinary runtime health."
+    },
+    {
+      "id": "expired_active_binding_evidence",
+      "urgency": "page",
+      "condition": "Expired evidence on an active binding",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "Activation depends on current passing capability, control-plane, DNS and live-conformance checks. No normative gauge exposes active-binding evidence expiry."
+    },
+    {
+      "id": "routing_drift_gap",
+      "urgency": "page",
+      "condition": "Drift removes exact-domain catch-all or feedback routing",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "The binding-check counter cannot express the safety impact encoded in a drift report, and no safe bounded drift-gap signal exists today."
+    },
+    {
+      "id": "scratch_older_than_24_hours",
+      "urgency": "ticket",
+      "condition": "Scratch object older than 24 hours",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "Scratch counts by state and purpose do not carry age. A bounded age gauge or explicit cleanup-lag signal is required before an exact alert can be written."
+    },
+    {
+      "id": "nonce_cleanup_lag",
+      "urgency": "ticket",
+      "condition": "Webhook nonce cleanup lag",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "Expired nonce rows are queryable, but section 14 defines no nonce-lag metric and the service has no operational collector."
+    },
+    {
+      "id": "retention_lag",
+      "urgency": "ticket",
+      "condition": "Retention lag over 24 hours",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "The signal must exclude referenced and legally held blobs. No normative retention-lag metric or safe aggregate producer currently exists."
+    },
+    {
+      "id": "conformance_evidence_near_expiry",
+      "urgency": "ticket",
+      "condition": "Conformance evidence within 72 hours of expiry",
+      "coverage": "runtime_missing",
+      "rule": null,
+      "producerStatus": "runtime_missing",
+      "rationale": "The binding-check counter has no expiry dimension. A bounded active-binding evidence age signal is required without binding or domain labels."
+    }
+  ]
+}

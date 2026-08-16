@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "binding-switch-preserves-pinned-intent",
+  "kind": "binding_switch",
+  "expected": {
+    "activeBindingVersion": 2,
+    "drainingBindingVersion": 1,
+    "pinnedIntentBindingVersion": 1
+  }
+}

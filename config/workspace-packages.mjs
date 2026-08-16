@@ -58,6 +58,10 @@ export const workspaceUnits = Object.freeze([
     "packages/provider-cloudflare",
     ["conformance", "provider"],
   ),
+  applicationUnit("w9-scale-qualification", "@mail-edge/w9-scale-qualification", "test/scale", [
+    "contracts",
+    "core",
+  ]),
   applicationUnit("reference-service", "@mail-edge/reference-service", "apps/reference-service", [
     "blob-s3",
     "contracts",

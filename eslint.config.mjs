@@ -78,11 +78,17 @@ export default tseslint.config(
         pattern: `${unit.root}/**/*`,
         type: unit.id,
       })),
-      "boundaries/include": ["apps/**/*", "packages/**/*"],
+      "boundaries/include": ["apps/**/*", "packages/**/*", "test/**/*"],
+      "boundaries/root-path": import.meta.dirname,
       "import/resolver": {
         typescript: {
           alwaysTryTypes: true,
-          project: ["tsconfig.json", "apps/*/tsconfig.json", "packages/*/tsconfig.json"],
+          project: [
+            "tsconfig.json",
+            "apps/*/tsconfig.json",
+            "packages/*/tsconfig.json",
+            "test/*/tsconfig.json",
+          ],
         },
       },
     },

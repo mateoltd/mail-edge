@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - test/*
 
 injectWorkspacePackages: true
 

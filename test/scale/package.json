@@ -1,0 +1,36 @@
+{
+  "name": "@mail-edge/w9-scale-qualification",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic W9 scale and refinement qualification harness",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint src test --max-warnings 0",
+    "qualify": "cd ../.. && node --enable-source-maps ./test/scale/dist/cli.js qualify --full",
+    "test": "vitest run test",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@mail-edge/contracts": "workspace:^",
+    "@mail-edge/core": "workspace:^",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": "24.19.0",
+    "pnpm": "11.21.0"
+  }
+}

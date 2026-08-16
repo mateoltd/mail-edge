@@ -20,7 +20,8 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "test/*"
   ],
   "scripts": {
     "actions:check": "node ./scripts/check-actions.mjs",
@@ -40,7 +41,7 @@
     "lint": "corepack pnpm run lint:rules && corepack pnpm run lint:root && turbo run lint",
     "lint:boundaries": "depcruise --config ./dependency-cruiser.config.mjs --output-type err-long .",
     "lint:rules": "node ./scripts/check-eslint-rules.mjs",
-    "lint:root": "eslint . --ignore-pattern 'apps/**' --ignore-pattern 'packages/**' --max-warnings 0",
+    "lint:root": "eslint . --ignore-pattern 'apps/**' --ignore-pattern 'packages/**' --ignore-pattern 'test/**' --max-warnings 0",
     "migrations:check": "corepack pnpm --filter @mail-edge/postgres migrations:check",
     "pack:check": "node ./scripts/check-packages.mjs",
     "reference-service:container": "corepack pnpm --filter @mail-edge/reference-service container:verify",
