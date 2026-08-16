@@ -281,7 +281,7 @@ export class PostgresControlRepository {
               .selectFrom("domainClaims")
               .select(["verifiedAt", "expiresAt"])
               .where("tenantId", "=", input.tenantId)
-              .where("domainALabel", "=", row.domainALabel)
+              .where(sql<boolean>`domain_claims.domain_a_label = ${row.domainALabel}`)
               .executeTakeFirst(),
             transaction
               .selectFrom("routeBindingChecks")
@@ -320,7 +320,7 @@ export class PostgresControlRepository {
               updatedAt: now,
             })
             .where("tenantId", "=", input.tenantId)
-            .where("domainALabel", "=", row.domainALabel)
+            .where(sql<boolean>`route_bindings.domain_a_label = ${row.domainALabel}`)
             .where("direction", "=", row.direction)
             .where("state", "=", "active")
             .execute();
