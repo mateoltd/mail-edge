@@ -25,9 +25,9 @@ const required = <T>(result: Result<T, unknown>): T => {
   return result.value;
 };
 
-export const fixtureNow = "2026-08-15T18:00:00.000Z";
+const fixtureNow = "2026-08-15T18:00:00.000Z";
 export const fixtureClock: Clock = Object.freeze({ now: () => fixtureNow });
-export const fixtureTenantId = required(parseTenantId("0198b22a-4c00-7000-8000-000000000001"));
+const fixtureTenantId = required(parseTenantId("0198b22a-4c00-7000-8000-000000000001"));
 export const fixtureProviderInstanceId = required(
   parseProviderInstanceId("0198b22a-4c00-7000-8000-000000000002"),
 );
@@ -46,7 +46,7 @@ export const rawReference = (bytes: Uint8Array, value: string): RawMessageRefV1 
     size: bytes.byteLength,
   });
 
-export const fixtureRaw = rawReference(rawBytes, "0198b22a-4c00-7000-8000-000000000003");
+const fixtureRaw = rawReference(rawBytes, "0198b22a-4c00-7000-8000-000000000003");
 
 export const cloudflareSubmission: OutboundSubmissionV1 = Object.freeze({
   attemptId: required(parseAttemptId("0198b22a-4c00-7000-8000-000000000004")),

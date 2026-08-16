@@ -4,8 +4,8 @@ const controlPort = 8474;
 const firstProxyPort = 8666;
 const lastProxyPort = 8675;
 
-export type ToxiproxyStream = "downstream" | "upstream";
-export type ToxiproxyToxicType =
+type ToxiproxyStream = "downstream" | "upstream";
+type ToxiproxyToxicType =
   "bandwidth" | "latency" | "limit_data" | "reset_peer" | "slow_close" | "timeout";
 
 export interface ToxiproxyToxic {
