@@ -35,6 +35,7 @@
     "commitlint:check": "node ./scripts/check-commitlint.mjs",
     "corpus:check": "node ./test/corpus/check-corpus.mjs",
     "clean-room:check": "node ./scripts/check-clean-room.mjs",
+    "formal:execute": "corepack pnpm --filter @mail-edge/w9-scale-qualification build && node ./test/scale/dist/cli.js execute-formal",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip --treat-config-hints-as-errors --treat-tag-hints-as-errors",

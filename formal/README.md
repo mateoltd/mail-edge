@@ -55,35 +55,24 @@ and traces are stable. Terminal workflow states have no required successor, so t
 disables deadlock reporting while retaining every safety invariant. The Alloy commands use explicit
 finite scopes and SAT4J.
 
-Example verification with the qualification probe directory:
+Run the complete gate from a clean, committed checkout. The base SHA must be an ancestor of the
+checked-out source SHA, and the source SHA must equal `HEAD`:
 
 ```sh
-shasum -a 256 /tmp/mail-edge-formal-probe.LwPPhC/tla2tools.jar
-shasum -a 256 /tmp/mail-edge-formal-probe.LwPPhC/alloy.jar
-
-docker run --rm \
-  -v "$PWD:/repo:ro" \
-  -v /tmp/mail-edge-formal-probe.LwPPhC:/probe:ro \
-  -w /repo/formal/tla \
-  eclipse-temurin:21-jre \
-  java -cp /probe/tla2tools.jar tla2sany.SANY MailEdgeOperations.tla
-
-docker run --rm \
-  -v "$PWD:/repo:ro" \
-  -v /tmp/mail-edge-formal-probe.LwPPhC:/probe:ro \
-  -v "$(mktemp -d):/state" \
-  -w /repo/formal/tla \
-  eclipse-temurin:21-jre \
-  java -XX:+UseParallelGC -Xmx2g -jar /probe/tla2tools.jar \
-    -workers 1 -fp 0 -seed 1 -metadir /state \
-    -config MailEdgeOperations.cfg MailEdgeOperations.tla
-
-docker run --rm \
-  -v "$PWD:/repo:ro" \
-  -v /tmp/mail-edge-formal-probe.LwPPhC:/probe:ro \
-  eclipse-temurin:21-jre \
-  java -jar /probe/alloy.jar commands /repo/formal/alloy/mail-edge-structure.als
+mkdir -p temp
+corepack pnpm run formal:execute -- \
+  --lock formal/toolchain.lock.json \
+  --output temp/formal-execution.v1.json \
+  --base-sha <reviewed-ancestor-sha> \
+  --source-sha "$(git rev-parse HEAD)" \
+  --timeout-ms 600000
 ```
+
+The runner downloads both jars into a task-owned temporary directory, verifies each SHA-256 before
+use, and removes the directory after execution. It runs the models without network access in the
+immutable Java image digest recorded by the lock. The repository and tools are mounted read-only;
+only bounded temporary state is writable. No jar or generated solver state is committed or cached in
+the repository.
 
 Parsing is not qualification. The required gate must execute every TLA+ invariant and every Alloy
 `check` and witness `run`, recognize the pinned tool version, and interpret the Alloy receipt so a

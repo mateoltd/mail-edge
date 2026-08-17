@@ -1,4 +1,4 @@
-export const faultBoundaryPrivateKey = `-----BEGIN PRIVATE KEY-----
+export const faultBoundaryPrivateKey = /* gitleaks:allow -- loopback-only TLS fixture */ `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC9gK9McZrYqlbB
 8ZNaCxz1shr85brdW/VtA78ECX8BWmgNHDeHNIDh5YMvdvBLlrhzreN8hekO6+Jb
 pazqnAnMPpZg3kdrL2IKToL2rkWKj3dMqErkJ6sOirmmQo6CezSMDFJZJY7mKLZI

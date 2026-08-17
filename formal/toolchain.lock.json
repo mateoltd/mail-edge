@@ -1,5 +1,11 @@
 {
   "schemaVersion": "v1",
+  "runtime": {
+    "id": "temurin-jre",
+    "version": "21.0.11+10",
+    "image": "eclipse-temurin:21-jre@sha256:8cef5fc7bebe421363ab543a2f4db5caf7d119d8db67d56b0f56c485d2de4d55",
+    "javaMajor": 21
+  },
   "artifacts": [
     {
       "id": "tla2tools",

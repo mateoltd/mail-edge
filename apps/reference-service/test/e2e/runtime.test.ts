@@ -2205,8 +2205,8 @@ describe("shipped reference-service production composition", { concurrent: false
       [tenantId],
     );
     for (const [opaqueReplyToken, idempotencyKey] of [
-      ["denied-reply-token", "e2e-denied-reply"],
-      ["ambiguous-reply-token", "e2e-ambiguous-reply"],
+      ["denied-reply-token", "e2e-denied-reply"], // gitleaks:allow -- opaque negative-path test tokens
+      ["ambiguous-reply-token", "e2e-ambiguous-reply"], // gitleaks:allow -- opaque negative-path test tokens
     ] as const) {
       const rejectedRoute = await fetch(new URL(`/v1/tenants/${tenantId}/outbound-intents`, base), {
         body: JSON.stringify({ ...intentBody, opaqueReplyToken }),

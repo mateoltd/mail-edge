@@ -1,23 +1,34 @@
 import type { Clock, IdGenerator } from "@mail-edge/core";
 
 export class ControllableDrillClock implements Clock {
+  readonly #wallClock: () => number;
   #milliseconds: number;
 
-  constructor(initialTime: string) {
+  constructor(initialTime: string, wallClock: () => number = Date.now) {
     const milliseconds = Date.parse(initialTime);
     if (!Number.isFinite(milliseconds)) throw new TypeError("Drill clock requires an ISO time.");
     this.#milliseconds = milliseconds;
+    this.#wallClock = wallClock;
   }
 
   advance(milliseconds: number): void {
     if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) {
       throw new TypeError("Drill clock advances must be non-negative safe integers.");
     }
-    this.#milliseconds += milliseconds;
+    this.#milliseconds = this.#currentMilliseconds() + milliseconds;
   }
 
   now(): string {
+    this.#milliseconds = this.#currentMilliseconds();
     return new Date(this.#milliseconds).toISOString();
+  }
+
+  #currentMilliseconds(): number {
+    const wallMilliseconds = this.#wallClock();
+    if (!Number.isFinite(wallMilliseconds)) {
+      throw new TypeError("Drill wall clock returned an invalid time.");
+    }
+    return Math.max(this.#milliseconds, wallMilliseconds);
   }
 }
 

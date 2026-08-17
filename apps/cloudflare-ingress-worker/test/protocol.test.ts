@@ -9,7 +9,7 @@ import {
 } from "../src/protocol.js";
 
 const encoder = new TextEncoder();
-const secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY";
+const secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"; // gitleaks:allow -- deterministic test-only HMAC fixture
 const settings = Object.freeze({
   bindingHint: "binding-current",
   currentKeyId: "key-current",

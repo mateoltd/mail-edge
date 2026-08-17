@@ -283,6 +283,13 @@ const config = {
   telemetry: {
     enabled: false,
     exportTimeoutMilliseconds: 1_000,
+    metrics: {
+      collectionTimeoutMilliseconds: 1_000,
+      enabled: false,
+      host: "127.0.0.1",
+      path: "/metrics",
+      port: 9_464,
+    },
     serviceName: "reference-container",
   },
 };

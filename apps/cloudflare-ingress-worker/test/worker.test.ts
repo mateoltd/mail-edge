@@ -6,7 +6,7 @@ import {
   type CloudflareBridgeBindings,
 } from "../src/worker.js";
 
-const secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY";
+const secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"; // gitleaks:allow -- deterministic test-only HMAC fixture
 type TestServiceBindingContract = CloudflareBridgeBindings["MAIL_EDGE_SERVICE"];
 
 class TestServiceBinding implements TestServiceBindingContract {

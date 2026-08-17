@@ -287,7 +287,7 @@ describe("Resend control plane and reconciliation", () => {
       if (request.url.pathname === "/webhooks" && request.method === "POST") {
         return jsonResponse(201, {
           id: "webhook-fixture",
-          signing_secret: "whsec_Y3JlYXRlZC1zZWNyZXQtZml4dHVyZQ==",
+          signing_secret: "whsec_Y3JlYXRlZC1zZWNyZXQtZml4dHVyZQ==", // gitleaks:allow -- deterministic provider response fixture
         });
       }
       if (request.url.pathname === "/domains/domain-fixture" && request.method === "GET") {

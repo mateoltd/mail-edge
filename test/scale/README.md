@@ -66,6 +66,19 @@ this is explicitly labeled `before_after_only`, not a sampled peak.
 exist until real TLC and Alloy execution has been recorded against the final source SHA. Static
 model parsing is not execution.
 
+Generate a formal execution receipt from a clean committed checkout without installing Java or
+keeping tool binaries in the repository:
+
+```sh
+mkdir -p temp
+corepack pnpm run formal:execute -- \
+  --lock formal/toolchain.lock.json \
+  --output temp/formal-execution.v1.json \
+  --base-sha <reviewed-ancestor-sha> \
+  --source-sha "$(git rev-parse HEAD)" \
+  --timeout-ms 600000
+```
+
 After that file exists, validate formal and observability assets with:
 
 ```sh

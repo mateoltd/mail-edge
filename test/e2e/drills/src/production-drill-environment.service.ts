@@ -219,7 +219,7 @@ export class ProductionDrillEnvironment implements ClosableDrillResource {
       await database.start(signal);
       const unitOfWork = new PostgresUnitOfWork(database.kysely, 10_000, database.canceler);
       const blobMetadata = new PostgresBlobRepository(unitOfWork);
-      const clock = new ControllableDrillClock("2026-08-16T12:00:00.000Z");
+      const clock = new ControllableDrillClock(new Date().toISOString());
       const ids = new DeterministicUuidV7Service(0xd00);
       const keys = createProductionDrillEnvelopeKeys("kms://drill/old");
       lifecycle.own(

@@ -15,6 +15,11 @@ import {
   FleetCardinalityRunner,
   FULL_FLEET_CARDINALITY_CONFIGURATION,
 } from "./fleet-cardinality.js";
+import {
+  FormalExecutionRunner,
+  HttpsFormalArtifactFetcher,
+  NodeFormalProcessRunner,
+} from "./formal-execution-runner.js";
 import { FormalExecutionAssetValidator } from "./formal-validator.js";
 import { ObservabilityAssetValidator } from "./observability-validator.js";
 import { scanForPotentialPii } from "./pii-scan.js";
@@ -32,6 +37,7 @@ const parseArguments = (arguments_: readonly string[]): ParsedArguments => {
   const flags = new Map<string, string | true>();
   for (let index = 1; index < arguments_.length; index += 1) {
     const token = arguments_[index];
+    if (index === 1 && token === "--") continue;
     if (!token?.startsWith("--")) throw new TypeError("CLI options must use named --flags.");
     const name = token.slice(2);
     if (!/^[a-z][a-z0-9-]{0,63}$/u.test(name) || flags.has(name))
@@ -167,6 +173,47 @@ const validateAssets = async (flags: ReadonlyMap<string, string | true>): Promis
   if (results.some((result) => result.status !== "pass")) process.exitCode = 1;
 };
 
+const executeFormal = async (flags: ReadonlyMap<string, string | true>): Promise<void> => {
+  rejectUnknownFlags(flags, ["base-sha", "lock", "output", "source-sha", "timeout-ms"]);
+  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => {
+      controller.abort(new Error("Formal execution deadline expired."));
+    },
+    integerFlag(flags, "timeout-ms", 10 * 60 * 1000),
+  );
+  timeout.unref();
+  try {
+    const result = await new FormalExecutionRunner({
+      fetcher: new HttpsFormalArtifactFetcher(),
+      processes: new NodeFormalProcessRunner(),
+      repositoryRoot,
+    }).run(
+      {
+        baseSha: valueFlag(flags, "base-sha"),
+        sourceSha: valueFlag(flags, "source-sha"),
+        toolchainLockPath: resolve(repositoryRoot, valueFlag(flags, "lock")),
+      },
+      controller.signal,
+    );
+    await writeReport(valueFlag(flags, "output"), result.evidence);
+    process.stdout.write(
+      `${JSON.stringify({
+        alloyChecks: result.evidence.executions[1].checks,
+        alloyWitnesses: result.evidence.executions[1].witnesses,
+        formalExecutionWritten: true,
+        runtimeImage: result.provenance.runtimeImage,
+        tlaDistinctStates: result.evidence.executions[0].distinctStates,
+        tlaStatesGenerated: result.evidence.executions[0].statesGenerated,
+        toolchainLockSha256: result.provenance.toolchainLockSha256,
+      })}\n`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
 const signEvidence = async (flags: ReadonlyMap<string, string | true>): Promise<void> => {
   rejectUnknownFlags(flags, ["input", "key-id", "output", "private-key"]);
   const evidenceInput = await readJson(valueFlag(flags, "input"));
@@ -196,6 +243,9 @@ const verifyEvidence = async (flags: ReadonlyMap<string, string | true>): Promis
 export const runQualificationCli = async (arguments_: readonly string[]): Promise<void> => {
   const parsed = parseArguments(arguments_);
   switch (parsed.command) {
+    case "execute-formal":
+      await executeFormal(parsed.flags);
+      return;
     case "qualify":
       await runFullQualification(parsed.flags);
       return;
@@ -211,7 +261,7 @@ export const runQualificationCli = async (arguments_: readonly string[]): Promis
     case "help":
       rejectUnknownFlags(parsed.flags, []);
       process.stdout.write(
-        "Commands: qualify --full, validate-assets, sign, verify. All paths and keys are explicit CLI arguments.\n",
+        "Commands: execute-formal, qualify --full, validate-assets, sign, verify. All paths and keys are explicit CLI arguments.\n",
       );
       return;
     default:

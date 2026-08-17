@@ -46,6 +46,33 @@ export {
   FULL_FLEET_CARDINALITY_CONFIGURATION,
   validateFleetCardinalityConfiguration,
 } from "./fleet-cardinality.js";
+export type {
+  FormalArtifactFetcher,
+  FormalExecutionInput,
+  FormalExecutionProvenance,
+  FormalExecutionRun,
+  FormalProcessRunner,
+} from "./formal-execution-runner.js";
+export {
+  FormalExecutionRunner,
+  HttpsFormalArtifactFetcher,
+  NodeFormalProcessRunner,
+} from "./formal-execution-runner.js";
+export type {
+  AlloyCommandScope,
+  AlloyExecutionReceipt,
+  FormalJavaRuntime,
+  FormalToolArtifact,
+  FormalToolchainLock,
+  TlcExecutionReceipt,
+} from "./formal-execution.js";
+export {
+  parseAlloyCommands,
+  parseAlloyExecutionReceipt,
+  parseFormalToolchainLock,
+  parseTlaInvariants,
+  parseTlcExecutionReceipt,
+} from "./formal-execution.js";
 export type { FormalExecutionEvidenceV1 } from "./formal-validator.js";
 export {
   FormalExecutionAssetValidator,

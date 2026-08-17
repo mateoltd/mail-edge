@@ -166,7 +166,7 @@ class ConformanceHttpTransport implements ResendHttpTransport {
       return Promise.resolve(
         jsonResponse(201, {
           id: "webhook-conformance",
-          signing_secret: "whsec_Y29uZm9ybWFuY2Utc2VjcmV0",
+          signing_secret: "whsec_Y29uZm9ybWFuY2Utc2VjcmV0", // gitleaks:allow -- deterministic provider response fixture
         }),
       );
     }
