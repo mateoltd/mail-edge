@@ -1,6 +1,6 @@
 {
   "evidence": {
-    "baseSha": "762948e1f9ccb57a025151ab824e4a040a30d272",
+    "baseSha": "ed71496ac4225ef6df259f6626b15ecc2711c38f",
     "environment": {
       "architecture": "arm64",
       "cpuCount": 11,
@@ -8,24 +8,23 @@
       "platform": "darwin",
       "totalMemoryBytes": 19327352832
     },
-    "generatedAt": "2026-08-16T07:42:49.000Z",
+    "generatedAt": "2026-08-17T04:40:19Z",
     "limitations": [
       "External release blocker: independent security and architecture review was not authorized or supplied.",
       "External release blocker: live Mailgun qualification was not authorized and no provider account, credentials, DNS or isolated domain was touched.",
-      "Internal qualification blocker: reference-service OCI runtime crash and shutdown probes did not run because the production dependency layer exhausted available storage.",
-      "Internal qualification blocker: section 16.7 did not run because no reachable 8-vCPU and 16-GiB constrained environment had the durable storage required for 46.08 billion inbound bytes."
+      "Internal qualification blocker: Section 16.7 did not run because Docker exposed 11 vCPU and 9435414528 memory bytes rather than the exact required 8 vCPU and 16 GiB, while 11432400 KiB of available durable storage was below the mandatory workload's 46080000000 raw ingress bytes before overhead."
     ],
     "qualificationStatus": "limited",
     "reports": [
       {
-        "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
         "id": "alias-cardinality",
         "kind": "cardinality_alias",
         "status": "pass",
         "summary": { "aliasCount": 1000000, "exactDomains": 10, "retainedAliases": 0 }
       },
       {
-        "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
         "id": "fleet-cardinality",
         "kind": "cardinality_fleet",
         "status": "pass",
@@ -36,7 +35,7 @@
         }
       },
       {
-        "artifactDigestSha256": "e826ee5300ebf5ee3deb777c63bc0f042c7e910a33a2e007f23b5786c926ee2e",
+        "artifactDigestSha256": "acefe9180f16e4cb3b93cdf6d29d25bf2c8bc0cad6212fff56ba1485c28e3ec7",
         "id": "formal-models",
         "kind": "formal",
         "status": "pass",
@@ -57,7 +56,7 @@
         "summary": { "allowedDependencyExpressions": 17, "projectLicense": "Apache-2.0" }
       },
       {
-        "artifactDigestSha256": "4ce284a0cbd831d55ecaee4717c79faba321f1f384c08ccb587fb2f5888eaee3",
+        "artifactDigestSha256": "9aee4806379087f2638fd574c770189a05ada8b5b1957aeff7ce831b8f0a21c5",
         "id": "observability-assets",
         "kind": "observability",
         "status": "pass",
@@ -69,18 +68,19 @@
         }
       },
       {
-        "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
         "id": "pii-redaction",
         "kind": "pii_redaction",
         "status": "pass",
         "summary": {
           "opaqueQueuePayloadFields": 1,
+          "qualificationEvidenceFindings": 0,
           "rawBytesInRealMetricsScrape": 0,
           "telemetryRedactionFailures": 0
         }
       },
       {
-        "artifactDigestSha256": "a45203b1a6f5ff09bd5ddf4f7432964fc7b2a54e453a840cf999f7511ba4cade",
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
         "id": "real-driver",
         "kind": "real_driver",
         "status": "pass",
@@ -91,63 +91,73 @@
         }
       },
       {
-        "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
         "id": "refinement-traces",
         "kind": "refinement",
         "status": "pass",
         "summary": { "casesPassed": 7, "casesRun": 7 }
       },
       {
-        "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
         "id": "reproducibility-container",
         "kind": "reproducibility",
-        "status": "unavailable",
+        "status": "pass",
         "summary": {
-          "cleanRoomPackagesPassed": 16,
-          "containerBlocker": "ENOSPC",
-          "containerCompilation": "pass"
+          "cleanRoomInvocationsPassed": 2,
+          "cleanRoomPackagesPerInvocation": 16,
+          "concurrentLeaseHandoff": "pass",
+          "containerCrashRestartProbe": "pass",
+          "containerGracefulShutdownProbe": "pass",
+          "containerReadiness": "pass"
         }
       },
       {
-        "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
         "id": "sbom",
         "kind": "sbom",
         "status": "pass",
         "summary": { "components": 951, "format": "CycloneDX", "specVersion": "1.6" }
       },
       {
-        "artifactDigestSha256": "d8cebcedbf662dad0dca9ee4414f81f26889273130ce69da216487ab9a977cec",
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
         "id": "scale-sustained",
         "kind": "scale",
         "status": "unavailable",
         "summary": {
+          "dockerCpuCount": 11,
+          "dockerMemoryBytes": 9435414528,
+          "filesystemAvailableKiB": 11432400,
           "localMaximumSizeConcurrency": 8,
           "localMaximumSizeStreamBytes": 26214400,
           "localSimultaneousStreams": 100,
+          "minimumRawIngressBytes": 46080000000,
+          "requiredCpuCount": 8,
           "requiredDurationSeconds": 1800,
-          "requiredInboundMessagesPerSecond": 250
+          "requiredInboundMessagesPerSecond": 250,
+          "requiredMemoryBytes": 17179869184
         }
       },
       {
-        "artifactDigestSha256": "749c70f913149ab5c40cbcf263376d8c5d38e2949ed26a7355b1f95f13b99dc5",
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
         "id": "security",
         "kind": "security",
         "status": "pass",
         "summary": {
           "faultBoundaryTests": 27,
           "internalSecurityGate": "pass",
-          "referenceServiceFailClosedGate": "pass"
+          "referenceServiceFailClosedGate": "pass",
+          "secretScanFindings": 0
         }
       }
     ],
     "schemaVersion": "w9-qualification-v1",
-    "sourceSha": "126b5749d46fb75d41b7c747cc4f1bc5ce6d4989"
+    "sourceSha": "698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e"
   },
-  "evidenceDigestSha256": "dc6b415a653f803513f76023ba59c2da16550465e7bdbec8c3c65ad9083425e3",
+  "evidenceDigestSha256": "2aea00ce27b65fb9ef3ebd6dfbe47fd723b1b5ec59342c3b7b694ef040d70ec2",
   "schemaVersion": "w9-signed-qualification-v1",
   "signature": {
     "algorithm": "ed25519",
     "keyId": "w9-integration-2026-08",
-    "value": "vz5u3xynEuPRfRWEvocrY9nqIUdJouiQHOXiQuga03YI8cpH2_rd0DhHHa5obsolcnqIwICe3CgqB6LkJOgWBA"
+    "value": "I828d10z7mXLlvd9-CMAxlv4B0azro4knQFHB8aArKmQORj8nk0lu_lJT0rWkB7FvmOfB5zmqbUlzRFI2nyVDA"
   }
 }
