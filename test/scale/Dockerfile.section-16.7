@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1.7
+
+ARG NODE_IMAGE=node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03
+ARG MINIO_IMAGE=minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0
+ARG POSTGRES_IMAGE=postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+ARG PNPM_VERSION=11.21.0
+
+FROM ${MINIO_IMAGE} AS minio
+FROM ${POSTGRES_IMAGE} AS postgres
+
+FROM ${NODE_IMAGE} AS build
+ARG PNPM_VERSION
+ENV PNPM_HOME=/opt/pnpm
+ENV PATH=${PNPM_HOME}:${PATH}
+WORKDIR /workspace
+RUN corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @mail-edge/w9-scale-qualification... build
+RUN pnpm --filter @mail-edge/w9-scale-qualification deploy --prod /opt/w9-scale
+RUN cp -R /workspace/test/scale/traces /opt/w9-scale/traces
+
+FROM postgres AS runtime
+ARG BASE_SHA
+ARG SOURCE_SHA
+ARG TOOLING_DIGEST_SHA256
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
+COPY --from=build /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+COPY --from=build /lib/x86_64-linux-gnu/libgcc_s.so.1 /lib/x86_64-linux-gnu/libgcc_s.so.1
+RUN node --version | grep -Fx 'v24.19.0' \
+  && groupadd --gid 1000 qualification \
+  && useradd --create-home --gid 1000 --uid 1000 qualification
+LABEL org.opencontainers.image.revision=${SOURCE_SHA}
+LABEL mail-edge.w9.base-sha=${BASE_SHA}
+LABEL mail-edge.w9.source-sha=${SOURCE_SHA}
+LABEL mail-edge.w9.tooling-sha256=${TOOLING_DIGEST_SHA256}
+ENV MAIL_EDGE_W9_BASE_SHA=${BASE_SHA}
+ENV MAIL_EDGE_W9_SOURCE_SHA=${SOURCE_SHA}
+ENV MAIL_EDGE_W9_TOOLING_SHA256=${TOOLING_DIGEST_SHA256}
+ENV NODE_ENV=production
+ENV UV_THREADPOOL_SIZE=8
+ENV HOME=/home/qualification
+ENV PATH=/usr/lib/postgresql/17/bin:/usr/local/bin:/usr/bin:/bin
+WORKDIR /opt/w9-scale
+COPY --from=minio /usr/bin/minio /usr/bin/minio
+COPY --from=build --chown=1000:1000 /opt/w9-scale/ ./
+STOPSIGNAL SIGTERM
+USER 1000:1000
+ENTRYPOINT ["node", "--enable-source-maps", "./dist/cli.js"]

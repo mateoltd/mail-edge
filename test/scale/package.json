@@ -15,13 +15,22 @@
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint src test --max-warnings 0",
+    "preflight:production": "cd ../.. && node --enable-source-maps ./test/scale/dist/cli.js preflight-production",
     "qualify": "cd ../.. && node --enable-source-maps ./test/scale/dist/cli.js qualify --full",
+    "qualify:production": "cd ../.. && node --enable-source-maps ./test/scale/dist/cli.js qualify-production --full",
     "test": "vitest run test",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1109.0",
+    "@mail-edge/blob-s3": "workspace:^",
     "@mail-edge/contracts": "workspace:^",
     "@mail-edge/core": "workspace:^",
+    "@mail-edge/mime": "workspace:^",
+    "@mail-edge/postgres": "workspace:^",
+    "@mail-edge/provider": "workspace:^",
+    "@mail-edge/provider-mailgun": "workspace:^",
+    "@mail-edge/queue-pg-boss": "workspace:^",
     "yaml": "2.9.0"
   },
   "devDependencies": {

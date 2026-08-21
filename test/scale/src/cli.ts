@@ -23,6 +23,21 @@ import {
 import { FormalExecutionAssetValidator } from "./formal-validator.js";
 import { ObservabilityAssetValidator } from "./observability-validator.js";
 import { scanForPotentialPii } from "./pii-scan.js";
+import {
+  parseSection167ProductionQualification,
+  SECTION_16_7_QUALIFICATION_DEADLINE_MILLISECONDS,
+  type Section167ProductionQualificationV1,
+} from "./production-scale.schema.js";
+import {
+  ProductionScaleTargetWorker,
+  type ProductionScaleTargetIpcPort,
+  type ProductionScaleTargetMessage,
+} from "./production-scale-target.worker.js";
+import {
+  inspectSection167Environment,
+  Section167ProductionScaleRunner,
+} from "./production-scale.worker.js";
+import { ProductionEvidenceVerificationService } from "./production-scale-verification.service.js";
 import { nodeQualificationDependencies, QualificationRunner } from "./qualification-runner.js";
 import { RefinementTraceRunner } from "./refinement-runner.js";
 import { createFullQualificationMatrix } from "./workload.js";
@@ -85,6 +100,12 @@ const integerFlag = (
 };
 
 const readJson = async (path: string): Promise<unknown> => JSON.parse(await readFile(path, "utf8"));
+
+const readBoundedJson = async (path: string, maximumBytes: number): Promise<unknown> => {
+  const encoded = await readFile(path);
+  if (encoded.byteLength > maximumBytes) throw new Error("JSON input exceeded its byte bound.");
+  return JSON.parse(encoded.toString("utf8"));
+};
 
 const writeReport = async (path: string, report: unknown): Promise<void> => {
   const findings = scanForPotentialPii(report);
@@ -156,6 +177,182 @@ const runFullQualification = async (flags: ReadonlyMap<string, string | true>): 
     process.stdout.write('{"qualificationReportWritten":true}\n');
   } finally {
     clearTimeout(timeout);
+  }
+};
+
+const productionTraceDirectory = (flags: ReadonlyMap<string, string | true>): string =>
+  typeof flags.get("trace-dir") === "string"
+    ? valueFlag(flags, "trace-dir")
+    : resolve(dirname(fileURLToPath(import.meta.url)), "../traces");
+
+const exactProductionBinding = (name: string, value: string): void => {
+  const bound = process.env[name];
+  if (bound === undefined || bound !== value)
+    throw new Error(`Section 16.7 immutable image binding failed: ${name}.`);
+};
+
+const productionBindings = (
+  flags: ReadonlyMap<string, string | true>,
+): {
+  readonly baseSha: string;
+  readonly imageDigest: string;
+  readonly sourceSha: string;
+  readonly toolingDigestSha256: string;
+} => {
+  const baseSha = valueFlag(flags, "base-sha");
+  const imageDigest = valueFlag(flags, "image-digest");
+  const sourceSha = valueFlag(flags, "source-sha");
+  const toolingDigestSha256 = valueFlag(flags, "tooling-digest");
+  if (
+    !/^[a-f0-9]{40}$/u.test(baseSha) ||
+    !/^[a-f0-9]{40}$/u.test(sourceSha) ||
+    !/^sha256:[a-f0-9]{64}$/u.test(imageDigest) ||
+    !/^[a-f0-9]{64}$/u.test(toolingDigestSha256)
+  )
+    throw new TypeError("Section 16.7 immutable bindings are malformed.");
+  exactProductionBinding("MAIL_EDGE_W9_BASE_SHA", baseSha);
+  exactProductionBinding("MAIL_EDGE_W9_IMAGE_DIGEST", imageDigest);
+  exactProductionBinding("MAIL_EDGE_W9_SOURCE_SHA", sourceSha);
+  exactProductionBinding("MAIL_EDGE_W9_TOOLING_SHA256", toolingDigestSha256);
+  return Object.freeze({ baseSha, imageDigest, sourceSha, toolingDigestSha256 });
+};
+
+const bindTerminationSignals = (controller: AbortController): (() => void) => {
+  const terminate = (): void => {
+    controller.abort(new Error("Qualification received a termination signal."));
+  };
+  process.once("SIGINT", terminate);
+  process.once("SIGTERM", terminate);
+  return () => {
+    process.removeListener("SIGINT", terminate);
+    process.removeListener("SIGTERM", terminate);
+  };
+};
+
+const runProductionScalePreflight = async (
+  flags: ReadonlyMap<string, string | true>,
+): Promise<void> => {
+  rejectUnknownFlags(flags, ["storage-directory"]);
+  const environment = await inspectSection167Environment(valueFlag(flags, "storage-directory"));
+  process.stdout.write(`${JSON.stringify({ environment, preflightPassed: true })}\n`);
+};
+
+const runProductionScaleQualification = async (
+  flags: ReadonlyMap<string, string | true>,
+): Promise<void> => {
+  rejectUnknownFlags(flags, [
+    "base-sha",
+    "full",
+    "image-digest",
+    "output",
+    "receipt-directory",
+    "source-sha",
+    "storage-directory",
+    "tooling-digest",
+    "trace-dir",
+  ]);
+  if (flags.get("full") !== true)
+    throw new TypeError("Section 16.7 qualification requires explicit --full.");
+  const bindings = productionBindings(flags);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new Error("Section 16.7 qualification deadline expired."));
+  }, SECTION_16_7_QUALIFICATION_DEADLINE_MILLISECONDS);
+  timeout.unref();
+  const unbindSignals = bindTerminationSignals(controller);
+  try {
+    const scale = await new Section167ProductionScaleRunner(
+      Object.freeze({
+        receiptDirectory: valueFlag(flags, "receipt-directory"),
+        storageRoot: valueFlag(flags, "storage-directory"),
+      }),
+    ).run(controller.signal);
+    const refinement = await new RefinementTraceRunner(productionTraceDirectory(flags)).run(
+      controller.signal,
+    );
+    if (refinement.length !== 7 || refinement.some((result) => !result.passed))
+      throw new Error("Section 16.7 refinement validation failed.");
+    const report: Section167ProductionQualificationV1 = Object.freeze({
+      baseSha: bindings.baseSha,
+      generatedAt: new Date().toISOString(),
+      imageDigest: bindings.imageDigest,
+      refinement,
+      scale,
+      schemaVersion: "w9-section-16.7-production-qualification-v1",
+      sourceSha: bindings.sourceSha,
+      toolingDigestSha256: bindings.toolingDigestSha256,
+    });
+    const parsed = parseSection167ProductionQualification(report);
+    if (!parsed.ok) throw new TypeError(parsed.errors.join("; "));
+    await writeReport(valueFlag(flags, "output"), parsed.value);
+    process.stdout.write(
+      `${JSON.stringify({ outputWritten: true, section: "16.7", status: "pass" })}\n`,
+    );
+  } finally {
+    unbindSignals();
+    clearTimeout(timeout);
+  }
+};
+
+const verifyProductionScaleQualification = async (
+  flags: ReadonlyMap<string, string | true>,
+): Promise<void> => {
+  rejectUnknownFlags(flags, [
+    "expected-base-sha",
+    "expected-image-digest",
+    "expected-source-sha",
+    "expected-tooling-digest",
+    "input",
+    "receipt-directory",
+    "storage-directory",
+    "trace-dir",
+  ]);
+  const result = await new ProductionEvidenceVerificationService().verify(
+    {
+      evidence: await readBoundedJson(valueFlag(flags, "input"), 4 * 1024 * 1024),
+      expectedBaseSha: valueFlag(flags, "expected-base-sha"),
+      expectedImageDigest: valueFlag(flags, "expected-image-digest"),
+      expectedSourceSha: valueFlag(flags, "expected-source-sha"),
+      expectedToolingDigest: valueFlag(flags, "expected-tooling-digest"),
+      receiptDirectory: valueFlag(flags, "receipt-directory"),
+      storageDirectory: valueFlag(flags, "storage-directory"),
+      traceDirectory: valueFlag(flags, "trace-dir"),
+    },
+    AbortSignal.timeout(2 * 60 * 60_000),
+  );
+  process.stdout.write(`${JSON.stringify({ ...result, section: "16.7", verified: true })}\n`);
+};
+
+const runProductionTarget = async (flags: ReadonlyMap<string, string | true>): Promise<void> => {
+  rejectUnknownFlags(flags, ["storage-directory"]);
+  if (process.send === undefined || !process.connected)
+    throw new Error("The production target requires a private IPC channel.");
+  const ipc: ProductionScaleTargetIpcPort = Object.freeze({
+    onDisconnect: (listener: () => void): void => {
+      process.on("disconnect", listener);
+    },
+    onMessage: (listener: (message: unknown) => void): void => {
+      process.on("message", listener);
+    },
+    removeDisconnectListener: (listener: () => void): void => {
+      process.removeListener("disconnect", listener);
+    },
+    removeMessageListener: (listener: (message: unknown) => void): void => {
+      process.removeListener("message", listener);
+    },
+    send: (message: ProductionScaleTargetMessage): void => {
+      if (process.send === undefined || !process.connected || !process.send(message))
+        throw new Error("The production target IPC channel rejected a message.");
+    },
+  });
+  const controller = new AbortController();
+  const unbindSignals = bindTerminationSignals(controller);
+  try {
+    await new ProductionScaleTargetWorker(valueFlag(flags, "storage-directory"), ipc).run(
+      controller.signal,
+    );
+  } finally {
+    unbindSignals();
   }
 };
 
@@ -249,6 +446,15 @@ export const runQualificationCli = async (arguments_: readonly string[]): Promis
     case "qualify":
       await runFullQualification(parsed.flags);
       return;
+    case "preflight-production":
+      await runProductionScalePreflight(parsed.flags);
+      return;
+    case "qualify-production":
+      await runProductionScaleQualification(parsed.flags);
+      return;
+    case "target-production":
+      await runProductionTarget(parsed.flags);
+      return;
     case "sign":
       await signEvidence(parsed.flags);
       return;
@@ -258,10 +464,13 @@ export const runQualificationCli = async (arguments_: readonly string[]): Promis
     case "verify":
       await verifyEvidence(parsed.flags);
       return;
+    case "verify-production":
+      await verifyProductionScaleQualification(parsed.flags);
+      return;
     case "help":
       rejectUnknownFlags(parsed.flags, []);
       process.stdout.write(
-        "Commands: execute-formal, qualify --full, validate-assets, sign, verify. All paths and keys are explicit CLI arguments.\n",
+        "Commands: execute-formal, qualify --full, preflight-production, qualify-production --full, verify-production, validate-assets, sign, verify. All paths and keys are explicit CLI arguments.\n",
       );
       return;
     default:

@@ -52,6 +52,7 @@ const smtpPasswordReference = "secret://mailgun-local-smtp-password";
 const apiKeyReference = "secret://mailgun-local-api-key";
 const signingKeyReference = "secret://mailgun-local-signing-key";
 const resendApiKeyReference = "secret://resend-local-api-key";
+const resendQualificationTimeoutMilliseconds = 2_000;
 
 const inboundBinding: RouteBindingSnapshotV1 = Object.freeze({
   ...cloudflareSubmission.routeBinding,
@@ -172,7 +173,7 @@ const resendConfig: ResendProviderConfig = Object.freeze({
   maximumRawAcquisitionQueueDepth: 1,
   maximumSmtpConcurrency: 1,
   maximumSmtpQueueDepth: 1,
-  networkTimeoutMilliseconds: 350,
+  networkTimeoutMilliseconds: resendQualificationTimeoutMilliseconds,
   rawDownloadAllowedHosts: Object.freeze(["raw.example.test"] as const),
   region: "us-east-1",
   smtpEhloName: "edge.example.test",

@@ -59,8 +59,14 @@ export const workspaceUnits = Object.freeze([
     ["conformance", "provider"],
   ),
   applicationUnit("w9-scale-qualification", "@mail-edge/w9-scale-qualification", "test/scale", [
+    "blob-s3",
     "contracts",
     "core",
+    "mime",
+    "postgres",
+    "provider",
+    "provider-mailgun",
+    "queue-pg-boss",
   ]),
   applicationUnit("production-drills", "@mail-edge/production-drills", "test/e2e/drills", [
     "blob-s3",

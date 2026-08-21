@@ -97,6 +97,34 @@ export {
 } from "./observability-validator.js";
 export { scanForPotentialPii } from "./pii-scan.js";
 export type {
+  Section167Environment,
+  Section167IntegrityMeasurement,
+  Section167MaximumOperationMeasurement,
+  Section167PhaseMeasurement,
+  Section167ProductionQualificationV1,
+  Section167RuntimeMeasurement,
+  Section167ScaleResult,
+} from "./production-scale.schema.js";
+export {
+  parseSection167ProductionQualification,
+  SECTION_16_7_CPU_COUNT,
+  SECTION_16_7_DURATION_SECONDS,
+  SECTION_16_7_INBOUND_MESSAGE_BYTES,
+  SECTION_16_7_INBOUND_MESSAGE_COUNT,
+  SECTION_16_7_INBOUND_MESSAGES_PER_SECOND,
+  SECTION_16_7_MAXIMUM_SIZE_BYTES,
+  SECTION_16_7_MAXIMUM_SIZE_STREAMS,
+  SECTION_16_7_MEMORY_BYTES,
+  SECTION_16_7_MINIMUM_FREE_BYTES,
+  SECTION_16_7_OPERATIONAL_OVERHEAD_BYTES,
+  SECTION_16_7_RAW_INGRESS_BYTES,
+  validateSection167ScaleResult,
+} from "./production-scale.schema.js";
+export {
+  inspectSection167Environment,
+  Section167ProductionScaleRunner,
+} from "./production-scale.worker.js";
+export type {
   QualificationRunnerDependencies,
   QualificationSuiteResult,
 } from "./qualification-runner.js";

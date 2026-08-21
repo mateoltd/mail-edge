@@ -133,7 +133,7 @@ describe("real HTTP provider fault boundaries", { concurrent: false }, () => {
 
   test("classifies actual DNS and TLS failures before application bytes as not sent", async () => {
     const dns = await execute(
-      new URL("http://fault-boundary-does-not-exist.invalid"),
+      new URL("http://fault-boundary-does-not-exist.invalid."),
       AbortSignal.timeout(5_000),
     );
     expect(dns.action).toBe("retry_not_sent");

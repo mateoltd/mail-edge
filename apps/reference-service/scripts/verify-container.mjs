@@ -15,6 +15,7 @@ const suffix = `${String(process.pid)}-${Date.now().toString(36)}`;
 const project = `mail_edge_reference_verify_${suffix.replaceAll("-", "_")}`;
 const image = `mail-edge-reference-verify:${suffix}`;
 const container = `mail-edge-reference-verify-${suffix}`;
+const hostIdentity = `${String(process.getuid())}:${String(process.getgid())}`;
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "mail-edge-reference-container-"));
 const secretDirectory = join(temporaryDirectory, "secrets");
 const configFile = join(temporaryDirectory, "config.json");
@@ -102,6 +103,34 @@ const compose = (...arguments_) =>
   run("docker", ["compose", "--project-name", project, "--file", composeFile, ...arguments_], {
     env: composeEnvironment,
   });
+
+const changeFixtureOwnership = (identity) =>
+  run("docker", [
+    "run",
+    "--rm",
+    "--network",
+    "none",
+    "--read-only",
+    "--cap-drop",
+    "ALL",
+    "--cap-add",
+    "CHOWN",
+    "--cap-add",
+    "DAC_OVERRIDE",
+    "--security-opt",
+    "no-new-privileges",
+    "--user",
+    "0:0",
+    "--entrypoint",
+    "chown",
+    "--volume",
+    `${temporaryDirectory}:/fixture`,
+    image,
+    "-R",
+    identity,
+    "/fixture/config.json",
+    "/fixture/secrets",
+  ]);
 
 const config = {
   authentication: {
@@ -323,7 +352,7 @@ const publishedPort = async () => {
 };
 
 try {
-  await mkdir(secretDirectory);
+  await mkdir(secretDirectory, { mode: 0o700 });
   const postgresUri = "postgresql://mail_edge_owner:local-owner-password@postgres:5432/mail_edge";
   await Promise.all([
     writeFile(configFile, `${JSON.stringify(config, undefined, 2)}\n`, { mode: 0o600 }),
@@ -386,6 +415,7 @@ try {
       `Container image user is not the expected non-root identity: ${inspected.stdout.trim()}`,
     );
   }
+  await changeFixtureOwnership("10001:10001");
   await run("docker", [
     "run",
     "--detach",
@@ -436,6 +466,7 @@ try {
 } finally {
   await run("docker", ["rm", "--force", container]).catch(() => undefined);
   await compose("down", "--volumes", "--remove-orphans").catch(() => undefined);
+  await changeFixtureOwnership(hostIdentity).catch(() => undefined);
   await run("docker", ["image", "rm", "--force", image]).catch(() => undefined);
   await rm(temporaryDirectory, { force: true, recursive: true });
   await new Promise((resolvePromise) => kms.close(resolvePromise));

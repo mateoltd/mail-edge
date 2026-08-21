@@ -60,6 +60,61 @@ aliases. A distinct bounded fleet measurement builds 10,000 tenant entries, 100,
 entries and three binding generations per domain. Both measurements record RSS before and after;
 this is explicitly labeled `before_after_only`, not a sampled peak.
 
+## Section 16.7 production-scale qualification
+
+Section 16.7 is a separate, fail-closed sustained lane. It is not the local qualification above and
+does not accept cardinality, duration, rate, size, concurrency, resource, or threshold overrides.
+The fixed workload is:
+
+- exactly 8 cpuset CPUs and a 16 GiB cgroup memory limit with swap disabled;
+- 250 concurrent exact 100 KiB messages in each one-second cohort for two 900-second halves,
+  totaling 450,000 messages, 1,800 sustained seconds, and 46,080,000,000 raw ingress bytes;
+- an exact `SIGKILL` after a durable uncommitted-tail probe between halves, followed by journal
+  recovery and truncation of exactly that tail;
+- exactly 100 simultaneous 25 MiB streams with observable client write backpressure;
+- byte and digest validation at the durable response boundary, followed by a complete reread of all
+  committed data;
+- one million aliases over ten exact domains through the shipping PostgreSQL exact-route repository
+  and signed host callback, with domain-bounded production-adapter discovery over an independently
+  populated loopback HTTP fixture, a scan of all persisted text/JSON columns proving no generated
+  alias values, no alias columns, and a bounded routing-callback queue;
+- the shipping encrypted-S3, raw-download, MIME header-patch, provider-dispatch and pg-boss repair
+  paths at their required boundaries, including the real PostgreSQL due-state scanner and pg-boss
+  publisher, with a pinned loopback MinIO binary and a verified loopback TLS SMTP protocol peer that
+  independently reverses dot transparency and checks exact source bytes and digest;
+- sampled aggregate cgroup-process RSS, parent/target event-loop delay, durable ingress latency,
+  wakeup timing and zero-raw-byte job/telemetry assertions; and
+- all seven checked refinement traces before the no-overwrite canonical result is written.
+
+The lane requires at least 57,600,000,000 free bytes: the mandatory raw ingress plus 11,520,000,000
+bytes for maximum-size streams, journals, integrity rereads and operational headroom. It writes only
+to a task-owned bind mount outside Git. The container has no network, uses a read-only root
+filesystem, drops all capabilities and is created before execution so its resource limits can be
+inspected independently. A non-configurable 24-hour orchestration watchdog bounds the complete lane
+without changing its exact workload or its per-operation fail-closed deadlines.
+
+Prepare, but do not start, the exact container from the selected evidence branch:
+
+```sh
+test/scale/scripts/run-section-16.7-production-scale.sh prepare
+```
+
+Preparation prints the task root, immutable image, stopped container and exact `execute` command.
+The unique task root is created under the fixed owner-only durable state directory
+`/home/zero/.local/state/mail-edge-section-16.7-runtime/tasks`; volatile and overlay filesystems are
+rejected. Build, preflight, container inspection and qualification receipts stay under the task
+root. The execution command starts the already-created container once; it does not silently
+recreate, restart, shrink or relabel the lane. A successful execution runs an independent
+parser/threshold verification in a fresh constrained container, checks the exact command and
+container shape, fully rereads every durable byte, replays all seven refinements, and writes the
+evidence SHA-256 beside the canonical JSON. Remove the stopped task container after preserving its
+inspection receipt with:
+
+```sh
+test/scale/scripts/run-section-16.7-production-scale.sh cleanup-container \
+  <container> <task-root>
+```
+
 ## Asset validation
 
 `test/scale/evidence/formal-execution.v1.json` is a generated signed-release input. It must not

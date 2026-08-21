@@ -544,12 +544,33 @@ importers:
 
   test/scale:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1109.0
+        version: 3.1109.0
+      '@mail-edge/blob-s3':
+        specifier: workspace:^
+        version: link:../../packages/blob-s3
       '@mail-edge/contracts':
         specifier: workspace:^
         version: link:../../packages/contracts
       '@mail-edge/core':
         specifier: workspace:^
         version: link:../../packages/core
+      '@mail-edge/mime':
+        specifier: workspace:^
+        version: link:../../packages/mime
+      '@mail-edge/postgres':
+        specifier: workspace:^
+        version: link:../../packages/postgres
+      '@mail-edge/provider':
+        specifier: workspace:^
+        version: link:../../packages/provider
+      '@mail-edge/provider-mailgun':
+        specifier: workspace:^
+        version: link:../../packages/provider-mailgun
+      '@mail-edge/queue-pg-boss':
+        specifier: workspace:^
+        version: link:../../packages/queue-pg-boss
       yaml:
         specifier: 2.9.0
         version: 2.9.0
