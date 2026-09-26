@@ -18,6 +18,10 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
+The full gate also requires a running Docker-compatible container runtime for the PostgreSQL, MinIO,
+and fault-boundary tests. Test results are never cached by Turbo: infrastructure-dependent checks
+must execute against the current host rather than replay results from another environment.
+
 `pnpm clean-room:check` repeats installation and verification from a Git archive. It requires a
 clean, committed worktree.
 
