@@ -2,6 +2,9 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreDependencies": ["@cyclonedx/cdxgen", "@zone-eu/mailsplit", "publint"],
   "workspaces": {
+    "apps/reference-service": {
+      "entry": ["src/main.ts", "src/register.ts"]
+    },
     ".": {
       "entry": [
         "*.config.mjs",

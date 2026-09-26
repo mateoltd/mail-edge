@@ -21,9 +21,10 @@
     "openapi:check": "corepack pnpm run build && node ./scripts/generate-openapi.mjs --check",
     "openapi:generate": "corepack pnpm run build && node ./scripts/generate-openapi.mjs",
     "start": "node --enable-source-maps ./dist/main.js",
+    "register": "node --enable-source-maps ./dist/register.js",
     "test": "vitest run --exclude test/integration/** --exclude test/e2e/**",
-    "test:e2e": "vitest run test/e2e",
-    "test:integration": "vitest run test/e2e/runtime.test.ts",
+    "test:e2e": "vitest run test/e2e test/integration",
+    "test:integration": "vitest run test/e2e/runtime.test.ts test/integration/registration.test.ts",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
@@ -53,7 +54,8 @@
     "@sinclair/typebox": "0.34.41",
     "ajv": "8.20.0",
     "fastify": "5.12.0",
-    "pg": "8.23.0"
+    "pg": "8.23.0",
+    "kysely": "0.29.5"
   },
   "devDependencies": {
     "@testcontainers/minio": "12.1.0",

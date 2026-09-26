@@ -1,5 +1,9 @@
 # Reference-service operator runbook
 
+For a fresh migrated database, follow [first-install registration](registration.md) to create
+inactive durable records. Registration does not verify domains, qualify adapters, or activate
+routes.
+
 ## Ownership and lifecycle
 
 The service accepts traffic only after every required component starts. A failure closes the failed

@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "v1",
+  "tenantId": "018f4f6a-7b2c-7000-8000-000000000901",
+  "providerInstanceId": "018f4f6a-7b2c-7000-8000-000000000902",
+  "bindingId": "018f4f6a-7b2c-7000-8000-000000000903",
+  "domainALabel": "example.test",
+  "direction": "inbound",
+  "adapterMode": "smtp_raw",
+  "dispatchTransport": "smtp",
+  "region": "us",
+  "secretRef": "secret://mailgun-api-key",
+  "configRef": "config://mailgun",
+  "configRevision": "initial",
+  "capabilitySnapshot": {
+    "adapterVersion": "0.1.0",
+    "controlPlane": {
+      "dnsDiscovery": true,
+      "domainProvisioning": true,
+      "driftDiscovery": true,
+      "exactDomainCatchAll": true,
+      "supported": true
+    },
+    "evidence": [
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "d27a253634ba31b70579931253c1475b43fc1d5bbd00af19608a5bf5341a3434",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/user-manual/receive-forward-store/receive-http"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "f5556594ba3cd8797fd74fe6f9a4247955c3d341ca37ae4b7a15ba129fe5a5fd",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/securing-webhooks"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "20fc2cb33b1dfd636130c5b8e7fd4dd346e41074316bf06ee59c73e480106410",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/user-manual/sending-messages/send-smtp"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "f57b489c115374fe9093983fd1ab99b1139dfea71922b059ba80b75049d3803d",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/user-manual/sending-messages/send-http"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "12ba5d1eb73c495e80a00b1d10e68284878c6dfc50e4f875ebafa70897fc1f82",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhooks"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "50493d0e79f0689188d2555b454d16268e9d803789162c12ce9f1164b6ccf1b8",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/logs"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "da4ae8a942aca666f0df9653f603758a03fb970dfaa7c29b8988590b7a2afb2f",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/domains/put-v4-domains--name-"
+      },
+      {
+        "environment": {
+          "documentation": "mailgun-public"
+        },
+        "observedAt": "2026-08-14T00:00:00Z",
+        "reportDigest": "c81e60712bf88c2299b831d8e0601d242ab3fb4c538e8b9af6e7ef9e20ecb7b8",
+        "schemaVersion": "v1",
+        "source": "official_doc",
+        "sourceUri": "https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/routes/post-v3-routes"
+      }
+    ],
+    "feedback": {
+      "kinds": ["accepted", "delivered", "deferred", "bounced", "complained"],
+      "perRecipient": true,
+      "signatureCoverage": "token_timestamp_only",
+      "supported": true
+    },
+    "inbound": {
+      "acquisition": ["inline_stream"],
+      "bytePreservation": "unknown",
+      "exactDomainCatchAll": true,
+      "maxBytes": 83886080,
+      "replayIdentity": "signed_token",
+      "signatureCoverage": "token_timestamp_only",
+      "supported": true
+    },
+    "maturity": "experimental",
+    "outbound": {
+      "bytePreservation": "provider_mutated",
+      "envelope": {
+        "bodyModes": ["7bit"],
+        "dsnRetEnvid": false,
+        "multipleRecipients": true,
+        "nullReversePath": false,
+        "perRecipientDsn": false,
+        "requireTls": false,
+        "smtpUtf8": false
+      },
+      "idempotency": {
+        "mode": "none"
+      },
+      "maxBytes": 26214400,
+      "mimeMutation": ["transport_headers", "dkim_signature"],
+      "reconciliation": {
+        "canProve": ["accepted"],
+        "keys": ["message_id", "domain", "time_window"],
+        "supported": true
+      },
+      "supported": true,
+      "transports": ["smtp_raw"]
+    },
+    "prerequisites": [
+      "Mailgun domain exists in the configured region and has valid SMTP credentials.",
+      "Inbound route target is HTTPS and ends in mime or raw-mime.",
+      "Webhook and route signing key is available through SecretResolver.",
+      "Feedback replay tokens are consumed by a durable atomic replay store.",
+      "Account-level Logs API access is required for acceptance-only reconciliation."
+    ],
+    "providerId": "mailgun",
+    "schemaVersion": "v1"
+  },
+  "actorIdHash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "reasonCode": "first_install"
+}
