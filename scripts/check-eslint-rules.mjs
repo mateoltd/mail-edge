@@ -87,6 +87,21 @@ assert.equal(
   0,
 );
 
+// Test fixtures remain outside library source even when a checkout ancestor or
+// a fixture subdirectory is named src.
+for (const file of ["packages/core/test/fixture.ts", "packages/core/test/src/fixture.ts"]) {
+  assert.equal(verify("export const key = process.env.KEY;", file, ambientRules).length, 0);
+  assert.equal(
+    verify(
+      'export const matches = (error: Error) => error.message === "fixture";',
+      file,
+      messageRules,
+    ).length,
+    0,
+  );
+  assert.equal(verify("export const fixtures = new Map();", file, moduleStateRules).length, 0);
+}
+
 const importRules = { "mail-edge/workspace-imports": "error" };
 assert.deepEqual(
   verify(

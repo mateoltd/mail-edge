@@ -15,6 +15,10 @@ const unitForPath = (path) => {
   );
 };
 
+const isUnitSource = (unit, path) =>
+  unit !== undefined &&
+  normalizePath(relative(repositoryRoot, path)).startsWith(`${unit.root}/src/`);
+
 const unitForImport = (source) =>
   workspaceUnits.find((unit) => source === unit.name || source.startsWith(`${unit.name}/`));
 
@@ -142,7 +146,7 @@ const noAmbientEnvironmentRule = {
   },
   create(context) {
     const sourceUnit = unitForPath(context.filename);
-    if (sourceUnit?.kind !== "package" || !normalizePath(context.filename).includes("/src/")) {
+    if (sourceUnit?.kind !== "package" || !isUnitSource(sourceUnit, context.filename)) {
       return {};
     }
     return {
@@ -169,7 +173,7 @@ const noErrorMessageMatchingRule = {
   },
   create(context) {
     const sourceUnit = unitForPath(context.filename);
-    if (sourceUnit === undefined || !normalizePath(context.filename).includes("/src/")) {
+    if (sourceUnit === undefined || !isUnitSource(sourceUnit, context.filename)) {
       return {};
     }
     const report = (node) => context.report({ messageId: "messageMatching", node });
@@ -226,7 +230,7 @@ const noMutableModuleStateRule = {
   },
   create(context) {
     const sourceUnit = unitForPath(context.filename);
-    if (sourceUnit === undefined || !normalizePath(context.filename).includes("/src/")) {
+    if (sourceUnit === undefined || !isUnitSource(sourceUnit, context.filename)) {
       return {};
     }
     return {
