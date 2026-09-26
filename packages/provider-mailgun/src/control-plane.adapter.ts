@@ -294,6 +294,12 @@ export class MailgunControlPlaneAdapter implements ProviderControlPlaneAdapter {
       if (stringField(domain ?? {}, "state") !== "active") drift.push("domain_not_active");
       for (const collectionName of ["sending_dns_records", "receiving_dns_records"] as const) {
         const records = parsed.value[collectionName];
+        const requiredForDirection =
+          collectionName ===
+          (binding.direction === "inbound" ? "receiving_dns_records" : "sending_dns_records");
+        if (requiredForDirection && (!Array.isArray(records) || records.length === 0)) {
+          drift.push("dns_records_missing");
+        }
         if (!Array.isArray(records)) continue;
         invalidDnsRecords += records.filter(
           (item) =>

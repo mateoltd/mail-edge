@@ -78,6 +78,8 @@ hint may narrow that selection but is not required. Feedback routing is host-own
   arrives through feedback.
 - Control-plane plans do no I/O. Apply and delete require an unexpired explicit operation context. A
   domain can remain after a later route-creation failure; inspect state before authorized cleanup.
+- Discovery requires nonempty receiving DNS evidence for inbound bindings and sending DNS evidence
+  for outbound bindings. Missing or malformed required lists report drift even for active domains.
 - Domain route expressions are account-global Mailgun routes. Discovery verifies the exact
   expression and both actions (`forward(...)`, then `stop()`).
 

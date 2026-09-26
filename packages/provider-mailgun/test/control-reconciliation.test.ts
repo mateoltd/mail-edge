@@ -43,6 +43,10 @@ const jsonResponse = (
 class RecordingHttpTransport implements MailgunHttpTransport {
   readonly requests: MailgunHttpRequest[] = [];
   revision = 0;
+  dnsRecords: Readonly<Record<string, unknown>> = {
+    receiving_dns_records: [{ valid: "valid" }],
+    sending_dns_records: [{ valid: true }],
+  };
   reconciliation: "accepted" | "empty" = "empty";
 
   request(request: MailgunHttpRequest): Promise<Result<MailgunHttpResponse, MailEdgeError>> {
@@ -62,8 +66,7 @@ class RecordingHttpTransport implements MailgunHttpTransport {
       return Promise.resolve(
         jsonResponse(200, {
           domain: { name: "example.test", state: "active" },
-          receiving_dns_records: [{ valid: "valid" }],
-          sending_dns_records: [{ valid: true }],
+          ...this.dnsRecords,
         }),
       );
     }
@@ -192,6 +195,51 @@ describe("Mailgun control plane", () => {
     expect(deleted.value.deletedResourceIds).toEqual(["route-123", "example.test"]);
     await registration.lifecycle.close(new AbortController().signal);
   });
+
+  it.each(["inbound", "outbound"] as const)(
+    "does not report clean %s DNS when required evidence is absent or malformed",
+    async (direction) => {
+      const transport = new RecordingHttpTransport();
+      const registration = await createStartedRegistration({ httpTransport: transport });
+      const control = required(registration.controlPlane, "control-plane adapter");
+      const collection = direction === "inbound" ? "receiving_dns_records" : "sending_dns_records";
+      for (const records of [undefined, null, {}, [], "valid"]) {
+        transport.dnsRecords = records === undefined ? {} : { [collection]: records };
+        const result = await control.discoverBinding(
+          binding(direction, { routeId: "route-123" }),
+          new AbortController().signal,
+        );
+        if (!result.ok) throw result.error;
+        expect(result.value.drift).toContain("dns_records_missing");
+      }
+      await registration.lifecycle.close(new AbortController().signal);
+    },
+  );
+
+  it.each(["inbound", "outbound"] as const)(
+    "requires DNS evidence for the %s direction without demanding the other direction",
+    async (direction) => {
+      const transport = new RecordingHttpTransport();
+      const collection = direction === "inbound" ? "receiving_dns_records" : "sending_dns_records";
+      transport.dnsRecords = { [collection]: [{ valid: "valid" }] };
+      const registration = await createStartedRegistration({ httpTransport: transport });
+      const control = required(registration.controlPlane, "control-plane adapter");
+      const result = await control.discoverBinding(
+        binding(direction, { routeId: "route-123" }),
+        new AbortController().signal,
+      );
+      if (!result.ok) throw result.error;
+      expect(result.value.drift).toEqual([]);
+      transport.dnsRecords = { [collection]: [{ valid: "invalid" }] };
+      const invalid = await control.discoverBinding(
+        binding(direction, { routeId: "route-123" }),
+        new AbortController().signal,
+      );
+      if (!invalid.ok) throw invalid.error;
+      expect(invalid.value.drift).toContain("dns_records_invalid");
+      await registration.lifecycle.close(new AbortController().signal);
+    },
+  );
 
   it("refuses control mutation without an unexpired authorization context", async () => {
     const transport = new RecordingHttpTransport();

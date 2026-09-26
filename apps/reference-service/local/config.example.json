@@ -162,7 +162,7 @@
             "adapterMode": "smtp_raw",
             "dispatchTransport": "smtp",
             "providerInstanceId": "018f4f6a-7b2c-7000-8000-000000000002",
-            "providerResourceIds": { "route": "replace-me" },
+            "providerResourceIds": { "routeId": "replace-me" },
             "capabilityDigest": "39d580d631efbccb4b8f214a6977df83f8c50213e750fdb4042bb2e942cf4ce7",
             "configRevision": "mailgun-v1",
             "createdAt": "2026-08-14T00:00:00.000Z"
