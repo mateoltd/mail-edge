@@ -108,8 +108,8 @@ paths:
               type: string
               format: binary
       responses:
-        "202":
-          description: Feedback was durably handed off.
+        "200":
+          description: Feedback was durably handed off, including duplicate events.
         "400":
           $ref: "#/components/responses/Problem"
         "404":

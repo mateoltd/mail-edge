@@ -123,6 +123,52 @@ describe("Mailgun raw-MIME inbound adapter", () => {
     await registration.lifecycle.close(new AbortController().signal);
   });
 
+  it.each([false, true])(
+    "acknowledges a durable commit with HTTP 200 (duplicate=%s)",
+    async (duplicate) => {
+      const registration = await createStartedRegistration();
+      const services: InboundIngestionServices = {
+        ...servicesFor(new FixtureBlobStagePort()),
+        receipts: {
+          commitVerified: () =>
+            Promise.resolve({
+              ok: true,
+              value: { duplicate, receiptId, response: { class: "success", statusCode: 202 } },
+            }),
+        },
+      };
+      const result = await new ProviderInboundIngressService(
+        required(registration.inbound, "inbound adapter"),
+        services,
+      ).execute(rawRequest(routeForm()), ingressContext(true), new AbortController().signal);
+      expect(result).toEqual({
+        ok: true,
+        value: { duplicate, receiptId, response: { class: "success", statusCode: 200 } },
+      });
+      await registration.lifecycle.close(new AbortController().signal);
+    },
+  );
+
+  it("does not acknowledge a failed durable receipt commit", async () => {
+    const registration = await createStartedRegistration();
+    const error = new MailEdgeError({
+      code: "STORAGE_UNAVAILABLE",
+      deliveryCertainty: "not_sent",
+      message: "Receipt commit failed.",
+      retryable: true,
+    });
+    const services: InboundIngestionServices = {
+      ...servicesFor(new FixtureBlobStagePort()),
+      receipts: { commitVerified: () => Promise.resolve({ ok: false, error }) },
+    };
+    const result = await new ProviderInboundIngressService(
+      required(registration.inbound, "inbound adapter"),
+      services,
+    ).execute(rawRequest(routeForm()), ingressContext(true), new AbortController().signal);
+    expect(result).toEqual({ ok: false, error });
+    await registration.lifecycle.close(new AbortController().signal);
+  });
+
   it("rejects signed-token conflicts before committing the spool", async () => {
     const stage = new FixtureBlobStagePort();
     const replay: ReplayNoncePort = {

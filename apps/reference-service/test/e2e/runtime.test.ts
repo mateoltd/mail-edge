@@ -1645,7 +1645,7 @@ describe("shipped reference-service production composition", { concurrent: false
         headers: { "content-type": "application/x-www-form-urlencoded" },
         method: "POST",
       });
-      if (result.status !== 202) {
+      if (result.status !== 200) {
         const bindings = await owner.query(
           "SELECT * FROM route_bindings WHERE binding_id = $1 AND binding_version = 1",
           [inboundBindingId],
@@ -2132,7 +2132,7 @@ describe("shipped reference-service production composition", { concurrent: false
         headers: { "content-type": "application/json" },
         method: "POST",
       });
-      expect(feedback.status).toBe(202);
+      expect(feedback.status).toBe(200);
     }
     await waitFor(async () => {
       const result = await owner.query<{ transport_state: string }>(

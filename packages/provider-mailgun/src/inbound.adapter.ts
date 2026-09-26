@@ -136,7 +136,17 @@ export class MailgunInboundAdapter implements InboundProviderAdapter {
         }),
         signal,
       );
-      return committed.ok ? { ok: true, value: Object.freeze({ ...committed.value }) } : committed;
+      // Mailgun retries every route POST response other than 200 or 406.
+      // Acknowledge only after the receipt and replay identity commit durably.
+      return committed.ok
+        ? {
+            ok: true,
+            value: Object.freeze({
+              ...committed.value,
+              response: Object.freeze({ class: "success" as const, statusCode: 200 as const }),
+            }),
+          }
+        : committed;
     } catch (cause) {
       return { error: mailgunError("INGRESS_FAILED", "inbound_adapter", true, cause), ok: false };
     } finally {

@@ -113,7 +113,7 @@ a tenant, instance, adapter, or token exists.
 | GET    | `/livez`                                                                                                   | none                   | 200 while the process can serve HTTP                               |
 | GET    | `/readyz`                                                                                                  | none                   | 200 only in ready state, otherwise 503                             |
 | POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/inbound/{providerPath}` | exact provider adapter | streamed bytes; adapter-selected safe success status               |
-| POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/feedback`               | exact provider adapter | streamed bytes; 202 after durable workflow handoff                 |
+| POST   | `/v1/providers/{providerId}/{adapterVersion}/{mode}/instances/{providerInstanceId}/feedback`               | exact provider adapter | streamed bytes; 200 after durable workflow handoff                 |
 | POST   | `/v1/tenants/{tenantId}/raw-messages`                                                                      | matching tenant        | streamed `message/rfc822`; 201 with durable raw reference          |
 | POST   | `/v1/tenants/{tenantId}/outbound-intents`                                                                  | matching tenant        | bounded JSON plus `Idempotency-Key`; 202 accepted or 200 duplicate |
 | GET    | `/v1/tenants/{tenantId}/outbound-intents/{intentId}`                                                       | matching tenant        | durable intent snapshot                                            |

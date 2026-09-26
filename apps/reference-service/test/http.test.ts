@@ -2,6 +2,8 @@ import { request as httpRequest } from "node:http";
 
 import { describe, expect, it } from "vitest";
 
+import { hostError } from "../src/errors.js";
+
 import { createHttpFixture, operatorToken, providerInstanceId, tenantToken } from "./fixtures.js";
 
 const providerPath = `/v1/providers/fixture-provider/1.0.0/http/instances/${providerInstanceId}`;
@@ -65,7 +67,7 @@ describe("reference service HTTP boundaries", () => {
       payload: "{}",
       url: `${providerPath}/feedback`,
     });
-    expect(response.statusCode).toBe(202);
+    expect(response.statusCode).toBe(200);
     expect(fixture.state.feedbackHandoffs).toBe(1);
 
     const oversized = await fixture.http.instance.inject({
@@ -76,6 +78,41 @@ describe("reference service HTTP boundaries", () => {
     });
     expect(oversized.statusCode).toBe(413);
     expect(fixture.state.feedbackHandoffs).toBe(1);
+  });
+
+  it.each([false, true])(
+    "acknowledges feedback only after durable handoff (duplicate=%s)",
+    async (duplicate) => {
+      const fixture = await createHttpFixture({
+        commitFeedback: async () => ({
+          ok: true,
+          value: { accepted: duplicate ? 0 : 1, duplicates: duplicate ? 1 : 0 },
+        }),
+      });
+      const response = await fixture.http.instance.inject({
+        headers: { "content-type": "application/json" },
+        method: "POST",
+        payload: "{}",
+        url: `${providerPath}/feedback`,
+      });
+      expect(response.statusCode).toBe(200);
+    },
+  );
+
+  it("leaves failed feedback commits retryable by the provider", async () => {
+    const fixture = await createHttpFixture({
+      commitFeedback: async () => ({
+        ok: false,
+        error: hostError("STORAGE_UNAVAILABLE", "commit_failed", { retryable: true }),
+      }),
+    });
+    const response = await fixture.http.instance.inject({
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      payload: "{}",
+      url: `${providerPath}/feedback`,
+    });
+    expect(response.statusCode).toBe(503);
   });
 
   it("propagates an aborted client stream into one-shot adapter ownership", async () => {

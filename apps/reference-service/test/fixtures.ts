@@ -316,7 +316,9 @@ const workflow = (
   start: () => Promise.resolve({ ok: true, value: undefined }),
 });
 
-export const createHttpFixture = async (): Promise<{
+export const createHttpFixture = async (
+  overrides: Partial<Pick<ReferenceServiceWorkflowPort, "commitFeedback">> = {},
+): Promise<{
   readonly http: ReferenceHttpServer;
   readonly state: AdapterState;
   readonly config: ReferenceServiceConfig;
@@ -411,7 +413,7 @@ export const createHttpFixture = async (): Promise<{
     sdk: {} as MailEdgeSdk,
     shutdownSignal: new AbortController().signal,
     tracer: new HostTracer("reference-test"),
-    workflow: workflow(state, services),
+    workflow: { ...workflow(state, services), ...overrides },
   });
   return { config, http, state };
 };

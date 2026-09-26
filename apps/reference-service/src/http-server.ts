@@ -577,7 +577,8 @@ export class ReferenceHttpServer implements LifecycleComponent {
             if (!handoff.ok) return handoff;
             const validated = this.#validator.validate(FeedbackHandoffResultSchema, handoff.value);
             if (!validated.ok) return validated;
-            reply.code(202).send();
+            // HTTP 200 also satisfies providers that retry other successful status codes.
+            reply.code(200).send();
             return { ok: true, value: undefined };
           },
         ),

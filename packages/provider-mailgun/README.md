@@ -68,6 +68,8 @@ hint may narrow that selection but is not required. Feedback routing is host-own
   the timestamp and token, not the request body, sender, or recipient. Replay conflict detection
   therefore also records a body digest, but it cannot turn the provider's signature into whole-body
   coverage.
+- Return HTTP 200 after a durable inbound receipt or feedback commit, including duplicates. Mailgun
+  retries HTTP 202. Failed commits must remain non-successful so the provider retries them.
 - Commit the feedback adapter's replay identity atomically with feedback dedupe, ledger rows, and
   wakeups. Inbound replay remains part of the atomic verified-receipt commit.
 - Treat `quarantine_unknown` as manual/reconciliation work. Automatic resubmission may duplicate a
