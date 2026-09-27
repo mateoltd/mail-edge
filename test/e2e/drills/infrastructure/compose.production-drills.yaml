@@ -21,13 +21,16 @@ services:
       - postgres-drill:/var/lib/postgresql/data
 
   minio:
-    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    image: mail-edge-test-minio:7ced9663e6a7
+    pull_policy: never
+    build:
+      context: ../../../fixtures/minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_PASSWORD: mail-edge-drill-password
       MINIO_ROOT_USER: mail-edge-drill
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      test: ["CMD", "/health"]
       interval: 2s
       timeout: 2s
       retries: 30

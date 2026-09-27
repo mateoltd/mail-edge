@@ -66,7 +66,7 @@ export interface FreshVolumeRestoreReport {
 }
 
 const POSTGRES_IMAGE = "postgres:17.6-alpine3.22";
-const MINIO_IMAGE = "minio/minio:RELEASE.2025-07-23T15-54-02Z";
+const MINIO_IMAGE = "mail-edge-test-minio:7ced9663e6a7";
 const RESTORE_DATABASE = "mail_edge_drill";
 const RESTORE_USERNAME = "mail_edge_owner";
 const RESTORE_PASSWORD = "drill-owner-password";

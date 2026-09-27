@@ -11,7 +11,8 @@ must appear in the final deterministic evidence.
 Prerequisites are Node 24.19.0, Corepack with pnpm 11.21.0, Docker, Compose v2, and at least 4 GiB
 of free memory. The commander must be an operator authorized to create local containers. Run
 read-only diagnosis first with `docker info`, `docker ps`, and
-`docker compose -f infrastructure/compose.production-drills.yaml config --quiet`.
+`docker compose -f infrastructure/compose.production-drills.yaml config --quiet`. The wrapper
+prepares the pinned source-built MinIO test image before starting disposable services.
 
 Run `./runbooks/run-all.sh` or a focused script from this directory. Abort on any non-loopback
 endpoint, dirty migration checksum, missing object version, failed legal-hold check, stale fence,

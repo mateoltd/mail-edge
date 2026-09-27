@@ -57,7 +57,7 @@
     "test": "corepack pnpm run test:images && turbo run test --concurrency=2 && corepack pnpm run test:w9-fault-boundaries",
     "test:images": "node ./scripts/prepare-test-images.mjs",
     "test:w9-fault-boundaries": "vitest run --dir test/integration --pool=forks --no-file-parallelism --bail=1 --test-timeout=120000 --hook-timeout=120000",
-    "test:w2-integration": "corepack pnpm run build && node ./scripts/test-w2-integration.mjs",
+    "test:w2-integration": "corepack pnpm run test:images && corepack pnpm run build && node ./scripts/test-w2-integration.mjs",
     "typecheck": "tsc -b --pretty false && turbo run typecheck && tsc -p test/integration/tsconfig.json --noEmit --pretty false",
     "verify": "corepack pnpm run repo:check && corepack pnpm run commitlint:check && corepack pnpm run format:check && corepack pnpm run lint && corepack pnpm run lint:boundaries && corepack pnpm run typecheck && corepack pnpm run build && corepack pnpm run test && corepack pnpm run corpus:check && corepack pnpm run schema:check && corepack pnpm run migrations:check && corepack pnpm run knip && corepack pnpm run api:check && corepack pnpm run pack:check && corepack pnpm run actions:check && corepack pnpm run reference-service:security && corepack pnpm run license:check && corepack pnpm run sbom:check"
   },

@@ -33,7 +33,7 @@ import {
 } from "../packages/queue-pg-boss/dist/index.js";
 
 const postgresImage = "postgres:17.6-alpine3.22";
-const minioImage = "minio/minio:RELEASE.2025-07-23T15-54-02Z";
+const minioImage = "mail-edge-test-minio:7ced9663e6a7";
 const tenantId = "018f4f6a-7b2c-7000-8000-000000000301";
 const firstStageId = "018f4f6a-7b2c-7000-8000-000000000302";
 const cleanupStageId = "018f4f6a-7b2c-7000-8000-000000000303";

@@ -19,6 +19,7 @@ docker compose \
   -f "$repository_root/test/e2e/drills/infrastructure/compose.production-drills.yaml" \
   config --quiet
 
+corepack pnpm --dir "$repository_root" run test:images
 corepack pnpm --dir "$repository_root" --filter @mail-edge/production-drills build
 
 set -- \

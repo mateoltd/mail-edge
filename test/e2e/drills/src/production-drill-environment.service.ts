@@ -38,7 +38,7 @@ import { isLoopbackServiceUrl } from "./safety.js";
 import { sha256ExactStream } from "./stream-digest.js";
 
 const POSTGRES_IMAGE = "postgres:17.6-alpine3.22";
-const MINIO_IMAGE = "minio/minio:RELEASE.2025-07-23T15-54-02Z";
+const MINIO_IMAGE = "mail-edge-test-minio:7ced9663e6a7";
 const POSTGRES_DATABASE = "mail_edge_drill";
 const POSTGRES_USERNAME = "mail_edge_owner";
 const POSTGRES_PASSWORD = "drill-owner-password";
