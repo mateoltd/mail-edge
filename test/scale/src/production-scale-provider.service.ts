@@ -114,8 +114,12 @@ class LoopbackMailgunApiServer {
             body = Buffer.from(
               JSON.stringify({
                 domain: { name: domain, state: "active" },
-                receiving_dns_records: [],
-                sending_dns_records: [],
+                receiving_dns_records: [
+                  { valid: "valid", record_type: "MX", value: "mxa.mailgun.org" },
+                ],
+                sending_dns_records: [
+                  { valid: "valid", record_type: "TXT", value: "v=spf1 include:mailgun.org ~all" },
+                ],
               }),
               "utf8",
             );
