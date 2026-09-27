@@ -1242,3 +1242,73 @@ export const createReferenceServiceQualificationComposition = (
   protocolOverrides: ProductionProviderProtocolOverrides,
 ): Promise<Result<ReferenceServiceComposition, MailEdgeError>> =>
   createProductionComposition(context, signal, protocolOverrides);
+
+/** Operator-only control-plane composition. It starts no data-plane services or workers. */
+export const createQualificationProvider = (
+  config: ReferenceServiceConfig,
+  policy: import("./qualification.schema.js").QualificationPolicy,
+  request: import("./qualification.schema.js").QualificationRequest,
+  clock: import("@mail-edge/core").Clock,
+  secrets: import("@mail-edge/core").SecretResolver,
+): {
+  readonly registration: ProviderAdapterRegistration;
+  readonly providerConfigurationDigest: string;
+  readonly configuredBinding?: import("@mail-edge/contracts").RouteBindingSnapshotV1;
+} => {
+  const expected = policy.registration;
+  const catalog = config.providerInstances.find(
+    (entry) => entry.providerInstanceId === expected.providerInstanceId,
+  );
+  const configured = config.production?.mailgun.find(
+    (entry) => entry.providerInstanceId === expected.providerInstanceId,
+  );
+  if (
+    catalog?.tenantId !== expected.tenantId ||
+    catalog.providerId !== expected.capabilitySnapshot.providerId ||
+    catalog.adapterVersion !== expected.capabilitySnapshot.adapterVersion ||
+    catalog.mode !== expected.adapterMode ||
+    configured?.region !== expected.region ||
+    configured.apiKeySecretReference !== expected.secretRef
+  )
+    throw compositionError("qualification_configured_installation");
+  const configurationDigest = sha256CanonicalJson(configured);
+  if (configurationDigest !== policy.providerConfigurationDigest)
+    throw compositionError("qualification_provider_configuration_digest");
+  const inboundPath = `/v1/providers/mailgun/0.1.0/smtp_raw/instances/${expected.providerInstanceId}/inbound/raw-mime`;
+  const inboundBindings = configured.inboundBindings.map((value) => {
+    const parsed = validateContract(RouteBindingSnapshotV1Schema, value);
+    if (!parsed.ok) throw compositionError("qualification_configured_binding");
+    return parsed.value;
+  });
+  if (
+    expected.direction === "inbound" &&
+    !inboundBindings.some(
+      (binding) =>
+        binding.bindingId === expected.bindingId &&
+        binding.bindingVersion === request.bindingVersion &&
+        binding.domainALabel === expected.domainALabel &&
+        binding.configRevision === expected.configRevision &&
+        sha256CanonicalJson(binding.providerResourceIds) ===
+          sha256CanonicalJson(request.providerResourceIds),
+    )
+  )
+    throw compositionError("qualification_configured_binding_resources");
+  const created = createMailgunProviderRegistration(
+    { ...configured, inboundPath, inboundBindings },
+    { clock, secrets },
+  );
+  if (!created.ok) throw created.error;
+  const configuredBinding =
+    expected.direction === "inbound"
+      ? inboundBindings.find(
+          (binding) =>
+            binding.bindingId === expected.bindingId &&
+            binding.bindingVersion === request.bindingVersion,
+        )
+      : undefined;
+  return {
+    registration: created.value,
+    providerConfigurationDigest: configurationDigest,
+    ...(configuredBinding === undefined ? {} : { configuredBinding }),
+  };
+};

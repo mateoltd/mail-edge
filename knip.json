@@ -3,7 +3,7 @@
   "ignoreDependencies": ["@cyclonedx/cdxgen", "@zone-eu/mailsplit", "publint"],
   "workspaces": {
     "apps/reference-service": {
-      "entry": ["src/main.ts", "src/register.ts"]
+      "entry": ["src/main.ts", "src/register.ts", "src/qualify.ts"]
     },
     ".": {
       "entry": [

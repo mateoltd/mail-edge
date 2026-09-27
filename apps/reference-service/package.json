@@ -22,9 +22,10 @@
     "openapi:generate": "corepack pnpm run build && node ./scripts/generate-openapi.mjs",
     "start": "node --enable-source-maps ./dist/main.js",
     "register": "node --enable-source-maps ./dist/register.js",
+    "qualify": "node --enable-source-maps ./dist/qualify.js",
     "test": "vitest run --exclude test/integration/** --exclude test/e2e/**",
     "test:e2e": "vitest run test/e2e test/integration",
-    "test:integration": "vitest run test/e2e/runtime.test.ts test/integration/registration.test.ts",
+    "test:integration": "vitest run test/e2e test/integration",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {

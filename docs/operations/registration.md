@@ -42,19 +42,23 @@ adapter is started by this command. Run it only in the operator environment with
 database role and mounted secret directory. It is deliberately not exposed as a tenant-facing HTTP
 endpoint.
 
-Successful output contains `created`, `manifestDigest`, and `state: "draft"`. An exact retry of the
-same still-inactive registration returns `created: false` without another audit. Concurrent
+Successful output contains `created`, `manifestDigest`, `createdAt`, and `state: "draft"`. Copy
+`createdAt` into the service configuration binding snapshot before qualification. An exact retry of
+the same still-inactive registration returns `created: false` without another audit. Concurrent
 identical registrations serialize on the tenant row. Conflicting inputs, an already-enabled
-provider, a verified domain, a progressed binding, and identifiers belonging to another tenant fail
-without overwriting existing data. Failed or canceled transactions roll back all newly inserted
-records, including the tenant. To add the other direction, use a distinct binding ID and the same
-tenant/provider/domain inputs while they are inactive.
+provider, a changed retry against a verified domain, a progressed binding, and identifiers belonging
+to another tenant fail without overwriting existing data. Failed or canceled transactions roll back
+all newly inserted records, including the tenant. To add the other direction, use a distinct binding
+ID and the same tenant/provider/domain inputs while they are inactive. A new binding/provider can
+reuse an existing tenant-owned domain claim without overwriting it; the new binding remains inert
+and must obtain its own qualification before activation.
 
 Registration is not activation. The domain digest stored with method `pending` only identifies the
-unverified registration scope; it is not proof of domain ownership. Live domain/control-plane
-verification, trusted deployment-scoped qualification ingestion, advancement to testing, and
-provider enablement remain separate work. The existing activation gate still rejects a draft
-binding. Do not seed synthetic passing checks or bypass those predicates to make a route active.
+unverified registration scope; it is not proof of domain ownership. Use the
+[deployment qualification command](qualification.md) for live domain/control-plane verification,
+trusted evidence ingestion, advancement to testing and provider enablement. The existing activation
+gate still rejects a draft binding. Do not seed synthetic passing checks or bypass those predicates
+to make a route active.
 
 Validate the transactional behavior locally with Docker available:
 

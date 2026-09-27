@@ -9,7 +9,7 @@ const uuid = Type.String({
   pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
 });
 const token = Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_-]*$" });
-const RegistrationSchema = Type.Object(
+export const RegistrationSchema = Type.Object(
   {
     schemaVersion: Type.Literal("v1"),
     tenantId: uuid,

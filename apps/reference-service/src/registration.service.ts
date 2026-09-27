@@ -22,7 +22,10 @@ export class RegistrationService {
     input: unknown,
     signal: AbortSignal,
   ): Promise<
-    Result<{ readonly created: boolean; readonly manifestDigest: string }, MailEdgeError>
+    Result<
+      { readonly created: boolean; readonly manifestDigest: string; readonly createdAt: string },
+      MailEdgeError
+    >
   > {
     let manifest: ReturnType<typeof parseRegistration>;
     try {
@@ -46,7 +49,11 @@ export class RegistrationService {
       ok: false as const,
       error: hostError("CONFLICT", "registration_conflict"),
     });
-    return this.#unitOfWork.executeForTenant<{ created: boolean; manifestDigest: string }>(
+    return this.#unitOfWork.executeForTenant<{
+      created: boolean;
+      manifestDigest: string;
+      createdAt: string;
+    }>(
       tenant.value,
       async (context) => {
         const tx = (await this.#unitOfWork.transaction(context, tenant.value))
@@ -91,6 +98,14 @@ export class RegistrationService {
         if (priorProvider === undefined)
           await tx.insertInto("providerInstances").values(provider).execute();
 
+        const previous = await tx
+          .selectFrom("routeBindings")
+          .selectAll()
+          .where("tenantId", "=", tenant.value)
+          .where("bindingId", "=", manifest.bindingId)
+          .where("bindingVersion", "=", "1")
+          .forUpdate()
+          .executeTakeFirst();
         const domain = await tx
           .selectFrom("domainClaims")
           .selectAll()
@@ -100,6 +115,7 @@ export class RegistrationService {
           .executeTakeFirst();
         if (
           domain !== undefined &&
+          previous !== undefined &&
           (domain.verifiedAt !== null ||
             domain.expiresAt !== null ||
             domain.verificationMethod !== "pending" ||
@@ -119,14 +135,6 @@ export class RegistrationService {
             })
             .execute();
 
-        const previous = await tx
-          .selectFrom("routeBindings")
-          .selectAll()
-          .where("tenantId", "=", tenant.value)
-          .where("bindingId", "=", manifest.bindingId)
-          .where("bindingVersion", "=", "1")
-          .forUpdate()
-          .executeTakeFirst();
         if (previous !== undefined) {
           const audit = await tx
             .selectFrom("auditEvents")
@@ -143,7 +151,10 @@ export class RegistrationService {
             !Buffer.from(audit.afterDigest).equals(Buffer.from(manifestDigest, "hex"))
           )
             return conflict();
-          return { ok: true, value: { created: false, manifestDigest } };
+          return {
+            ok: true,
+            value: { created: false, manifestDigest, createdAt: previous.createdAt.toISOString() },
+          };
         }
         const now = this.#clock.now();
         await tx
@@ -199,7 +210,7 @@ export class RegistrationService {
             },
           })
           .execute();
-        return { ok: true, value: { created: true, manifestDigest } };
+        return { ok: true, value: { created: true, manifestDigest, createdAt: now } };
       },
       signal,
     );

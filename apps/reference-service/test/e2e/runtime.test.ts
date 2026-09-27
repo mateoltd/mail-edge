@@ -76,6 +76,7 @@ import {
 import { ReferenceServiceHost } from "../../src/host.js";
 import { createReferenceServiceQualificationComposition } from "../../src/production-composition.js";
 import { DirectorySecretResolver } from "../../src/secrets.js";
+import { qualifyNonproductionMailgun } from "../nonproduction-qualification.js";
 
 const tenantId = "018f4f6a-7b2c-7000-8000-000000000501";
 const otherTenantId = "018f4f6a-7b2c-7000-8000-000000000502";
@@ -214,6 +215,37 @@ class SimulatedMailgunHttpTransport implements MailgunHttpTransport {
     request: MailgunHttpRequest,
     signal: AbortSignal,
   ): Promise<Result<MailgunHttpResponse, MailEdgeError>> {
+    if (
+      !signal.aborted &&
+      request.method === "GET" &&
+      request.url.origin === "https://api.mailgun.net" &&
+      request.headers["authorization"]?.startsWith("Basic ")
+    ) {
+      const payload =
+        request.url.pathname === `/v4/domains/${domain}`
+          ? {
+              domain: { name: domain, state: "active" },
+              sending_dns_records: [{ valid: "valid" }],
+              receiving_dns_records: [{ valid: "valid" }],
+            }
+          : request.url.pathname === "/v3/routes/e2e-inbound"
+            ? {
+                route: {
+                  id: "e2e-inbound",
+                  expression: `match_recipient("(?i)^.*@${domain.replaceAll(".", "\\.")}$")`,
+                  actions: [
+                    `forward("https://edge.example.test/v1/providers/mailgun/0.1.0/smtp_raw/instances/${providerInstanceId}/inbound/raw-mime")`,
+                    "stop()",
+                  ],
+                },
+              }
+            : undefined;
+      if (payload !== undefined)
+        return Promise.resolve({
+          ok: true,
+          value: { statusCode: 200, headers: {}, body: Buffer.from(JSON.stringify(payload)) },
+        });
+    }
     if (
       signal.aborted ||
       request.method !== "POST" ||
@@ -1038,7 +1070,7 @@ const makeConfig = (
               domainALabel: domain,
               providerId: "mailgun",
               providerInstanceId,
-              providerResourceIds: { route: "e2e-inbound" },
+              providerResourceIds: { routeId: "e2e-inbound" },
               schemaVersion: "v1",
               tenantId,
             },
@@ -1435,7 +1467,7 @@ describe("shipped reference-service production composition", { concurrent: false
       "INSERT INTO tenants (tenant_id, state) VALUES ($1, 'active'), ($2, 'active')",
       [tenantId, otherTenantId],
     );
-    for (const configuredDomain of [domain, resendDomain, cloudflareDomain]) {
+    for (const configuredDomain of [resendDomain, cloudflareDomain]) {
       await owner.query(
         `INSERT INTO domain_claims
           (tenant_id, domain_a_label, verification_method, verification_digest, verified_at)
@@ -1444,7 +1476,6 @@ describe("shipped reference-service production composition", { concurrent: false
       );
     }
     for (const instance of [
-      { id: providerInstanceId, providerId: "mailgun" },
       { id: resendProviderInstanceId, providerId: "resend" },
       { id: cloudflareProviderInstanceId, providerId: "cloudflare" },
     ]) {
@@ -1475,7 +1506,7 @@ describe("shipped reference-service production composition", { concurrent: false
         mode: "smtp_raw",
         providerId: "mailgun",
         providerInstanceId,
-        providerResourceIds: { route: "e2e-inbound" },
+        providerResourceIds: { routeId: "e2e-inbound" },
       },
       {
         bindingId: outboundBindingId,
@@ -1565,6 +1596,7 @@ describe("shipped reference-service production composition", { concurrent: false
         state: "testing",
       },
     ]) {
+      if (binding.providerId === "mailgun") continue;
       const state = "state" in binding ? binding.state : "active";
       await owner.query(
         `INSERT INTO route_bindings
@@ -1604,6 +1636,15 @@ describe("shipped reference-service production composition", { concurrent: false
         [binding.checkId, tenantId, binding.bindingId, binding.checkKind, createdAt],
       );
     }
+    await qualifyNonproductionMailgun(
+      {
+        config,
+        connectionString: postgres.getConnectionUri(),
+        outboundBindingId,
+        transport: mailgunHttp,
+      },
+      AbortSignal.timeout(30_000),
+    );
   }, 180_000);
 
   afterAll(async () => {
@@ -1835,7 +1876,7 @@ describe("shipped reference-service production composition", { concurrent: false
         method: "POST",
       },
     );
-    expect(bindingDiscovery.status).toBe(503);
+    expect(bindingDiscovery.status).toBe(200);
 
     const unauthorized = await fetch(
       new URL(
