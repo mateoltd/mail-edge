@@ -22,6 +22,14 @@ The full gate also requires a running Docker-compatible container runtime for th
 and fault-boundary tests. Test results are never cached by Turbo: infrastructure-dependent checks
 must execute against the current host rather than replay results from another environment.
 
+The test gate builds its MinIO fixture from a pinned upstream commit and Go image because the old
+published container is no longer pullable. `pnpm test:images` prepares it for direct package test
+commands; `pnpm test` and `pnpm reference-service:e2e` prepare it automatically. The first build
+requires network access to fetch the pinned source and Go modules. Later runs reuse an image only
+when its recipe digest matches. This is a local test image, not a production storage recommendation.
+The source and license are recorded in `test/fixtures/minio/Dockerfile`; see upstream's
+[source distribution instructions](https://github.com/minio/minio#source-only-distribution).
+
 `pnpm clean-room:check` repeats installation and verification from a Git archive. It requires a
 clean, committed worktree.
 

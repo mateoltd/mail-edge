@@ -37,6 +37,6 @@
   },
   "devDependencies": {
     "@testcontainers/minio": "12.1.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }

@@ -324,7 +324,7 @@ describe("encrypted S3 blob runtime", { concurrent: false }, () => {
   let blobs: EncryptedS3BlobStore;
 
   beforeAll(async () => {
-    container = await new MinioContainer("minio/minio:RELEASE.2025-07-23T15-54-02Z")
+    container = await new MinioContainer("mail-edge-test-minio:7ced9663e6a7")
       .withUsername("mail-edge-minio")
       .withPassword("mail-edge-minio-password")
       .start();

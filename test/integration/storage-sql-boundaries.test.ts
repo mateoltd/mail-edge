@@ -159,7 +159,7 @@ describe("real S3 and PostgreSQL fault boundaries", { concurrent: false }, () =>
         .withUsername("mail_edge_owner")
         .withPassword("owner-password")
         .start(),
-      new MinioContainer("minio/minio:RELEASE.2025-07-23T15-54-02Z")
+      new MinioContainer("mail-edge-test-minio:7ced9663e6a7")
         .withUsername("mail-edge-minio")
         .withPassword("mail-edge-minio-password")
         .start(),

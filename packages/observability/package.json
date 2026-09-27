@@ -34,6 +34,6 @@
   },
   "devDependencies": {
     "@opentelemetry/sdk-metrics": "2.10.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }
