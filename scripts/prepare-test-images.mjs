@@ -9,6 +9,8 @@ const image = "mail-edge-test-minio:7ced9663e6a7";
 const context = join(repositoryRoot, "test/fixtures/minio");
 const recipeDigest = createHash("sha256")
   .update(readFileSync(join(context, "Dockerfile")))
+  .update(readFileSync(join(context, "health.go")))
+  .update(readFileSync(join(context, "initialize.go")))
   .digest("hex");
 const label = "org.mateoltd.test-recipe-sha256";
 let installedDigest;

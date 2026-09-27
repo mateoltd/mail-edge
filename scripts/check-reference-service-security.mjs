@@ -108,7 +108,12 @@ forbidMatch(dockerfile, /:latest\b/u, "Floating container tags");
 
 const compose = read("apps/reference-service/compose.yaml");
 requireMatch(compose, /postgres:17\.6-alpine3\.22/u, "Pinned PostgreSQL 17.6 image");
-requireMatch(compose, /minio\/minio:RELEASE\.2025-07-23T15-54-02Z/u, "Pinned MinIO image");
+requireMatch(compose, /mail-edge-test-minio:7ced9663e6a7/u, "Source-pinned MinIO image");
+requireMatch(
+  read("test/fixtures/minio/Dockerfile"),
+  /7ced9663e6a791fef9dc6be798ff24cda9c730ac/u,
+  "Exact MinIO source revision",
+);
 requireMatch(compose, /read_only: true/u, "Read-only runtime filesystem");
 requireMatch(compose, /no-new-privileges:true/u, "Container privilege escalation guard");
 

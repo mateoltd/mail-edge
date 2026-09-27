@@ -31,7 +31,7 @@
     "lint": "eslint src test scripts --max-warnings 0",
     "schema:check": "corepack pnpm run build && node ./scripts/generate-evidence-schemas.mjs --check",
     "schema:generate": "corepack pnpm run build && node ./scripts/generate-evidence-schemas.mjs",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "typecheck": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
