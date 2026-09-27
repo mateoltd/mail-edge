@@ -35,7 +35,7 @@ const reviewedPackageLicenses = new Map(
     "@img/sharp-libvips-linux-x64",
     "@img/sharp-libvips-linuxmusl-arm64",
     "@img/sharp-libvips-linuxmusl-x64",
-  ].map((name) => [name, { expression: "LGPL-3.0-or-later", versions: new Set(["1.3.1"]) }]),
+  ].map((name) => [name, { expression: "LGPL-3.0-or-later", versions: new Set(["1.3.3"]) }]),
 );
 
 const output = execFileSync("corepack", ["pnpm", "licenses", "list", "--json"], {
