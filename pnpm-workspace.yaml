@@ -25,7 +25,7 @@ minimumReleaseAgeExclude:
 onlyBuiltDependencies:
   - esbuild
 overrides:
-  undici: 7.29.0
+  undici: 7.29.1
   # Patch vulnerable resolutions without crossing their installed major versions.
   "@grpc/grpc-js@1.14.4": 1.14.5
   brace-expansion@1.1.18: 1.1.21
