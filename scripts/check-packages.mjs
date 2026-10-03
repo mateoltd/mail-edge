@@ -1,12 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
+import { checkDistributionLicenses } from "./check-distribution-licenses.mjs";
 import { publishableWorkspaceUnits, repositoryRoot } from "./workspace.mjs";
 
 const packages = publishableWorkspaceUnits();
-const packDirectory = mkdtempSync(join(tmpdir(), "mail-edge-pack-"));
+const requestedOutput = process.argv.find((argument) => argument.startsWith("--output="));
+const packDirectory = requestedOutput
+  ? resolve(requestedOutput.slice("--output=".length))
+  : mkdtempSync(join(tmpdir(), "mail-edge-pack-"));
+mkdirSync(packDirectory, { recursive: true });
 
 try {
   const archives = new Map();
@@ -31,7 +36,22 @@ try {
     if (archiveName === undefined) {
       throw new Error(`Packed archive was not created for ${unit.name}.`);
     }
-    archives.set(unit.name, join(packDirectory, archiveName));
+    const archive = join(packDirectory, archiveName);
+    const contents = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" });
+    if (contents.split("\n").some((entry) => entry.includes("node_modules/"))) {
+      throw new Error(`SDK packages must not bundle dependency binaries: ${unit.name}`);
+    }
+    if (unit.name === "@mail-edge/blob-s3") {
+      const notice = execFileSync("tar", [
+        "-xOzf",
+        archive,
+        "package/notices/bowser-2.14.1-LICENSE.txt",
+      ]);
+      if (!notice.equals(readFileSync(join(repositoryRoot, "notices/bowser-2.14.1-LICENSE.txt")))) {
+        throw new Error("Packed S3 dependency notice differs from Bowser's actual license.");
+      }
+    }
+    archives.set(unit.name, archive);
   }
 
   if (packages.length > 0) {
@@ -219,6 +239,7 @@ void neutralSatisfiesPostgres;
       cwd: consumerDirectory,
       stdio: "inherit",
     });
+    checkDistributionLicenses(consumerDirectory);
     execFileSync(
       process.execPath,
       [join(repositoryRoot, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json"],
@@ -234,7 +255,7 @@ void neutralSatisfiesPostgres;
     console.log(`Packed clean-room consumer passed for ${String(packages.length)} packages.`);
   }
 } finally {
-  rmSync(packDirectory, { force: true, recursive: true });
+  if (!requestedOutput) rmSync(packDirectory, { force: true, recursive: true });
 }
 
 if (packages.length === 0) {

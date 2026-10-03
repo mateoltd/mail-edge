@@ -31,20 +31,39 @@ concrete need, maintained upstream, compatible license, and a security review pr
 privilege and data access. Install scripts remain blocked unless an explicit, narrowly scoped
 approval is reviewed in `pnpm-workspace.yaml`.
 
-The current Cloudflare Workers developer toolchain uses the platform-specific `@img/sharp-libvips-*`
-version `1.3.3` packages under `LGPL-3.0-or-later` through Miniflare. These packages are
-development-only, are not included in published mail-edge packages or the Worker bundle, and have an
-exact package-and-version exception in the license check. Updating Miniflare, Wrangler, the Workers
-Vitest pool, or libvips requires renewed review.
+`config/dependency-license-policy.json` is the shared local and hosted license policy. Its fifteen
+artifact reviews identify exact names, versions, full license expressions and npm integrity hashes:
+Bowser `2.14.1`, ten `@img/sharp-libvips-*` `1.3.3` packages and four Windows/Wasm Sharp `0.35.4`
+packages. Combined expressions retain AND semantics. There is no general LGPL or MITNFA allowance.
+Local checks cover installed development and optional dependencies plus all reviewed lockfile
+platform variants. Changing a reviewed version, expression or artifact integrity requires review.
 
-The 2026-09-27 security update to sharp `0.35.4` was reviewed with libvips packages `1.3.3`. All ten
-previously listed platform packages retain the same license expression in their exact npm-version
-metadata. The installed Linux x64 README and bundled license notices are byte-identical to `1.3.1`
-(SHA-256 `4f87b4934d26d52ed65a42e96bfe88e75ac98dbd3bc302b50fe6c07d22e42630`). The production
-dependency graph contains no sharp dependency. The exception therefore moves to this exact version
-and retains the existing package scope; other LGPL packages or versions are not permitted by this
-entry. The upstream packaging and notices are available in
-[sharp-libvips](https://github.com/lovell/sharp-libvips#licences).
+Dependency Review's package exemption currently ignores versions, so this repository does not use
+it. The action scans licenses and vulnerabilities with the existing severity and scope settings.
+`scripts/check-dependency-review.mjs` then accepts only the exact reviewed license findings. Missing
+outputs, unexplained action failures, unresolved licenses, other forbidden licenses and blocking
+vulnerabilities fail the job. An action failure caused solely by approved licenses is visible in its
+step log and accepted explicitly by the next step.
+
+Bowser's manifest says MIT, but its actual license includes the MITNFA condition. The unmodified
+copyright and complete license are retained in `notices/bowser-2.14.1-LICENSE.txt`, the S3 package
+and the reference-service image. Its no-false-attribution requirement applies if redistribution
+substantially alters functionality outside documented configuration. Mail Edge does not modify
+Bowser. `pnpm pack:check` verifies the packed notice and the installed consumer dependency licenses;
+the production Docker build checks the deployed dependency tree and Bowser's actual license bytes.
+
+Sharp/libvips belongs to the Miniflare development toolchain. Package reviews authorize its use as
+development tooling, not distribution of undocumented binary artifacts. SDK tarballs must not bundle
+node_modules; the production distribution check rejects Sharp/libvips. A development image, cache,
+node_modules archive or other binary-bearing artifact requires its own evidence before distribution:
+applicable component notices, LGPL/GPL license copies, corresponding library source for the exact
+binary, and a supported library replacement or recombination/relinking mechanism under LGPL sections
+4–5. An upstream homepage alone does not satisfy these obligations. Source-only repository archives
+contain no Sharp/libvips binaries. Build stages and private development installs are not published
+by this workflow.
+
+Knip's explicit `@commitlint/cli` tooling entry accounts for the CLI invoked through `spawnSync` in
+`scripts/check-commitlint.mjs`. It does not relax the commit-message or DCO gates.
 
 Generated evidence must not contain secrets, credentials, private vulnerability reports, production
 identifiers, or mail content.

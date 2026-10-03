@@ -46,17 +46,40 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Load shared license policy
+        id: license-policy
+        run: node scripts/dependency-license-policy.mjs --github-output
       - name: Review dependency changes
+        id: review
+        # The following step accepts only exact reviewed license findings.
+        # Missing outputs, new licenses and vulnerabilities still fail the job.
+        continue-on-error: true
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
-          allow-licenses: >-
-            0BSD, Apache-2.0, Artistic-2.0, BlueOak-1.0.0, BSD-2-Clause, BSD-3-Clause, CC-BY-3.0,
-            CC-BY-4.0, CC0-1.0, ISC, MIT, MIT-0, MPL-2.0, PostgreSQL, Python-2.0, Unicode-3.0,
-            Unlicense, Zlib
+          allow-licenses: ${{ steps.license-policy.outputs.allow-licenses }}
           fail-on-scopes: runtime, development
           fail-on-severity: moderate
           license-check: true
           vulnerability-check: true
+
+      - name: Apply exact artifact license reviews
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          VULNERABLE_CHANGES: ${{ steps.review.outputs.vulnerable-changes }}
+          INVALID_LICENSE_CHANGES: ${{ steps.review.outputs.invalid-license-changes }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          REVIEW_SUMMARY: ${{ steps.review.outputs.comment-content }}
+        # Use a file: the full comparison can exceed Linux's per-variable env limit.
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}" \
+            > "$RUNNER_TEMP/dependency-changes.json"
+          node scripts/check-dependency-review.mjs "$RUNNER_TEMP/dependency-changes.json"
 
   osv:
     name: OSV

@@ -13,11 +13,13 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @mail-edge/reference-service... build
 RUN pnpm --filter @mail-edge/reference-service deploy --prod /opt/reference-service
+RUN node scripts/check-distribution-licenses.mjs /opt/reference-service
 
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /srv/reference-service
 COPY --from=build --chown=10001:10001 /opt/reference-service/ ./
+COPY --from=build --chown=10001:10001 /workspace/notices/ ./notices/
 USER 10001:10001
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \

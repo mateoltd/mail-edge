@@ -16,7 +16,8 @@
   },
   "files": [
     "dist",
-    "etc"
+    "etc",
+    "notices"
   ],
   "publishConfig": {
     "access": "public",
