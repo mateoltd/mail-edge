@@ -74,7 +74,7 @@ jobs:
           VULNERABLE_CHANGES: ${{ steps.review.outputs.vulnerable-changes }}
           INVALID_LICENSE_CHANGES: ${{ steps.review.outputs.invalid-license-changes }}
           REVIEW_OUTCOME: ${{ steps.review.outcome }}
-          REVIEW_SUMMARY: ${{ steps.review.outputs.comment-content }}
+          REVIEW_COMPLETED: ${{ steps.review.outputs.comment-content != '' }}
         # Use a file: the full comparison can exceed Linux's per-variable env limit.
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}" \

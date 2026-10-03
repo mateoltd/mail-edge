@@ -39,8 +39,9 @@ if (process.env.REVIEW_OUTCOME === "failure") {
     licenses.forbidden.length > 0,
     "Unexplained dependency-review failure remains blocking.",
   );
-  assert.ok(
-    process.env.REVIEW_SUMMARY?.length > 0,
+  assert.equal(
+    process.env.REVIEW_COMPLETED,
+    "true",
     "Incomplete dependency review remains blocking.",
   );
 }
