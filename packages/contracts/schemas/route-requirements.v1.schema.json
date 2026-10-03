@@ -187,6 +187,23 @@
       "minimum": 0,
       "type": "integer"
     },
+    "reconciliation": {
+      "additionalProperties": false,
+      "properties": {
+        "canProve": {
+          "items": {
+            "$ref": "urn:mail-edge:schema:v1:delivery-certainty"
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "canProve"
+      ],
+      "type": "object"
+    },
     "region": {
       "maxLength": 64,
       "minLength": 1,

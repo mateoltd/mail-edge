@@ -1,0 +1,17 @@
+From: Sender <sender@example.test>
+To: Recipient <recipient@example.test>
+Subject: PGP opaque
+MIME-Version: 1.0
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="pgp"
+
+--pgp
+Content-Type: application/pgp-encrypted
+
+Version: 1
+--pgp
+Content-Type: application/octet-stream
+
+-----BEGIN PGP MESSAGE-----
+synthetic-opaque-payload
+-----END PGP MESSAGE-----
+--pgp--

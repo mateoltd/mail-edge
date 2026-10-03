@@ -78,11 +78,18 @@ export default tseslint.config(
         pattern: `${unit.root}/**/*`,
         type: unit.id,
       })),
-      "boundaries/include": ["apps/**/*", "packages/**/*"],
+      "boundaries/include": ["apps/**/*", "packages/**/*", "test/**/*"],
+      "boundaries/root-path": import.meta.dirname,
       "import/resolver": {
         typescript: {
           alwaysTryTypes: true,
-          project: ["tsconfig.json", "apps/*/tsconfig.json", "packages/*/tsconfig.json"],
+          project: [
+            "tsconfig.json",
+            "apps/*/tsconfig.json",
+            "packages/*/tsconfig.json",
+            "test/*/tsconfig.json",
+            "test/e2e/*/tsconfig.json",
+          ],
         },
       },
     },
@@ -99,6 +106,15 @@ export default tseslint.config(
       ],
       "@typescript-eslint/explicit-module-boundary-types": "error",
       "@typescript-eslint/no-import-type-side-effects": "error",
+      "@typescript-eslint/prefer-readonly": "error",
+      "@typescript-eslint/switch-exhaustiveness-check": [
+        "error",
+        {
+          allowDefaultCaseForExhaustiveSwitch: false,
+          considerDefaultExhaustiveForUnions: false,
+          requireDefaultForNonUnion: false,
+        },
+      ],
       "boundaries/dependencies": [
         "error",
         {
@@ -107,6 +123,9 @@ export default tseslint.config(
         },
       ],
       "boundaries/no-ignored-dependencies": "off",
+      "mail-edge/no-ambient-environment": "error",
+      "mail-edge/no-error-message-matching": "error",
+      "mail-edge/no-mutable-module-state": "error",
       "mail-edge/workspace-imports": "error",
       "no-restricted-syntax": [
         "error",

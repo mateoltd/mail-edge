@@ -1,6 +1,18 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
-  "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs"],
-  "ignoreDependencies": ["@cyclonedx/cdxgen", "publint"]
+  "ignoreDependencies": ["@commitlint/cli", "@cyclonedx/cdxgen", "@zone-eu/mailsplit", "publint"],
+  "workspaces": {
+    "apps/reference-service": {
+      "entry": ["src/main.ts", "src/register.ts", "src/qualify.ts"]
+    },
+    ".": {
+      "entry": [
+        "*.config.mjs",
+        "config/**/*.mjs",
+        "scripts/**/*.mjs",
+        "test/integration/**/*.test.ts"
+      ],
+      "project": ["*.config.mjs", "config/**/*.mjs", "scripts/**/*.mjs", "test/integration/**/*.ts"]
+    }
+  }
 }

@@ -1,0 +1,27 @@
+{
+  "$id": "urn:mail-edge:schema:v1:recipient-route-request",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "envelope": {
+      "$ref": "urn:mail-edge:schema:v1:smtp-envelope"
+    },
+    "receiptId": {
+      "$ref": "urn:mail-edge:schema:v1:receipt-id"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    },
+    "tenantId": {
+      "$ref": "urn:mail-edge:schema:v1:tenant-id"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "tenantId",
+    "envelope",
+    "receiptId"
+  ],
+  "type": "object"
+}

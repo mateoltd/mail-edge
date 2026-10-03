@@ -1,0 +1,65 @@
+{
+  "approval": "Maintainer-approved 2026-10-03: preserve these immutable commits and grandfather only the recorded formatting findings. DCO is not covered.",
+  "commits": [
+    {
+      "sha": "d0550d21fbbd0abb35eb8c7626553d9e1ab13b8c",
+      "subject": "test(scale): add Section 16.7 production qualification",
+      "rule": "body-max-line-length"
+    },
+    {
+      "sha": "0d676d7eebba557d2a950e2300231b347b611572",
+      "subject": "merge(test): integrate W9 scale and formal operations",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "8ae0ce89fefde03853f95c69ad2bce9dc3217828",
+      "subject": "merge(test): integrate W9 production drills",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "cdef746cfa3a739a8f29d47618eccfe6db20f717",
+      "subject": "merge(test): integrate W9 fault boundaries",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "1248e5474b05c2327c38e0bbf0631aa33b2350c1",
+      "subject": "merge(provider): integrate Cloudflare adapter",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "c0517b09aac341cead8628e452b5125671cae494",
+      "subject": "merge(provider): integrate Resend adapter",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "d1ca23397ea29da72930094c94460255b192a80a",
+      "subject": "merge(service): integrate reference host",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "39649c055aecb32da704192541368aa2985606c4",
+      "subject": "merge(runtime): integrate durable orchestration",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "6ac95726f56c262c884fbdf2df62ca8f61abaab0",
+      "subject": "merge(provider): integrate Mailgun adapter",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "2d09c61440dadf555187e2f708edeece9a3e277e",
+      "subject": "merge(conformance): integrate qualification hardening",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "15a6a44d12f6869065707758c736b935f028a840",
+      "subject": "merge(storage): integrate integrity hardening",
+      "rule": "type-enum"
+    },
+    {
+      "sha": "037f0e7c1ed520bd84a4e10a270e019666d62ffa",
+      "subject": "merge(protocol): integrate protocol boundaries",
+      "rule": "type-enum"
+    }
+  ]
+}

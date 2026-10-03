@@ -1,0 +1,73 @@
+{
+  "$id": "urn:mail-edge:provider-schema:v1:conformance-check-result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capability": {
+      "maxLength": 96,
+      "minLength": 1,
+      "type": "string"
+    },
+    "checkId": {
+      "maxLength": 96,
+      "minLength": 3,
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$",
+      "type": "string"
+    },
+    "details": {
+      "additionalProperties": false,
+      "maxProperties": 32,
+      "patternProperties": {
+        "^[a-z][A-Za-z0-9]*$": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "evidenceCode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "type": "string"
+    },
+    "evidenceDigest": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "const": "pass",
+          "type": "string"
+        },
+        {
+          "const": "fail",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "checkId",
+    "capability",
+    "outcome",
+    "evidenceCode",
+    "evidenceDigest"
+  ],
+  "type": "object"
+}

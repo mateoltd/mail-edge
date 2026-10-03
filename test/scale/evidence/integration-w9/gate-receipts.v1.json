@@ -1,0 +1,242 @@
+{
+  "baseSha": "ed71496ac4225ef6df259f6626b15ecc2711c38f",
+  "branch": "fix/w9-qualification-reproducibility",
+  "externalReleaseBlockers": [
+    {
+      "id": "independent_external_review",
+      "reason": "No independent security and architecture review was authorized or supplied.",
+      "status": "blocked"
+    },
+    {
+      "id": "mailgun_live_qualification",
+      "reason": "No provider account, credentials, isolated domain, DNS mutation or live Mailgun operation was authorized.",
+      "status": "blocked"
+    }
+  ],
+  "receipts": [
+    {
+      "command": "git merge-base --is-ancestor ed71496ac4225ef6df259f6626b15ecc2711c38f 698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e",
+      "id": "source_ancestry",
+      "status": "pass",
+      "summary": {
+        "qualifiedSourceCommit": "698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e",
+        "reviewedEvidenceOnlyAncestor": "ed71496ac4225ef6df259f6626b15ecc2711c38f"
+      }
+    },
+    {
+      "command": "corepack pnpm run verify",
+      "durationSeconds": 125.59,
+      "id": "repository_verify",
+      "logSha256": "cb2b045d410c5e3e97bd3febf48700c277e6c8b6af0642a38f2df9d4093ee4a7",
+      "status": "pass",
+      "summary": {
+        "apiAndSchemaDrift": "pass",
+        "cleanRoomPackages": 16,
+        "cycloneDxComponents": 951,
+        "licenseExpressions": 17,
+        "migrationChecksums": 7,
+        "repositoryWorkspaceUnits": 20,
+        "supplyChainAndSecurity": "pass"
+      }
+    },
+    {
+      "command": "corepack pnpm run test:w9-fault-boundaries",
+      "durationSeconds": 20.08,
+      "id": "fault_sigkill_recovery",
+      "logSha256": "1dc06aad1eaf709120dfea96322dff90c10e0163ee5f8c960ec0f770347a601b",
+      "status": "pass",
+      "summary": {
+        "testFiles": 5,
+        "tests": 27,
+        "transports": ["cloudflare_frames", "http", "smtp", "storage_sql"]
+      }
+    },
+    {
+      "command": "corepack pnpm run test:w2-integration",
+      "durationSeconds": 20.66,
+      "id": "real_postgres_minio_pg_boss",
+      "logSha256": "59bd2be1ac77c51550df915e206f5eb0445c2521f314a5d8ade84cddbc5dbf52",
+      "status": "pass",
+      "summary": {
+        "blobPromotionRecovery": "pass",
+        "exactVersionRetentionPurge": "pass",
+        "minioImage": "minio/minio:RELEASE.2025-07-23T15-54-02Z",
+        "orphanReclamation": "pass",
+        "postgresImage": "postgres:17.6-alpine3.22",
+        "scratchCleanup": "pass",
+        "transactionalWakeup": "pass"
+      }
+    },
+    {
+      "command": "corepack pnpm run reference-service:e2e",
+      "durationSeconds": 6.88,
+      "id": "reference_service_composition",
+      "logSha256": "58bf824115d0cd70795141efb0e906a94f14eb1a3fbcb1e15873e4dc296ef8b7",
+      "status": "pass",
+      "summary": {
+        "alertCollectorGaugesScraped": 6,
+        "blobCorruptionQuarantined": true,
+        "catalogFamiliesScrapedWithoutRedactionFailure": 19,
+        "rawBytesInMetrics": 0,
+        "rawDownloadIntegrityOutcome": "failure",
+        "realDependencies": ["minio", "pg_boss", "postgresql", "prometheus_exporter"]
+      }
+    },
+    {
+      "command": "node observability/scripts/validate.mjs and pinned promtool check/test",
+      "durationSeconds": 1.14,
+      "id": "prometheus_rules",
+      "logSha256": "0b40544411a3d8976a1c6eefe5408a37bb8ec1b50ad482dc917ac3163e8994e9",
+      "status": "pass",
+      "summary": {
+        "alertCoverageEntries": 15,
+        "metricCatalogEntries": 20,
+        "prometheusImage": "docker.io/prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893",
+        "rules": 16,
+        "runtimeOrCollectorBackedMetrics": 20
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/production-drills/evidence.json",
+      "command": "DRILL_EVIDENCE_DIRECTORY=temp/production-drills-698eb3c test/e2e/drills/runbooks/run-all.sh",
+      "durationSeconds": 10.35,
+      "id": "production_drills",
+      "logSha256": "cb11cd17dfd12b28217f9a9651e324b6bc60e6aec93c5fff31b0e70e66607e92",
+      "status": "pass",
+      "summary": {
+        "drillEvidenceDigest": "1dfeb2dfd250f6ba030ce791022a12b1a586eacfc277a87f9891799dfaba392f",
+        "drillsPassed": 7,
+        "ephemeralOnlySafety": "pass"
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/formal-execution.v1.json",
+      "command": "corepack pnpm run formal:execute -- --lock formal/toolchain.lock.json --output temp/formal-execution-698eb3c.v1.json --base-sha ed71496ac4225ef6df259f6626b15ecc2711c38f --source-sha 698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e --timeout-ms 600000",
+      "durationSeconds": 35.23,
+      "id": "formal_models",
+      "logSha256": "a2b03c13663fad7b154e766651373199ba16c5087b2019b1dc4065dee0585f0b",
+      "status": "pass",
+      "summary": {
+        "alloyArtifactSha256": "6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d",
+        "alloyCheckCounterexamples": 0,
+        "alloyChecks": 14,
+        "alloySolver": "sat4j",
+        "alloyWitnesses": 4,
+        "runtimeImage": "eclipse-temurin:21-jre@sha256:8cef5fc7bebe421363ab543a2f4db5caf7d119d8db67d56b0f56c485d2de4d55",
+        "tlaArtifactSha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+        "tlcDistinctStates": 618041,
+        "tlcErrors": 0,
+        "tlcMaxDepth": 23,
+        "tlcStatesGenerated": 7880014,
+        "toolchainLockSha256": "7a69b031a6a96c986184aad51ca30cfbee3d745da872d7a77205dec96f76abc6"
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/asset-validation.v1.json",
+      "command": "node test/scale/dist/cli.js validate-assets --formal-result temp/formal-execution-698eb3c.v1.json --observability-dir observability --output temp/asset-validation-698eb3c.v1.json --timeout-ms 60000",
+      "durationSeconds": 0.18,
+      "id": "formal_observability_asset_validation",
+      "logSha256": "228ad819278688da9a90ac137c539ca1828e25bea74ceb6dcfaff0635e99fa35",
+      "status": "pass",
+      "summary": {
+        "formal": "pass",
+        "observability": "pass"
+      }
+    },
+    {
+      "artifactPath": "test/scale/evidence/integration-w9/local-qualification.v1.json",
+      "command": "corepack pnpm --filter @mail-edge/w9-scale-qualification qualify --output temp/local-qualification-698eb3c.v1.json --base-sha ed71496ac4225ef6df259f6626b15ecc2711c38f --source-sha 698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e --timeout-ms 3600000",
+      "durationSeconds": 5.59,
+      "id": "local_cardinality_refinement_streaming",
+      "logSha256": "65924411a854514f1c0c9e50a2a591abc34cdb70bf2663b52dfa8878b1c50c87",
+      "status": "pass",
+      "summary": {
+        "aliasesGenerated": 1000000,
+        "exactDomains": 10,
+        "maximumSizeBytes": 26214400,
+        "maximumSizeConcurrencyMeasured": 8,
+        "refinementCases": 7,
+        "retainedAliases": 0,
+        "simultaneousStreamsMeasured": 100,
+        "simultaneousStreamsMessageBytes": 102400
+      }
+    },
+    {
+      "command": "corepack pnpm run reference-service:container",
+      "durationSeconds": 52.71,
+      "id": "reference_service_container_runtime",
+      "logSha256": "b20961be2f1c177dbf668d5d9197727f9a7324ca80e1a753981b96aa16b655a7",
+      "status": "pass",
+      "summary": {
+        "crashExitCode": 137,
+        "gracefulShutdownExitCode": 0,
+        "initialReadiness": "pass",
+        "productionConfigurationValidation": "pass",
+        "restartReadiness": "pass"
+      }
+    },
+    {
+      "command": "git archive HEAD followed by pinned gitleaks dir scan",
+      "durationSeconds": 1.13,
+      "id": "secret_scan",
+      "logSha256": "40b47ed4b3843214cd45b4c82b0b4aa99abc41da75cbc7a0c80676c4523db58b",
+      "status": "pass",
+      "summary": {
+        "bytesScanned": 4965085,
+        "findings": 0,
+        "gitleaksImage": "ghcr.io/gitleaks/gitleaks@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9"
+      }
+    },
+    {
+      "command": "two simultaneous corepack pnpm run clean-room:check invocations",
+      "durationSeconds": 325.63,
+      "id": "clean_room_reproducibility",
+      "logSha256": "a531cf7be95cf7d202a1e207033480757eeded78c2545fb165adf44d9b1ad10c",
+      "secondaryLogSha256": "1e090af3e4c8a74a1521a2f12ea87009a7e93660c5b21f3cdb4df958a63f64a8",
+      "status": "pass",
+      "summary": {
+        "archivedInstallationsPassed": 2,
+        "cleanRoomPackagesPerInvocation": 16,
+        "leaseHandoff": "pass",
+        "ownerDurationSeconds": 162.7,
+        "queuedCallerDurationSeconds": 325.63,
+        "repositoryVerificationsPassed": 2
+      }
+    },
+    {
+      "command": "corepack pnpm run pack:check, actions:check, reference-service:security, license:check and sbom:check within corepack pnpm run verify",
+      "id": "package_license_sbom_security",
+      "logSha256": "cb2b045d410c5e3e97bd3febf48700c277e6c8b6af0642a38f2df9d4093ee4a7",
+      "status": "pass",
+      "summary": {
+        "actionsWithExplicitPermissionsAndPins": 3,
+        "cycloneDxComponents": 951,
+        "licenseExpressions": 17,
+        "packedConsumerPackages": 16,
+        "referenceServiceFailClosed": "pass"
+      }
+    },
+    {
+      "command": "section 16.7 sustained qualification",
+      "id": "sustained_8vcpu_16gib_qualification",
+      "status": "unavailable",
+      "summary": {
+        "dockerCpuCount": 11,
+        "dockerMemoryBytes": 9435414528,
+        "filesystemAvailableGiB": 10.902786,
+        "filesystemAvailableKiB": 11432400,
+        "hostCpuCount": 11,
+        "hostMemoryBytes": 19327352832,
+        "minimumRawIngressBytesForThirtyMinutes": 46080000000,
+        "reason": "Docker exposed less than the exact required 16 GiB and 11 rather than exactly 8 vCPU; available durable storage was also below the mandatory workload's 46.08 billion raw ingress bytes before overhead.",
+        "requiredDurationSeconds": 1800,
+        "requiredInboundMessageBytes": 102400,
+        "requiredInboundMessagesPerSecond": 250,
+        "requiredMaximumSizeStreams": 100
+      }
+    }
+  ],
+  "recordedAt": "2026-08-17T04:40:19Z",
+  "schemaVersion": "w9-integration-gate-receipts-v1",
+  "sourceSha": "698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e"
+}

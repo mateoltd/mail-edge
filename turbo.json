@@ -25,6 +25,7 @@
       "outputs": ["*.tgz"]
     },
     "test": {
+      "cache": false,
       "dependsOn": ["build", "^build"],
       "outputs": ["coverage/**"]
     },

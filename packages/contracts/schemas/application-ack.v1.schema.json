@@ -1,0 +1,18 @@
+{
+  "$id": "urn:mail-edge:schema:v1:application-ack",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {
+      "$ref": "urn:mail-edge:schema:v1:rfc3339-timestamp"
+    },
+    "deliveryId": {
+      "$ref": "urn:mail-edge:schema:v1:delivery-id"
+    }
+  },
+  "required": [
+    "deliveryId",
+    "acceptedAt"
+  ],
+  "type": "object"
+}

@@ -74,6 +74,10 @@ export const mailEdgeProblemCodes = Object.freeze([
 /** @public */
 export type MailEdgeProblemCode = (typeof mailEdgeProblemCodes)[number];
 
+/** Exact inverse of the frozen error-to-Problem code mapping. @public */
+export const mailEdgeErrorCodeFromProblemCode = (code: MailEdgeProblemCode): MailEdgeErrorCode =>
+  mailEdgeErrorCodes[mailEdgeProblemCodes.indexOf(code)] ?? "INTERNAL";
+
 /** @public */
 export interface MailEdgeErrorOptions {
   readonly code: MailEdgeErrorCode;
@@ -114,32 +118,32 @@ export interface ProviderDispatchErrorOptions {
   readonly deliveryCertainty: "not_sent" | "unknown";
   readonly phase: ProviderDispatchPhase;
   readonly evidenceCode: string;
+  readonly providerMessageId?: string;
   readonly safeDetails?: Readonly<Record<string, unknown>>;
   readonly cause?: unknown;
 }
 
 const sanitizeSafeDetails = (
   details: Readonly<Record<string, unknown>> | undefined,
-  allowedKeys?: ReadonlySet<string>,
+  allowedKeys?: readonly string[],
 ): SafeDetails | undefined => {
   if (details === undefined) {
     return undefined;
   }
-  const entries = Object.entries(details)
-    .filter(([key, value]) => {
-      if (allowedKeys !== undefined && !allowedKeys.has(key)) {
-        return false;
-      }
-      return (
-        /^[a-z][A-Za-z0-9]*$/u.test(key) &&
-        key.length <= 64 &&
-        (typeof value === "boolean" ||
-          (typeof value === "number" && Number.isSafeInteger(value)) ||
-          (typeof value === "string" && value.length <= 256))
-      );
-    })
-    .slice(0, 16) as [string, string | number | boolean][];
-  return entries.length === 0 ? undefined : Object.freeze(Object.fromEntries(entries));
+  const entries: [string, string | number | boolean][] = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (allowedKeys !== undefined && !allowedKeys.includes(key)) continue;
+    if (!/^[a-z][A-Za-z0-9]*$/u.test(key) || key.length > 64) continue;
+    if (typeof value === "boolean" || (typeof value === "number" && Number.isSafeInteger(value))) {
+      entries.push([key, value]);
+    } else if (typeof value === "string" && value.length <= 256) {
+      entries.push([key, value]);
+    }
+  }
+  const bounded = entries
+    .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .slice(0, 16);
+  return bounded.length === 0 ? undefined : Object.freeze(Object.fromEntries(bounded));
 };
 
 /**
@@ -194,9 +198,11 @@ export class MailEdgeError extends Error {
  * @public
  */
 export class ProviderDispatchError extends MailEdgeError {
+  override readonly code: ProviderDispatchErrorOptions["code"];
   override readonly deliveryCertainty: "not_sent" | "unknown";
   readonly phase: ProviderDispatchPhase;
   readonly evidenceCode: string;
+  readonly providerMessageId?: string;
 
   constructor(options: ProviderDispatchErrorOptions) {
     if (!providerDispatchPhases.includes(options.phase)) {
@@ -204,6 +210,14 @@ export class ProviderDispatchError extends MailEdgeError {
     }
     if (!/^[a-z][a-z0-9_]{0,63}$/u.test(options.evidenceCode)) {
       throw new TypeError("Provider dispatch evidence code must be a bounded stable token.");
+    }
+    if (
+      options.providerMessageId !== undefined &&
+      (options.providerMessageId.length < 1 ||
+        options.providerMessageId.length > 512 ||
+        /[\r\n\0]/u.test(options.providerMessageId))
+    ) {
+      throw new TypeError("Provider reconciliation message ID must be bounded and single-line.");
     }
     if (
       (options.deliveryCertainty === "unknown" &&
@@ -220,9 +234,13 @@ export class ProviderDispatchError extends MailEdgeError {
         phase: options.phase,
       },
     });
+    this.code = options.code;
     this.deliveryCertainty = options.deliveryCertainty;
     this.phase = options.phase;
     this.evidenceCode = options.evidenceCode;
+    if (options.providerMessageId !== undefined) {
+      this.providerMessageId = options.providerMessageId;
+    }
   }
 }
 
@@ -272,10 +290,10 @@ interface ProblemPolicy {
   readonly title: string;
   readonly status: number;
   readonly detail: string;
-  readonly safeDetailKeys: ReadonlySet<string>;
+  readonly safeDetailKeys: readonly string[];
 }
 
-const keys = (...values: readonly string[]): ReadonlySet<string> => new Set(values);
+const keys = (...values: readonly string[]): readonly string[] => Object.freeze(values);
 
 const problemPolicies = {
   VALIDATION_FAILED: {

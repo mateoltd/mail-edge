@@ -15,8 +15,31 @@ const unitForPath = (path) => {
   );
 };
 
+const isUnitSource = (unit, path) =>
+  unit !== undefined &&
+  normalizePath(relative(repositoryRoot, path)).startsWith(`${unit.root}/src/`);
+
 const unitForImport = (source) =>
   workspaceUnits.find((unit) => source === unit.name || source.startsWith(`${unit.name}/`));
+
+const propertyName = (node) => {
+  if (node.computed) {
+    return node.property.type === "Literal" && typeof node.property.value === "string"
+      ? node.property.value
+      : undefined;
+  }
+  return node.property.type === "Identifier" ? node.property.name : undefined;
+};
+
+const isProcessReference = (node) => node.type === "Identifier" && node.name === "process";
+
+const isProcessEnvironment = (node) =>
+  node.type === "MemberExpression" &&
+  isProcessReference(node.object) &&
+  propertyName(node) === "env";
+
+const isMessageMember = (node) =>
+  node.type === "MemberExpression" && propertyName(node) === "message";
 
 const hasExport = (unit, source) => {
   const manifestPath = resolve(repositoryRoot, unit.root, "package.json");
@@ -103,13 +126,138 @@ const workspaceImportsRule = {
     return {
       ExportAllDeclaration: checkNode,
       ExportNamedDeclaration: checkNode,
+      ImportExpression: checkNode,
       ImportDeclaration: checkNode,
+    };
+  },
+};
+
+const noAmbientEnvironmentRule = {
+  meta: {
+    docs: {
+      description: "Forbid ambient process environment reads in workspace libraries.",
+    },
+    messages: {
+      ambientEnvironment:
+        "Workspace libraries must receive validated configuration through constructor injection; process.env is composition-root-only.",
+    },
+    schema: [],
+    type: "problem",
+  },
+  create(context) {
+    const sourceUnit = unitForPath(context.filename);
+    if (sourceUnit?.kind !== "package" || !isUnitSource(sourceUnit, context.filename)) {
+      return {};
+    }
+    return {
+      MemberExpression(node) {
+        if (isProcessEnvironment(node)) {
+          context.report({ messageId: "ambientEnvironment", node });
+        }
+      },
+    };
+  },
+};
+
+const noErrorMessageMatchingRule = {
+  meta: {
+    docs: {
+      description: "Forbid branching on error message text instead of stable codes or types.",
+    },
+    messages: {
+      messageMatching:
+        "Do not match error message text; discriminate the stable error code or error type.",
+    },
+    schema: [],
+    type: "problem",
+  },
+  create(context) {
+    const sourceUnit = unitForPath(context.filename);
+    if (sourceUnit === undefined || !isUnitSource(sourceUnit, context.filename)) {
+      return {};
+    }
+    const report = (node) => context.report({ messageId: "messageMatching", node });
+    return {
+      BinaryExpression(node) {
+        if (
+          ["==", "===", "!=", "!=="].includes(node.operator) &&
+          (isMessageMember(node.left) || isMessageMember(node.right))
+        ) {
+          report(node);
+        }
+      },
+      CallExpression(node) {
+        if (node.callee.type !== "MemberExpression") return;
+        const method = propertyName(node.callee);
+        if (
+          ["endsWith", "includes", "match", "search", "startsWith"].includes(method) &&
+          isMessageMember(node.callee.object)
+        ) {
+          report(node);
+          return;
+        }
+        if (
+          ["exec", "test"].includes(method) &&
+          node.arguments.some(
+            (argument) => argument.type !== "SpreadElement" && isMessageMember(argument),
+          )
+        ) {
+          report(node);
+        }
+      },
+      SwitchStatement(node) {
+        if (isMessageMember(node.discriminant)) report(node);
+      },
+    };
+  },
+};
+
+const mutableContainerNames = Object.freeze(["Map", "Set", "WeakMap", "WeakSet"]);
+
+const noMutableModuleStateRule = {
+  meta: {
+    docs: {
+      description: "Forbid explicit mutable module state in workspace source files.",
+    },
+    messages: {
+      mutableContainer:
+        "Module-scoped mutable containers are forbidden; keep working state local or owned by an injected class instance.",
+      mutableVariable:
+        "Module-scoped variables must be const; mutable runtime state belongs to an injected class instance.",
+    },
+    schema: [],
+    type: "problem",
+  },
+  create(context) {
+    const sourceUnit = unitForPath(context.filename);
+    if (sourceUnit === undefined || !isUnitSource(sourceUnit, context.filename)) {
+      return {};
+    }
+    return {
+      VariableDeclaration(node) {
+        if (node.parent.type !== "Program") return;
+        if (node.kind !== "const") {
+          context.report({ messageId: "mutableVariable", node });
+        }
+        for (const declaration of node.declarations) {
+          if (
+            declaration.init?.type === "NewExpression" &&
+            declaration.init.callee.type === "Identifier" &&
+            mutableContainerNames.includes(declaration.init.callee.name)
+          ) {
+            context.report({ messageId: "mutableContainer", node: declaration });
+          }
+        }
+      },
     };
   },
 };
 
 export const mailEdgeEslintPlugin = {
   rules: {
+    "no-ambient-environment": noAmbientEnvironmentRule,
+    "no-error-message-matching": noErrorMessageMatchingRule,
+    "no-mutable-module-state": noMutableModuleStateRule,
     "workspace-imports": workspaceImportsRule,
   },
 };

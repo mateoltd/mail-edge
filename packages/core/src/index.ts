@@ -1,5 +1,21 @@
+export type {
+  ApplicationDestinationV1,
+  HostSignatureClaimsV1,
+  HostSignatureHttpHeadersV1,
+  HostSignatureV1,
+  HostSignedOperation,
+  RawMessageIntegrityErrorOptions,
+  RawMessageIntegrityReason,
+} from "@mail-edge/contracts";
+export {
+  DEFAULT_MAX_RAW_MESSAGE_BYTES,
+  RawMessageIntegrityError,
+  rawMessageIntegrityReasons,
+} from "@mail-edge/contracts";
 export type { CanonicalJsonObject, CanonicalJsonValue } from "./canonical-json.js";
 export { validateProviderAcceptance } from "./acceptance.js";
+export type { DerivedMessageInput } from "./derived-message.service.js";
+export { DerivedMessageService } from "./derived-message.service.js";
 export { canonicalJson, sha256CanonicalJson, sha256Text } from "./canonical-json.js";
 export type { ActivationEvaluation } from "./capability.js";
 export {
@@ -19,6 +35,16 @@ export type {
   CanonicalSmtpRecipient,
 } from "./envelope.js";
 export { canonicalizeMailbox, canonicalizeSmtpEnvelope } from "./envelope.js";
+export type {
+  OutboundRouteDecision,
+  OutboundRoutePlan,
+  OutboundRoutePlanInput,
+} from "./exact-route-planner.service.js";
+export {
+  compileOutboundRoutePlan,
+  decideOutboundRoute,
+  ExactRoutePlannerService,
+} from "./exact-route-planner.service.js";
 export type { FeedbackProjectionInput } from "./feedback.js";
 export { projectRecipientFeedback } from "./feedback.js";
 export type {
@@ -33,6 +59,12 @@ export {
   providerScopedIdentityDigest,
   resolveIdempotency,
 } from "./fingerprint.js";
+export type { HostSignatureExpectation } from "./host-signature.js";
+export {
+  createHostSignature,
+  hostSignatureToHttpHeaders,
+  verifyHostSignature,
+} from "./host-signature.js";
 export { MAX_COLLECTED_BODY_BYTES, StrictBoundedBodyCollector } from "./bounded-body.service.js";
 export { OwnedOneShotBody } from "./one-shot-body.service.js";
 export { validateProviderHttpRequestMetadata } from "./ingress.js";
@@ -40,12 +72,16 @@ export type {
   AuditPort,
   ApplicationAckV1,
   ApplicationDeliverySink,
-  ApplicationDestinationV1,
   BlobStagePort,
   BlobStageReservation,
   BlobStageWriter,
   BlobStorePort,
   Clock,
+  DerivedBlobProvenancePort,
+  DerivedBlobProvenanceV1,
+  HeaderPatchApplicationEvidence,
+  HeaderPatchApplierPort,
+  HeaderPatchPlanner,
   IdempotencyRepository,
   IdGenerator,
   InboundReceiptRepository,
@@ -54,6 +90,7 @@ export type {
   OutboundIntentPort,
   OutboundIntentRepository,
   ProviderRegistryPort,
+  RawAccessGrantIssuer,
   RecipientRouter,
   RegisteredProviderAbstraction,
   ReverseRouteRequestV1,
@@ -66,14 +103,40 @@ export type {
   TelemetryFields,
   TelemetrySizeBucket,
   TelemetryState,
+  TenantUnitOfWorkFactory,
   UnitOfWork,
   UnitOfWorkContext,
   Wakeup,
   WakeupScheduler,
 } from "./ports.js";
 export { MAX_RAW_ACCESS_GRANT_LIFETIME_MS, validateRawAccessGrant } from "./raw-access.js";
+export { parseWorkflowWakeup } from "./wakeup.js";
+export type {
+  RecipientRoutePlan,
+  RecipientRoutingInput,
+  RecipientRoutingLimits,
+} from "./recipient-routing.service.js";
+export {
+  compileRecipientRoutePlan,
+  DEFAULT_RECIPIENT_ROUTING_LIMITS,
+  RecipientRoutingService,
+} from "./recipient-routing.service.js";
 export type { RecipientGroup, RecipientGroupingCapabilities } from "./recipient-groups.js";
 export { groupRecipientsForTransport } from "./recipient-groups.js";
+export type {
+  ReverseAliasHeaderPolicy,
+  ReverseRoutePlan,
+} from "./reverse-route-planner.service.js";
+export {
+  compileReverseAliasHeaderPatchPlan,
+  compileReverseRoutePlan,
+  constructSafeHeaderField,
+  DEFAULT_REVERSE_ALIAS_HEADER_POLICY,
+  headerPatchPlanDigest,
+  normalizeReverseRouteResolution,
+  ReverseAliasHeaderPatchPlanner,
+  ReverseRoutePlanningService,
+} from "./reverse-route-planner.service.js";
 export type {
   BindingEvent,
   ApplicationDeliveryEvent,

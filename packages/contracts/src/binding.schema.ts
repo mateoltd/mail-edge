@@ -41,6 +41,10 @@ const routeBindingSnapshotProperties = {
   direction: Type.Union(directions.map((value) => Type.Literal(value))),
   providerId: schemaRef(ProviderIdSchema),
   adapterVersion: Type.String({ maxLength: 64, minLength: 1 }),
+  adapterMode: Type.Optional(
+    Type.String({ maxLength: 64, minLength: 1, pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
+  ),
+  dispatchTransport: Type.Optional(Type.Union([Type.Literal("http"), Type.Literal("smtp")])),
   providerInstanceId: schemaRef(ProviderInstanceIdSchema),
   providerResourceIds: schemaRef(BoundedStringMapSchema),
   capabilityDigest: schemaRef(Sha256Schema),

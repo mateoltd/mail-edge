@@ -1,0 +1,23 @@
+{
+  "$id": "urn:mail-edge:schema:v1:binding-lifecycle-decision",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expectedVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reasonCode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "expectedVersion",
+    "reasonCode"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,215 @@
+{
+  "baseSha": "51f7b6e3f031960f4ba812d356f89a308b759bfe",
+  "environment": {
+    "architecture": "arm64",
+    "cpuCount": 11,
+    "nodeVersion": "v24.19.0",
+    "platform": "darwin",
+    "totalMemoryBytes": 19327352832
+  },
+  "generatedAt": "2026-08-16T02:01:07Z",
+  "limitations": [
+    "All formal results are bounded safety checks; no liveness or unbounded proof is claimed.",
+    "Before/after cardinality RSS is not sampled peak memory.",
+    "Clean-room verification fails in two pre-existing PostgreSQL runtime integration assertions.",
+    "Fallback refinement is model-only because the current production fixture has no fallback binding.",
+    "No current runtime produces any of the 20 cataloged metrics, so repository alert rules are dormant.",
+    "Socket measurements are brief local loopback observations, not sustained production or provider capacity.",
+    "The bottleneck remains not_isolated; measured drains, RSS and event-loop delay do not establish causality."
+  ],
+  "qualificationStatus": "failed",
+  "reports": [
+    {
+      "artifactDigestSha256": "7b294d1eb67b2725073ccc32365e3c5e19fba35212d19b2dcd45f2b7ad4d15f6",
+      "id": "cardinality-alias",
+      "kind": "cardinality_alias",
+      "status": "pass",
+      "summary": {
+        "aliasCount": 1000000,
+        "exactDomainCount": 10,
+        "lookupMisses": 0,
+        "retainedAliasCount": 0,
+        "rssDeltaBytes": 51691520,
+        "rssObservation": "before_after_only",
+        "throughputAliasesPerSecond": 2265375.952708954
+      }
+    },
+    {
+      "artifactDigestSha256": "7b294d1eb67b2725073ccc32365e3c5e19fba35212d19b2dcd45f2b7ad4d15f6",
+      "id": "cardinality-fleet",
+      "kind": "cardinality_fleet",
+      "status": "pass",
+      "summary": {
+        "bindingLookupEntries": 300000,
+        "exactDomainLookupEntries": 100000,
+        "retainedAliasCount": 0,
+        "rssDeltaBytes": 25362432,
+        "rssObservation": "before_after_only",
+        "tenantLookupEntries": 10000,
+        "totalLookupEntries": 410000
+      }
+    },
+    {
+      "artifactDigestSha256": "9022c37dac9391bd7eebf386c3bde8637d6d18ea1ca5e1272d322bbb2e712a33",
+      "id": "formal-execution",
+      "kind": "formal",
+      "status": "pass",
+      "summary": {
+        "alloyChecks": 14,
+        "alloyCounterexamples": 0,
+        "alloyWitnesses": 4,
+        "tlcDistinctStates": 618041,
+        "tlcErrors": 0,
+        "tlcMaxDepth": 23,
+        "tlcStatesGenerated": 7880014
+      }
+    },
+    {
+      "artifactDigestSha256": "d03da7c0b42cc75f42c8f992fde911e1514fceaeefa394aaea97bb604376a194",
+      "id": "license-check",
+      "kind": "license",
+      "status": "pass",
+      "summary": {
+        "approvedLicenseExpressions": 17,
+        "unapprovedLicenseExpressions": 0
+      }
+    },
+    {
+      "artifactDigestSha256": "cd2585c9b8cd9e536c071e9d9a19da2fca0cbb8827e37a26a835fedb3c5df785",
+      "id": "observability-assets",
+      "kind": "observability",
+      "status": "unavailable",
+      "summary": {
+        "alertsImplementedButDormant": 4,
+        "alertsRuntimeMissing": 8,
+        "alertsSignedEvidence": 3,
+        "assetValidation": "passed",
+        "catalogMetrics": 20,
+        "currentMetricProducers": 0,
+        "dashboards": 4,
+        "prometheusRules": 8
+      }
+    },
+    {
+      "artifactDigestSha256": "d03da7c0b42cc75f42c8f992fde911e1514fceaeefa394aaea97bb604376a194",
+      "id": "pii-redaction",
+      "kind": "pii_redaction",
+      "status": "pass",
+      "summary": {
+        "findings": 0,
+        "generatedArtifactsScanned": 4,
+        "signingScan": "required"
+      }
+    },
+    {
+      "artifactDigestSha256": "d03da7c0b42cc75f42c8f992fde911e1514fceaeefa394aaea97bb604376a194",
+      "id": "real-driver",
+      "kind": "real_driver",
+      "status": "pass",
+      "summary": {
+        "buildTasks": 19,
+        "minioDriver": "passed",
+        "pgBossDriver": "passed",
+        "postgresDriver": "passed"
+      }
+    },
+    {
+      "artifactDigestSha256": "7b294d1eb67b2725073ccc32365e3c5e19fba35212d19b2dcd45f2b7ad4d15f6",
+      "id": "refinement-traces",
+      "kind": "refinement",
+      "status": "pass",
+      "summary": {
+        "failed": 0,
+        "modelOnlyFallbackCases": 1,
+        "passed": 7,
+        "traces": 7
+      }
+    },
+    {
+      "artifactDigestSha256": "d03da7c0b42cc75f42c8f992fde911e1514fceaeefa394aaea97bb604376a194",
+      "id": "reproducibility-clean-room",
+      "kind": "reproducibility",
+      "status": "fail",
+      "summary": {
+        "frozenLockfileInstall": "passed",
+        "postgresRuntimeTestsFailed": 2,
+        "postgresRuntimeTestsTotal": 37,
+        "repositoryVerify": "failed"
+      }
+    },
+    {
+      "artifactDigestSha256": "d03da7c0b42cc75f42c8f992fde911e1514fceaeefa394aaea97bb604376a194",
+      "id": "sbom-check",
+      "kind": "sbom",
+      "status": "pass",
+      "summary": {
+        "bomFormat": "CycloneDX",
+        "components": 951,
+        "specVersion": "1.6"
+      }
+    },
+    {
+      "artifactDigestSha256": "7b294d1eb67b2725073ccc32365e3c5e19fba35212d19b2dcd45f2b7ad4d15f6",
+      "id": "scale-loopback",
+      "kind": "scale",
+      "status": "pass",
+      "summary": {
+        "backpressureDrainWaits": 512,
+        "bottleneckConclusion": "not_isolated",
+        "concurrencyObservations": [
+          {
+            "configured": 64,
+            "messageBytes": 1048576,
+            "observedAtTarget": 64
+          },
+          {
+            "configured": 100,
+            "messageBytes": 102400,
+            "observedAtTarget": 100
+          }
+        ],
+        "envelopes": [
+          {
+            "messageBytes": 102400,
+            "messagesPerSecond": 2289.5641878962324,
+            "mebibytesPerSecond": 223.59025272424145,
+            "p99Milliseconds": 11.690791000000019
+          },
+          {
+            "messageBytes": 1048576,
+            "messagesPerSecond": 365.60573632658253,
+            "mebibytesPerSecond": 365.60573632658253,
+            "p99Milliseconds": 170.81454100000002
+          },
+          {
+            "messageBytes": 5242880,
+            "messagesPerSecond": 79.35897785636521,
+            "mebibytesPerSecond": 396.79488928182604,
+            "p99Milliseconds": 13.690417000000025
+          },
+          {
+            "messageBytes": 26214400,
+            "messagesPerSecond": 16.40621095834485,
+            "mebibytesPerSecond": 410.15527395862125,
+            "p99Milliseconds": 62.46045800000002
+          }
+        ],
+        "protocolErrors": 0
+      }
+    },
+    {
+      "artifactDigestSha256": "d03da7c0b42cc75f42c8f992fde911e1514fceaeefa394aaea97bb604376a194",
+      "id": "security-check",
+      "kind": "security",
+      "status": "pass",
+      "summary": {
+        "containerPolicy": "passed",
+        "failClosedPolicy": "passed",
+        "isolationPolicy": "passed",
+        "streamingPolicy": "passed"
+      }
+    }
+  ],
+  "schemaVersion": "w9-qualification-v1",
+  "sourceSha": "5430eb039126f08b5fa85aedddd1f788b2af8303"
+}

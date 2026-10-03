@@ -1,0 +1,237 @@
+{
+  "annotations": { "list": [] },
+  "description": "Provider dispatch certainty, phase timing, quarantine, feedback and binding qualification signals.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Completed dispatches split only by bounded provider, transport and delivery certainty.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, transport, certainty) (rate(mail_edge_dispatch_total[5m]))",
+          "legendFormat": "{{provider}} {{transport}} {{certainty}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatch completion rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Global 15-minute unknown ratio. The alert additionally requires five unknown events.",
+      "fieldConfig": { "defaults": { "max": 1, "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "mail_edge:dispatch_unknown:ratio15m",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Unknown dispatch ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Unknown dispatch events in the 15-minute alert window.",
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "mail_edge:dispatch_unknown:increase15m",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Unknown events in 15 minutes",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Provider phase p50 latency from correlated phase observations.",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, provider, transport, phase) (rate(mail_edge_dispatch_phase_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{provider}} {{transport}} {{phase}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatch phase p50",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Provider phase p95 latency. No phase-duration producer currently exists.",
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, provider, transport, phase) (rate(mail_edge_dispatch_phase_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{provider}} {{transport}} {{phase}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Dispatch phase p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Unknown quarantines by bounded evidence code. Evidence codes require a frozen registry capped at 64 values.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "id": 6,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, transport, evidence_code) (rate(mail_edge_quarantine_unknown_total[5m]))",
+          "legendFormat": "{{provider}} {{transport}} {{evidence_code}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Unknown quarantine rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Feedback commits and deduplication outcomes.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, kind, dedupe) (rate(mail_edge_feedback_total[5m]))",
+          "legendFormat": "{{provider}} {{kind}} {{dedupe}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Feedback rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Binding check outcomes. Freshness and drift impact require separate bounded runtime signals.",
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "id": 8,
+      "options": {
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (provider, check_kind, outcome) (rate(mail_edge_binding_check_total[15m]))",
+          "legendFormat": "{{provider}} {{check_kind}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Binding check rate",
+      "type": "timeseries"
+    },
+    {
+      "description": "No dispatch metric producer is wired at the reviewed base. The existing provider instrumentation sink is optional, unwired, lacks phase durations and does not classify every successful or failed dispatch. Do not activate these panels until completion accounting is proven.",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 24 },
+      "id": 9,
+      "options": {
+        "content": "## Dispatch safety note\n\nUnknown delivery is quarantine state, not a retry signal. A missing series is an observability gap and cannot clear an incident.",
+        "mode": "markdown"
+      },
+      "title": "Signal status",
+      "type": "text"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": ["mail-edge", "w9", "dispatch", "safety"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "label": "Prometheus",
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Mail Edge dispatch safety",
+  "uid": "mail-edge-w9-dispatch",
+  "version": 1,
+  "weekStart": "monday"
+}

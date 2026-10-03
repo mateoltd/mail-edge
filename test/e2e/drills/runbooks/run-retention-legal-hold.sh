@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+"$(dirname "$0")/_run-production-drill.sh" retention_legal_hold

@@ -1,0 +1,23 @@
+{
+  "$id": "urn:mail-edge:schema:v1:application-delivery-callback",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "delivery": {
+      "$ref": "urn:mail-edge:schema:v1:application-delivery"
+    },
+    "rawAccessGrant": {
+      "$ref": "urn:mail-edge:schema:v1:raw-access-grant"
+    },
+    "schemaVersion": {
+      "const": "v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "delivery",
+    "rawAccessGrant"
+  ],
+  "type": "object"
+}

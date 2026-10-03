@@ -1,0 +1,172 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { parse } from "yaml";
+
+import { repositoryRoot } from "./workspace.mjs";
+
+const applicationRoot = resolve(repositoryRoot, "apps/reference-service");
+const sourceRoot = resolve(applicationRoot, "src");
+const errors = [];
+
+const read = (path) => readFileSync(resolve(repositoryRoot, path), "utf8");
+const sourceFiles = readdirSync(sourceRoot)
+  .filter((name) => name.endsWith(".ts"))
+  .toSorted();
+const sources = sourceFiles.map((name) => [name, readFileSync(resolve(sourceRoot, name), "utf8")]);
+const allSources = sources.map(([, source]) => source).join("\n");
+const compositionOnlySources = new Set(["config.ts", "production-composition.ts"]);
+const providerNeutralSources = sources
+  .filter(([name]) => !compositionOnlySources.has(name))
+  .map(([, source]) => source)
+  .join("\n");
+
+const requireMatch = (source, expression, label) => {
+  if (!expression.test(source)) errors.push(`${label} is missing.`);
+};
+
+const forbidMatch = (source, expression, label) => {
+  if (expression.test(source)) errors.push(`${label} is forbidden.`);
+};
+
+forbidMatch(
+  providerNeutralSources,
+  /mailgun/iu,
+  "Provider-specific Mailgun logic outside the application composition root",
+);
+forbidMatch(allSources, /AsyncLocalStorage/u, "Ambient tenant context in the reference host");
+for (const [name, source] of sources) {
+  if (name !== "production-composition.ts") {
+    forbidMatch(
+      source,
+      /@mail-edge\/provider-[a-z]/u,
+      `Concrete provider package import in ${name}`,
+    );
+  }
+}
+forbidMatch(allSources, /\b(?:TODO|FIXME|stub|noop)\b/iu, "Unfinished production behavior");
+
+for (const [name, source] of sources) {
+  if (name !== "main.ts")
+    forbidMatch(source, /process\.env/u, `Ambient environment access in ${name}`);
+}
+
+const http = read("apps/reference-service/src/http-server.ts");
+requireMatch(http, /addContentTypeParser\("\*"/u, "Streaming wildcard content parser");
+requireMatch(http, /BoundedConcurrencyGate/u, "Bounded HTTP concurrency");
+requireMatch(http, /\/livez/u, "Liveness endpoint");
+requireMatch(http, /\/readyz/u, "Readiness endpoint");
+requireMatch(http, /authorization/u, "Endpoint authentication");
+
+const config = read("apps/reference-service/src/config.ts");
+requireMatch(config, /additionalProperties: false/u, "Closed configuration schemas");
+requireMatch(config, /secret:\/\//u, "Secret-reference-only configuration");
+requireMatch(config, /Object\.freeze/u, "Immutable configuration snapshots");
+
+const productionComposition = read("apps/reference-service/src/production-composition.ts");
+requireMatch(
+  productionComposition,
+  /export const createReferenceServiceComposition/u,
+  "Shipped production composition export",
+);
+requireMatch(
+  productionComposition,
+  /@mail-edge\/provider-mailgun/u,
+  "Explicit Mailgun registration at the application composition root",
+);
+requireMatch(productionComposition, /DurableRuntimeHost/u, "Durable runtime lifecycle composition");
+
+const mailgunOutbound = read("packages/provider-mailgun/src/outbound.adapter.ts");
+requireMatch(mailgunOutbound, /POST/u, "Mailgun Logs API POST method");
+requireMatch(mailgunOutbound, /\/v1\/analytics\/logs/u, "Current Mailgun Logs API path");
+forbidMatch(
+  mailgunOutbound,
+  /\/v3\/[^\s"']+\/events\b/u,
+  "Deprecated Mailgun Events API dependency",
+);
+
+const exampleConfig = read("apps/reference-service/local/config.example.json");
+requireMatch(
+  exampleConfig,
+  /\/srv\/reference-service\/dist\/production-composition\.js/u,
+  "Shipped production composition in the deployable configuration",
+);
+
+const dockerfile = read("apps/reference-service/Dockerfile");
+requireMatch(
+  dockerfile,
+  /FROM node:\$\{NODE_VERSION\}-bookworm-slim AS build/u,
+  "Pinned build stage",
+);
+requireMatch(
+  dockerfile,
+  /FROM node:\$\{NODE_VERSION\}-bookworm-slim AS runtime/u,
+  "Pinned runtime stage",
+);
+requireMatch(dockerfile, /^USER 10001:10001$/mu, "Non-root container identity");
+forbidMatch(dockerfile, /:latest\b/u, "Floating container tags");
+
+const compose = read("apps/reference-service/compose.yaml");
+requireMatch(compose, /postgres:17\.6-alpine3\.22/u, "Pinned PostgreSQL 17.6 image");
+requireMatch(compose, /mail-edge-test-minio:7ced9663e6a7/u, "Source-pinned MinIO image");
+requireMatch(
+  read("test/fixtures/minio/Dockerfile"),
+  /7ced9663e6a791fef9dc6be798ff24cda9c730ac/u,
+  "Exact MinIO source revision",
+);
+requireMatch(compose, /read_only: true/u, "Read-only runtime filesystem");
+requireMatch(compose, /no-new-privileges:true/u, "Container privilege escalation guard");
+
+const openapi = parse(read("apps/reference-service/openapi/reference-service.v1.yaml"));
+if (openapi?.openapi !== "3.1.0") errors.push("Reference-service OpenAPI must use version 3.1.0.");
+const documentedOperations = Object.values(openapi?.paths ?? {}).flatMap((path) =>
+  Object.values(path ?? {}).filter(
+    (operation) =>
+      typeof operation === "object" && operation !== null && "operationId" in operation,
+  ),
+);
+const expectedOperationIds = [
+  "applyProviderBindingPlan",
+  "createOutboundIntent",
+  "decideInboundQuarantine",
+  "decideOutboundQuarantine",
+  "deleteProviderBinding",
+  "discoverProviderBinding",
+  "downloadRawMessageByGrant",
+  "getDegradedStatus",
+  "getInboundReceipt",
+  "getLiveness",
+  "getOutboundIntent",
+  "getReadiness",
+  "ingestProviderFeedback",
+  "ingestProviderMessage",
+  "ingestProviderMessageAtRoot",
+  "inspectInboundQuarantine",
+  "inspectOutboundQuarantine",
+  "inspectTenantBinding",
+  "issueRawAccessGrant",
+  "listProviderInstances",
+  "listProviders",
+  "planProviderBinding",
+  "revokeRawAccessGrant",
+  "storeRawMessage",
+  "transitionBindingLifecycle",
+].toSorted();
+const documentedOperationIds = documentedOperations
+  .map((operation) => operation.operationId)
+  .filter((operationId) => typeof operationId === "string")
+  .toSorted();
+if (JSON.stringify(documentedOperationIds) !== JSON.stringify(expectedOperationIds)) {
+  errors.push(
+    `Reference-service OpenAPI operations differ: ${JSON.stringify(documentedOperationIds)}.`,
+  );
+}
+
+if (errors.length > 0) {
+  console.error(errors.map((error) => `- ${error}`).join("\n"));
+  process.exitCode = 1;
+} else {
+  console.log(
+    "Reference-service fail-closed, isolation, streaming, and container policies passed.",
+  );
+}

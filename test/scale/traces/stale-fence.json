@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "stale-fence-cannot-complete-new-attempt",
+  "kind": "stale_fence",
+  "expected": {
+    "errorCode": "STALE_FENCE",
+    "workflowState": "dispatching"
+  }
+}

@@ -59,7 +59,7 @@ const config = {
       exportsFields: ["exports"],
     },
     includeOnly: {
-      path: "^(?:apps|packages)/",
+      path: "^(?:apps|packages|test)/",
     },
     moduleSystems: ["es6", "tsd"],
     preserveSymlinks: false,

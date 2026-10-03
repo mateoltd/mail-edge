@@ -1,0 +1,163 @@
+{
+  "evidence": {
+    "baseSha": "ed71496ac4225ef6df259f6626b15ecc2711c38f",
+    "environment": {
+      "architecture": "arm64",
+      "cpuCount": 11,
+      "nodeVersion": "v24.19.0",
+      "platform": "darwin",
+      "totalMemoryBytes": 19327352832
+    },
+    "generatedAt": "2026-08-17T04:40:19Z",
+    "limitations": [
+      "External release blocker: independent security and architecture review was not authorized or supplied.",
+      "External release blocker: live Mailgun qualification was not authorized and no provider account, credentials, DNS or isolated domain was touched.",
+      "Internal qualification blocker: Section 16.7 did not run because Docker exposed 11 vCPU and 9435414528 memory bytes rather than the exact required 8 vCPU and 16 GiB, while 11432400 KiB of available durable storage was below the mandatory workload's 46080000000 raw ingress bytes before overhead."
+    ],
+    "qualificationStatus": "limited",
+    "reports": [
+      {
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
+        "id": "alias-cardinality",
+        "kind": "cardinality_alias",
+        "status": "pass",
+        "summary": { "aliasCount": 1000000, "exactDomains": 10, "retainedAliases": 0 }
+      },
+      {
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
+        "id": "fleet-cardinality",
+        "kind": "cardinality_fleet",
+        "status": "pass",
+        "summary": {
+          "bindingLookupEntries": 300000,
+          "exactDomainLookupEntries": 100000,
+          "tenantLookupEntries": 10000
+        }
+      },
+      {
+        "artifactDigestSha256": "acefe9180f16e4cb3b93cdf6d29d25bf2c8bc0cad6212fff56ba1485c28e3ec7",
+        "id": "formal-models",
+        "kind": "formal",
+        "status": "pass",
+        "summary": {
+          "alloyCheckCounterexamples": 0,
+          "alloyChecks": 14,
+          "alloyWitnesses": 4,
+          "tlcDistinctStates": 618041,
+          "tlcErrors": 0,
+          "tlcStatesGenerated": 7880014
+        }
+      },
+      {
+        "artifactDigestSha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "id": "license-policy",
+        "kind": "license",
+        "status": "pass",
+        "summary": { "allowedDependencyExpressions": 17, "projectLicense": "Apache-2.0" }
+      },
+      {
+        "artifactDigestSha256": "9aee4806379087f2638fd574c770189a05ada8b5b1957aeff7ce831b8f0a21c5",
+        "id": "observability-assets",
+        "kind": "observability",
+        "status": "pass",
+        "summary": {
+          "alertCoverageEntries": 15,
+          "metricCatalogEntries": 20,
+          "metricProducerStatuses": "verified_runtime_or_collector",
+          "prometheusRules": 16
+        }
+      },
+      {
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
+        "id": "pii-redaction",
+        "kind": "pii_redaction",
+        "status": "pass",
+        "summary": {
+          "opaqueQueuePayloadFields": 1,
+          "qualificationEvidenceFindings": 0,
+          "rawBytesInRealMetricsScrape": 0,
+          "telemetryRedactionFailures": 0
+        }
+      },
+      {
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
+        "id": "real-driver",
+        "kind": "real_driver",
+        "status": "pass",
+        "summary": {
+          "productionDrillsPassed": 7,
+          "referenceServiceComposition": "pass",
+          "storageQueueIntegration": "pass"
+        }
+      },
+      {
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
+        "id": "refinement-traces",
+        "kind": "refinement",
+        "status": "pass",
+        "summary": { "casesPassed": 7, "casesRun": 7 }
+      },
+      {
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
+        "id": "reproducibility-container",
+        "kind": "reproducibility",
+        "status": "pass",
+        "summary": {
+          "cleanRoomInvocationsPassed": 2,
+          "cleanRoomPackagesPerInvocation": 16,
+          "concurrentLeaseHandoff": "pass",
+          "containerCrashRestartProbe": "pass",
+          "containerGracefulShutdownProbe": "pass",
+          "containerReadiness": "pass"
+        }
+      },
+      {
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
+        "id": "sbom",
+        "kind": "sbom",
+        "status": "pass",
+        "summary": { "components": 951, "format": "CycloneDX", "specVersion": "1.6" }
+      },
+      {
+        "artifactDigestSha256": "56db32fe1dfb8124c3f16e29b882a693ce966ca09136a7a1eb6c4a8fdec9c4b1",
+        "id": "scale-sustained",
+        "kind": "scale",
+        "status": "unavailable",
+        "summary": {
+          "dockerCpuCount": 11,
+          "dockerMemoryBytes": 9435414528,
+          "filesystemAvailableKiB": 11432400,
+          "localMaximumSizeConcurrency": 8,
+          "localMaximumSizeStreamBytes": 26214400,
+          "localSimultaneousStreams": 100,
+          "minimumRawIngressBytes": 46080000000,
+          "requiredCpuCount": 8,
+          "requiredDurationSeconds": 1800,
+          "requiredInboundMessagesPerSecond": 250,
+          "requiredMemoryBytes": 17179869184
+        }
+      },
+      {
+        "artifactDigestSha256": "18073cbe4b8b460d9b0e07c009298c45bdf41b44fa21b134297a7ea61a7a59d9",
+        "id": "security",
+        "kind": "security",
+        "status": "pass",
+        "summary": {
+          "faultBoundaryTests": 27,
+          "internalSecurityGate": "pass",
+          "referenceServiceFailClosedGate": "pass",
+          "secretScanFindings": 0
+        }
+      }
+    ],
+    "schemaVersion": "w9-qualification-v1",
+    "sourceSha": "698eb3c835ac1fd6dcc5b5ced1ac86ecfb0d1d4e"
+  },
+  "evidenceDigestSha256": "2aea00ce27b65fb9ef3ebd6dfbe47fd723b1b5ec59342c3b7b694ef040d70ec2",
+  "schemaVersion": "w9-signed-qualification-v1",
+  "signature": {
+    "algorithm": "ed25519",
+    "keyId": "w9-integration-2026-08",
+    "value": "I828d10z7mXLlvd9-CMAxlv4B0azro4knQFHB8aArKmQORj8nk0lu_lJT0rWkB7FvmOfB5zmqbUlzRFI2nyVDA"
+  }
+}

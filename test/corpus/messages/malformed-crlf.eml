@@ -1,0 +1,8 @@
+From: Sender <sender@example.test>
+This line has no colon
+	orphan-like continuation retained with malformed field
+Bad Name: invalid field name
+X-Valid: keep-me
+To: Recipient <recipient@example.test>
+
+Malformed headers are opaque evidence.

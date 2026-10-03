@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { Type } from "@sinclair/typebox";
 
 import {
   contractSchemas,
   createContractValidator,
+  HeaderPatchPlanV1Schema,
   MailEdgeProblemV1Schema,
   RawMessageRefV1Schema,
   Rfc3339TimestampSchema,
   SafeDetailsSchema,
   SmtpEnvelopeV1Schema,
   WorkflowWakeupV1Schema,
+  validateContract,
+  validateContractBatch,
 } from "../src/index.js";
 
 const validEnvelope = {
@@ -19,9 +23,20 @@ const validEnvelope = {
 };
 
 describe("strict runtime schemas", () => {
+  it("offers total function validation for individual values and bounded batches", () => {
+    expect(validateContract(SmtpEnvelopeV1Schema, validEnvelope).ok).toBe(true);
+    const batch = validateContractBatch(SmtpEnvelopeV1Schema, [
+      validEnvelope,
+      { ...validEnvelope, provider: "implicit" },
+    ]);
+    expect(batch.ok).toBe(false);
+    if (!batch.ok) expect(batch.error.issues[0]?.path.startsWith("/1")).toBe(true);
+    expect(validateContract(Type.Ref("urn:mail-edge:schema:v1:missing"), {}).ok).toBe(false);
+  });
+
   it("registers every schema in strict Ajv without warnings or missing references", () => {
     const validator = createContractValidator();
-    expect(contractSchemas).toHaveLength(45);
+    expect(contractSchemas).toHaveLength(62);
     expect(validator.validate(SmtpEnvelopeV1Schema, validEnvelope).ok).toBe(true);
   });
 
@@ -119,5 +134,36 @@ describe("strict runtime schemas", () => {
       type: "https://mail-edge.dev/problems/internal",
     };
     expect(createContractValidator().validate(MailEdgeProblemV1Schema, problem).ok).toBe(false);
+  });
+
+  it("accepts bounded header patch plans and rejects malformed selectors", () => {
+    const validator = createContractValidator();
+    const validPlan = {
+      operations: [
+        {
+          name: "from",
+          occurrence: 0,
+          op: "replaceOccurrence",
+          rawField: "From: Alias <alias@example.test>",
+        },
+      ],
+      reason: "reverse_alias",
+      schemaVersion: "v1",
+      sourceSha256: "a".repeat(64),
+    };
+
+    expect(validator.validate(HeaderPatchPlanV1Schema, validPlan).ok).toBe(true);
+    expect(
+      validator.validate(HeaderPatchPlanV1Schema, {
+        ...validPlan,
+        operations: [{ ...validPlan.operations[0], name: "From" }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      validator.validate(HeaderPatchPlanV1Schema, {
+        ...validPlan,
+        operations: [{ ...validPlan.operations[0], occurrence: -1 }],
+      }).ok,
+    ).toBe(false);
   });
 });

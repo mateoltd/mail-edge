@@ -1,8 +1,11 @@
 # Mail Edge
 
 Mail Edge is a provider-neutral foundation for durable mail ingestion and delivery. The repository
-currently contains only its monorepo, quality, governance, and supply-chain foundation. It does not
-yet publish a usable SDK, service, provider integration, or mail-processing implementation.
+contains versioned contracts, invariant-preserving core reducers and ports, an
+infrastructure-neutral SDK facade, a public provider SPI, and an executable provider conformance
+kit. The deployable [provider-neutral reference service](apps/reference-service/README.md) composes
+the SDK with PostgreSQL, encrypted S3 storage, pg-boss, and explicit downstream workflow/provider
+ports. Concrete providers remain separate dependency layers.
 
 ## Development
 
@@ -14,6 +17,18 @@ corepack enable
 pnpm install --frozen-lockfile
 pnpm verify
 ```
+
+The full gate also requires a running Docker-compatible container runtime for the PostgreSQL, MinIO,
+and fault-boundary tests. Test results are never cached by Turbo: infrastructure-dependent checks
+must execute against the current host rather than replay results from another environment.
+
+The test gate builds its MinIO fixture from a pinned upstream commit and Go image because the old
+published container is no longer pullable. `pnpm test:images` prepares it for direct package test
+commands; `pnpm test` and `pnpm reference-service:e2e` prepare it automatically. The first build
+requires network access to fetch the pinned source and Go modules. Later runs reuse an image only
+when its recipe digest matches. This is a local test image, not a production storage recommendation.
+The source and license are recorded in `test/fixtures/minio/Dockerfile`; see upstream's
+[source distribution instructions](https://github.com/minio/minio#source-only-distribution).
 
 `pnpm clean-room:check` repeats installation and verification from a Git archive. It requires a
 clean, committed worktree.

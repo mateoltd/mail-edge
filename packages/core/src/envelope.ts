@@ -1,12 +1,12 @@
 import { domainToASCII } from "node:url";
 
 import {
-  createContractValidator,
   MailEdgeError,
   type DsnNotify,
   type Result,
   SmtpEnvelopeV1Schema,
   type SmtpEnvelopeV1,
+  validateContract,
   type SmtpRecipientV1,
 } from "@mail-edge/contracts";
 
@@ -206,7 +206,7 @@ const canonicalizeRecipient = (
 export const canonicalizeSmtpEnvelope = (
   input: unknown,
 ): Result<CanonicalSmtpEnvelope, MailEdgeError> => {
-  const boundary = createContractValidator().validate(SmtpEnvelopeV1Schema, input);
+  const boundary = validateContract(SmtpEnvelopeV1Schema, input);
   if (!boundary.ok) {
     return {
       error: new MailEdgeError({

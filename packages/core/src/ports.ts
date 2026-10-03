@@ -1,12 +1,15 @@
 import type {
   AuditEventV1,
   ApplicationDeliveryV1,
+  ApplicationDeliveryCallbackV1,
+  ApplicationDestinationV1,
+  ApplicationAckV1 as ContractApplicationAckV1,
   ApplicationDeliveryState,
   ApplicationFeedbackV1,
   AttemptId,
   BindingState,
   BlobId,
-  DeliveryId,
+  HeaderPatchPlanV1,
   IdempotencyRecordV1,
   IdempotencyKey,
   InboundReceiptState,
@@ -17,16 +20,16 @@ import type {
   OutboundAttemptState,
   OutboundIntentV1,
   OutboundIntentState,
-  OutboundSubmissionV1,
-  ProviderAcceptanceV1,
   ProviderCapabilityDescriptorV1,
-  ProviderDispatchError,
   ProviderId,
   RawMessageRefV1,
+  RawAccessGrantV1,
   RawMessageStream,
   RecipientTransportState,
   ReceiptId,
   Result,
+  ReverseRouteRequestV1 as ContractReverseRouteRequestV1,
+  ReverseRouteResolutionV1 as ContractReverseRouteResolutionV1,
   RouteBindingSnapshotV1,
   SmtpEnvelopeV1,
   TenantId,
@@ -48,6 +51,11 @@ export interface UnitOfWork {
     ) => Promise<Result<T, MailEdgeError>>,
     signal: AbortSignal,
   ): Promise<Result<T, MailEdgeError>>;
+}
+
+/** Creates request-scoped transaction owners with an explicit tenant identity. @public */
+export interface TenantUnitOfWorkFactory {
+  forTenant(tenantId: TenantId): UnitOfWork;
 }
 
 /** @public */
@@ -174,6 +182,47 @@ export interface BlobStorePort {
   ): Promise<Result<RawMessageStream, MailEdgeError>>;
 }
 
+/** Byte and digest evidence returned by a streaming header patch implementation. @public */
+export interface HeaderPatchApplicationEvidence {
+  readonly derivedBodyOffset: number | null;
+  readonly derivedSha256: string;
+  readonly derivedSize: number;
+  readonly peakBufferedBytes: number;
+  readonly preservedBodyBytes: number | null;
+  readonly sourceBodyOffset: number | null;
+  readonly sourceSha256: string;
+  readonly sourceSize: number;
+}
+
+/** Public MIME implementation boundary; core does not depend on a MIME parser package. @public */
+export interface HeaderPatchApplierPort {
+  apply(
+    source: RawMessageStream,
+    plan: HeaderPatchPlanV1,
+    sink: BlobStageWriter,
+    signal: AbortSignal,
+  ): Promise<Result<HeaderPatchApplicationEvidence, MailEdgeError>>;
+}
+
+/** Immutable provenance recorded only after the derived blob is available. @public */
+export interface DerivedBlobProvenanceV1 {
+  readonly createdAt: string;
+  readonly derived: RawMessageRefV1;
+  readonly patchPlan: HeaderPatchPlanV1;
+  readonly patchPlanDigest: string;
+  readonly source: RawMessageRefV1;
+  readonly tenantId: TenantId;
+}
+
+/** @public */
+export interface DerivedBlobProvenancePort {
+  record(
+    provenance: DerivedBlobProvenanceV1,
+    context: UnitOfWorkContext,
+    signal: AbortSignal,
+  ): Promise<Result<void, MailEdgeError>>;
+}
+
 /** Queue hints deliberately permit only opaque workflow identifiers. @public */
 export type Wakeup = WorkflowWakeupV1;
 
@@ -189,22 +238,15 @@ export interface WakeupScheduler {
 /** @public */
 export interface RegisteredProviderAbstraction {
   readonly descriptor: ProviderCapabilityDescriptorV1;
-  submitRaw(
-    input: OutboundSubmissionV1,
-    signal: AbortSignal,
-  ): Promise<Result<ProviderAcceptanceV1, ProviderDispatchError>>;
 }
 
 /** @public */
 export interface ProviderRegistryPort {
-  get(providerId: ProviderId, adapterVersion: string): RegisteredProviderAbstraction | undefined;
-}
-
-/** @public */
-export interface ApplicationDestinationV1 {
-  readonly destinationId: string;
-  readonly deliveryMode: "push" | "pull";
-  readonly opaqueToken: string;
+  get(
+    providerId: ProviderId,
+    adapterVersion: string,
+    mode: string,
+  ): RegisteredProviderAbstraction | undefined;
 }
 
 /** @public */
@@ -220,19 +262,10 @@ export interface RecipientRouter {
 }
 
 /** @public */
-export interface ReverseRouteRequestV1 {
-  readonly tenantId: TenantId;
-  readonly envelope: SmtpEnvelopeV1;
-  readonly raw: RawMessageRefV1;
-  readonly opaqueReplyToken: string;
-}
+export type ReverseRouteRequestV1 = ContractReverseRouteRequestV1;
 
 /** @public */
-export interface ReverseRouteResolutionV1 {
-  readonly envelope: SmtpEnvelopeV1;
-  readonly visibleHeaderFields: readonly string[];
-  readonly policyCode: string;
-}
+export type ReverseRouteResolutionV1 = ContractReverseRouteResolutionV1;
 
 /** @public */
 export interface ReverseRouteResolver {
@@ -243,21 +276,34 @@ export interface ReverseRouteResolver {
 }
 
 /** @public */
-export interface ApplicationAckV1 {
-  readonly deliveryId: DeliveryId;
-  readonly acceptedAt: string;
+export interface HeaderPatchPlanner {
+  compile(
+    resolution: ReverseRouteResolutionV1,
+    source: RawMessageRefV1,
+  ): Result<HeaderPatchPlanV1, MailEdgeError>;
 }
+
+/** @public */
+export type ApplicationAckV1 = ContractApplicationAckV1;
 
 /** @public */
 export interface ApplicationDeliverySink {
   deliver(
-    input: ApplicationDeliveryV1,
+    input: ApplicationDeliveryCallbackV1,
     signal: AbortSignal,
   ): Promise<Result<ApplicationAckV1, MailEdgeError>>;
   deliverFeedback(
     input: ApplicationFeedbackV1,
     signal: AbortSignal,
   ): Promise<Result<ApplicationAckV1, MailEdgeError>>;
+}
+
+/** Durable raw grant issuer used before a host callback crosses the side-effect boundary. @public */
+export interface RawAccessGrantIssuer {
+  issueForApplicationDelivery(
+    delivery: ApplicationDeliveryV1,
+    signal: AbortSignal,
+  ): Promise<Result<RawAccessGrantV1, MailEdgeError>>;
 }
 
 /** @public */
@@ -322,6 +368,7 @@ export interface OutboundIntentPort {
       readonly raw: RawMessageRefV1;
       readonly envelope: SmtpEnvelopeV1;
       readonly idempotencyKey: IdempotencyKey;
+      readonly opaqueReplyToken?: string;
     },
     signal: AbortSignal,
   ): Promise<Result<OutboundIntentV1, MailEdgeError>>;

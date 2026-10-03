@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "unknown-outcome-quarantines-without-retry",
+  "kind": "unknown_quarantine",
+  "expected": {
+    "certainty": "unknown",
+    "automaticRetryAllowed": false,
+    "workflowState": "quarantined_unknown",
+    "postCommitAction": "none"
+  }
+}

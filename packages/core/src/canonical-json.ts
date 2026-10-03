@@ -7,7 +7,7 @@ export type CanonicalJsonObject = Readonly<{ [key: string]: CanonicalJsonValue }
 export type CanonicalJsonValue =
   null | boolean | number | string | readonly CanonicalJsonValue[] | CanonicalJsonObject;
 
-const encode = (value: CanonicalJsonValue): string => {
+const encode = (value: unknown, active: Set<object>): string => {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
     return JSON.stringify(value);
   }
@@ -18,24 +18,46 @@ const encode = (value: CanonicalJsonValue): string => {
     return Object.is(value, -0) ? "0" : JSON.stringify(value);
   }
   if (Array.isArray(value)) {
-    const values = value as readonly CanonicalJsonValue[];
-    return `[${values.map((item) => encode(item)).join(",")}]`;
-  }
-  const record = value as CanonicalJsonObject;
-  return `{${Object.keys(record)
-    .toSorted()
-    .map((key) => {
-      const child = record[key];
-      if (child === undefined) {
-        throw new TypeError("Canonical JSON cannot contain undefined values.");
+    if (active.has(value)) {
+      throw new TypeError("Canonical JSON cannot contain cycles.");
+    }
+    active.add(value);
+    try {
+      const items: string[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) {
+          throw new TypeError("Canonical JSON arrays cannot contain holes.");
+        }
+        items.push(encode(value[index], active));
       }
-      return `${JSON.stringify(key)}:${encode(child)}`;
-    })
-    .join(",")}}`;
+      return `[${items.join(",")}]`;
+    } finally {
+      active.delete(value);
+    }
+  }
+  if (typeof value !== "object") {
+    throw new TypeError("Canonical JSON accepts only JSON primitives, arrays, and plain objects.");
+  }
+  const prototype = Reflect.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("Canonical JSON objects must have a plain object prototype.");
+  }
+  if (active.has(value)) {
+    throw new TypeError("Canonical JSON cannot contain cycles.");
+  }
+  active.add(value);
+  try {
+    return `{${Object.entries(value)
+      .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${encode(item, active)}`)
+      .join(",")}}`;
+  } finally {
+    active.delete(value);
+  }
 };
 
 /** Canonicalizes a JSON value using stable lexicographic object-key order. @public */
-export const canonicalJson = (value: CanonicalJsonValue): string => encode(value);
+export const canonicalJson = (value: CanonicalJsonValue): string => encode(value, new Set());
 
 /** @public */
 export const sha256CanonicalJson = (value: CanonicalJsonValue): string =>

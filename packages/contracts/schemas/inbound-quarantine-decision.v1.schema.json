@@ -1,0 +1,65 @@
+{
+  "$id": "urn:mail-edge:schema:v1:inbound-quarantine-decision",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "anyOf": [
+        {
+          "const": "release",
+          "type": "string"
+        },
+        {
+          "const": "terminal",
+          "type": "string"
+        }
+      ]
+    },
+    "evidence": {
+      "maxProperties": 64,
+      "patternProperties": {
+        "^[A-Za-z][A-Za-z0-9_-]*$": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "type": "string"
+            },
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "expectedFence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "expectedVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reasonCode": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "evidence",
+    "expectedFence",
+    "expectedVersion",
+    "reasonCode"
+  ],
+  "type": "object"
+}

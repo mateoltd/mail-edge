@@ -41,6 +41,29 @@ export {
   Sha256Schema,
 } from "./common.schema.js";
 export type {
+  BindingControlIdentityV1,
+  BindingControlViewV1,
+  BindingLifecycleAction,
+  BindingLifecycleDecisionV1,
+  InboundQuarantineAction,
+  InboundQuarantineDecisionV1,
+  InboundQuarantineViewV1,
+  OutboundQuarantineAction,
+  OutboundQuarantineDecisionV1,
+  OutboundQuarantineViewV1,
+} from "./control.schema.js";
+export {
+  bindingLifecycleActions,
+  BindingControlViewV1Schema,
+  BindingLifecycleDecisionV1Schema,
+  inboundQuarantineActions,
+  InboundQuarantineDecisionV1Schema,
+  InboundQuarantineViewV1Schema,
+  outboundQuarantineActions,
+  OutboundQuarantineDecisionV1Schema,
+  OutboundQuarantineViewV1Schema,
+} from "./control.schema.js";
+export type {
   DsnNotify,
   DsnNotifyAtom,
   SmtpBodyMode,
@@ -56,6 +79,30 @@ export {
   SmtpRecipientV1Schema,
   XTEXT_PATTERN,
 } from "./envelope.schema.js";
+export type {
+  HeaderPatchOperationV1,
+  HeaderPatchPlanV1,
+  HeaderPatchReason,
+} from "./header-patch.schema.js";
+export type {
+  ApplicationAckV1,
+  RecipientRouteRequestV1,
+  RecipientRouteResponseV1,
+  ReverseRouteRequestV1,
+  ReverseRouteResolutionV1,
+} from "./host-callback.schema.js";
+export {
+  ApplicationAckV1Schema,
+  RecipientRouteRequestV1Schema,
+  RecipientRouteResponseV1Schema,
+  ReverseRouteRequestV1Schema,
+  ReverseRouteResolutionV1Schema,
+} from "./host-callback.schema.js";
+export {
+  headerPatchReasons,
+  HeaderPatchOperationV1Schema,
+  HeaderPatchPlanV1Schema,
+} from "./header-patch.schema.js";
 export type {
   AuditId,
   AttemptId,
@@ -126,21 +173,51 @@ export {
   deliveryCertainties,
   MailEdgeError,
   mailEdgeErrorCodes,
+  mailEdgeErrorCodeFromProblemCode,
   MailEdgeProblemV1Schema,
   mailEdgeProblemCodes,
   projectProblem,
   ProviderDispatchError,
   providerDispatchPhases,
 } from "./problem.schema.js";
-export type { RawMessageRefV1, RawMessageStream } from "./raw.schema.js";
-export { DEFAULT_MAX_RAW_MESSAGE_BYTES, RawMessageRefV1Schema } from "./raw.schema.js";
+export type {
+  RawMessageIntegrityErrorOptions,
+  RawMessageIntegrityReason,
+  RawMessageRefV1,
+  RawMessageStream,
+} from "./raw.schema.js";
+export {
+  DEFAULT_MAX_RAW_MESSAGE_BYTES,
+  RawMessageIntegrityError,
+  rawMessageIntegrityReasons,
+  RawMessageRefV1Schema,
+} from "./raw.schema.js";
 export type { Result, ValidationError, ValidationIssue } from "./result.js";
 export { err, ok, validationError } from "./result.js";
 export { contractSchemas } from "./schemas.js";
-export { ContractValidator, createContractValidator } from "./validation.js";
+export type {
+  HostSignatureClaimsV1,
+  HostSignatureHttpHeadersV1,
+  HostSignatureV1,
+  HostSignedOperation,
+} from "./host.schema.js";
+export {
+  hostSignatureHttpHeadersV1,
+  hostSignedOperations,
+  HostSignatureClaimsV1Schema,
+  HostSignatureV1Schema,
+} from "./host.schema.js";
+export {
+  ContractValidator,
+  createContractValidator,
+  validateContract,
+  validateContractBatch,
+} from "./validation.js";
 export type {
   AuditEventV1,
   ApplicationDeliveryState,
+  ApplicationDeliveryCallbackV1,
+  ApplicationDestinationV1,
   ApplicationDeliveryV1,
   ApplicationFeedbackV1,
   IdempotencyRecordV1,
@@ -163,6 +240,8 @@ export {
   AuditEventV1Schema,
   applicationDeliveryStates,
   ApplicationDeliveryV1Schema,
+  ApplicationDestinationV1Schema,
+  ApplicationDeliveryCallbackV1Schema,
   ApplicationFeedbackV1Schema,
   IdempotencyRecordV1Schema,
   inboundReceiptStates,

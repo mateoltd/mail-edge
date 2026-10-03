@@ -1,0 +1,98 @@
+{
+  "baseSha": "51f7b6e3f031960f4ba812d356f89a308b759bfe",
+  "executedAt": "2026-08-16T02:01:07Z",
+  "gates": [
+    {
+      "command": "pnpm run license:check",
+      "id": "license",
+      "result": {
+        "approvedLicenseExpressions": 17,
+        "unapprovedLicenseExpressions": 0
+      },
+      "status": "passed"
+    },
+    {
+      "command": "node observability/scripts/validate.mjs and pinned promtool check/test",
+      "id": "observability_assets",
+      "result": {
+        "alertsCovered": 15,
+        "dashboards": 4,
+        "metrics": 20,
+        "prometheusRules": 8
+      },
+      "status": "passed"
+    },
+    {
+      "command": "scanForPotentialPii over generated qualification inputs",
+      "id": "pii_redaction",
+      "result": {
+        "artifactsScanned": 3,
+        "findings": 0
+      },
+      "status": "passed"
+    },
+    {
+      "command": "pnpm run repo:check, lint, lint:boundaries, typecheck, build and W9 test",
+      "id": "quality",
+      "result": {
+        "dependencyViolations": 0,
+        "lintTasks": 33,
+        "typecheckTasks": 19,
+        "w9TestFiles": 9,
+        "w9Tests": 24,
+        "workspaceUnits": 19
+      },
+      "status": "passed"
+    },
+    {
+      "command": "pnpm run test:w2-integration",
+      "id": "real_driver",
+      "result": {
+        "buildTasks": 19,
+        "minioDriver": "passed",
+        "pgBossDriver": "passed",
+        "postgresDriver": "passed"
+      },
+      "status": "passed"
+    },
+    {
+      "command": "pnpm run clean-room:check in an isolated worktree at sourceSha",
+      "failure": {
+        "expectedFeedbackError": "BINDING_UNAVAILABLE",
+        "observedFeedbackError": "WORKFLOW_CONFLICT",
+        "postgresRuntimeTestsFailed": 2,
+        "postgresRuntimeTestsTotal": 37,
+        "replayNonceConstraintRejectedFixture": true
+      },
+      "id": "reproducibility",
+      "result": {
+        "frozenLockfileInstall": "passed",
+        "repositoryVerify": "failed"
+      },
+      "status": "failed"
+    },
+    {
+      "command": "pnpm run sbom:check",
+      "id": "sbom",
+      "result": {
+        "bomFormat": "CycloneDX",
+        "components": 951,
+        "specVersion": "1.6"
+      },
+      "status": "passed"
+    },
+    {
+      "command": "pnpm run reference-service:security",
+      "id": "security",
+      "result": {
+        "containerPolicy": "passed",
+        "failClosedPolicy": "passed",
+        "isolationPolicy": "passed",
+        "streamingPolicy": "passed"
+      },
+      "status": "passed"
+    }
+  ],
+  "schemaVersion": "w9-gate-execution-v1",
+  "sourceSha": "5430eb039126f08b5fa85aedddd1f788b2af8303"
+}

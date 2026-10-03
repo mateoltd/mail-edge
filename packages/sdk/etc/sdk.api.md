@@ -26,7 +26,7 @@ import type { ReverseRouteResolver } from '@mail-edge/core';
 import { SmtpEnvelopeV1 } from '@mail-edge/contracts';
 import type { Telemetry } from '@mail-edge/core';
 import { TenantId } from '@mail-edge/contracts';
-import type { UnitOfWork } from '@mail-edge/core';
+import type { TenantUnitOfWorkFactory } from '@mail-edge/core';
 import { VerifiedInboundReceiptV1 } from '@mail-edge/contracts';
 import type { WakeupScheduler } from '@mail-edge/core';
 
@@ -39,13 +39,14 @@ export class MailEdgeSdk {
         readonly raw: RawMessageRefV1;
         readonly envelope: SmtpEnvelopeV1;
         readonly idempotencyKey: IdempotencyKey;
+        readonly opaqueReplyToken?: string;
     }, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
     // (undocumented)
     getInboundReceipt(tenantId: TenantId, receiptId: ReceiptId, signal: AbortSignal): Promise<Result<VerifiedInboundReceiptV1, MailEdgeError>>;
     // (undocumented)
     getOutboundIntent(tenantId: TenantId, intentId: IntentId, signal: AbortSignal): Promise<Result<OutboundIntentV1, MailEdgeError>>;
     // (undocumented)
-    getProviderDescriptor(providerId: Parameters<ProviderRegistryPort["get"]>[0], adapterVersion: string): Result<ProviderCapabilityDescriptorV1, MailEdgeError>;
+    getProviderDescriptor(providerId: Parameters<ProviderRegistryPort["get"]>[0], adapterVersion: string, mode: string): Result<ProviderCapabilityDescriptorV1, MailEdgeError>;
     // (undocumented)
     now(): string;
     // (undocumented)
@@ -77,9 +78,11 @@ export class MailEdgeSdkBuilder {
     // (undocumented)
     withReverseRouteResolver(value: ReverseRouteResolver): this;
     // (undocumented)
+    withStageCleanupTimeoutMilliseconds(value: number): this;
+    // (undocumented)
     withTelemetry(value: Telemetry): this;
     // (undocumented)
-    withUnitOfWork(value: UnitOfWork): this;
+    withTenantUnitOfWorkFactory(value: TenantUnitOfWorkFactory): this;
     // (undocumented)
     withWakeupScheduler(value: WakeupScheduler): this;
 }
@@ -105,9 +108,11 @@ export interface MailEdgeSdkDependencies {
     // (undocumented)
     readonly reverseRouteResolver: ReverseRouteResolver;
     // (undocumented)
+    readonly stageCleanupTimeoutMilliseconds: number;
+    // (undocumented)
     readonly telemetry: Telemetry;
     // (undocumented)
-    readonly unitOfWork: UnitOfWork;
+    readonly tenantUnitOfWorkFactory: TenantUnitOfWorkFactory;
     // (undocumented)
     readonly wakeupScheduler: WakeupScheduler;
 }

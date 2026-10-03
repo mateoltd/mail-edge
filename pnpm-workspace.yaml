@@ -1,12 +1,39 @@
 packages:
   - apps/*
   - packages/*
+  - test/*
+  - test/e2e/*
+
+injectWorkspacePackages: true
 
 allowBuilds:
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
+  workerd: true
+
+minimumReleaseAgeExclude:
+  - "@aws-sdk/client-kms@3.1109.0"
+  - "@aws-sdk/client-s3@3.1109.0"
+  - "@aws-sdk/lib-storage@3.1109.0"
+  - "@cloudflare/vitest-pool-workers@0.21.3"
+  - "@cloudflare/workers-types@5.20260814.1"
+  - miniflare@5.20260811.1-alpha
+  - wrangler@4.123.0
 
 onlyBuiltDependencies:
   - esbuild
 overrides:
-  undici: 7.29.0
+  undici: 7.29.1
+  # Patch vulnerable resolutions without crossing their installed major versions.
+  "@grpc/grpc-js@1.14.4": 1.14.5
+  brace-expansion@1.1.18: 1.1.21
+  brace-expansion@2.1.4: 2.1.7
+  brace-expansion@5.0.9: 5.0.12
+  fast-uri@3.1.5: 3.1.8
+  fast-uri@4.1.2: 4.1.5
+  js-yaml@4.3.1: 4.3.2
+  qs@6.15.3: 6.16.0
+  sharp@0.35.2: 0.35.4
 strictDepBuilds: true

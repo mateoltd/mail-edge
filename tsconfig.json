@@ -4,6 +4,23 @@
   "references": [
     { "path": "packages/contracts" },
     { "path": "packages/core" },
-    { "path": "packages/sdk" }
+    { "path": "packages/postgres" },
+    { "path": "packages/blob-s3" },
+    { "path": "packages/queue-pg-boss" },
+    { "path": "packages/provider" },
+    { "path": "packages/runtime" },
+    { "path": "packages/conformance" },
+    { "path": "packages/provider-mailgun" },
+    { "path": "packages/provider-resend" },
+    { "path": "packages/provider-cloudflare" },
+    { "path": "packages/mime" },
+    { "path": "packages/sdk" },
+    { "path": "packages/http-client" },
+    { "path": "packages/smtp-bridge" },
+    { "path": "packages/observability" },
+    { "path": "test/scale" },
+    { "path": "test/e2e/drills" },
+    { "path": "apps/reference-service" },
+    { "path": "apps/cloudflare-ingress-worker" }
   ]
 }

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "w9-refinement-trace-v1",
+  "traceId": "queue-loss-duplication-and-repair",
+  "kind": "queue_repair",
+  "actions": [
+    "accept",
+    "enqueue",
+    "lose_wakeup",
+    "repair",
+    "duplicate_wakeup",
+    "claim",
+    "complete",
+    "consume_noop"
+  ],
+  "expected": {
+    "completed": true,
+    "durableDue": false,
+    "wakeups": 0
+  }
+}
