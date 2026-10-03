@@ -128,7 +128,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check Conventional Commits
-        run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+        run: node ./scripts/check-commitlint.mjs "$BASE_SHA" "$HEAD_SHA"
       - name: Check DCO sign-offs
         run: node ./scripts/check-dco.mjs "$BASE_SHA" "$HEAD_SHA"
       - name: Check publishable package Changesets

@@ -21,6 +21,14 @@ Use Conventional Commit messages. Add a Changeset when a publishable package's b
 API changes. API Extractor reports are reviewed public API artifacts and must be updated through the
 configured command, never edited by hand.
 
+The full-range CI formatting check uses `scripts/check-commitlint.mjs <base-sha> <head-sha>`.
+`config/historical-commit-formatting.json` records the maintainer-approved disposition for exactly
+eleven historical `type-enum` findings and one historical `body-max-line-length` finding. Each entry
+is bound to its full immutable commit SHA and original subject; all other findings and future
+commits retain the existing commitlint rules. These formatting dispositions do not cover DCO
+sign-offs or any other gate. Running `pnpm commitlint:check` also proves new invalid messages remain
+rejected.
+
 ## Developer Certificate of Origin
 
 Contributions use the [Developer Certificate of Origin 1.1](https://developercertificate.org/). Sign
